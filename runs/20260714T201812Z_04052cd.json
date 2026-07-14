@@ -1,0 +1,1608 @@
+{
+  "run_id": "20260714T201812Z_04052cd_93cba7",
+  "timestamp": "2026-07-14T20:18:12.343201+00:00",
+  "git_sha": "04052cd",
+  "adapter": "data_analyst",
+  "case_results": [
+    {
+      "case_id": "total_customers",
+      "prompt": "How many customers are in the dataset?",
+      "final_answer": "The dataset contains 30 unique customers, as identified by their customer IDs. This means there are 30 individual customers represented in the \"user_data\" table.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 19417.910500022117,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 3.829e-05,
+      "judge_reason": "found number ≈ 30.0",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "How many customers are in the dataset?",
+        "sql": "SELECT COUNT(customer_id) AS total_customers\nFROM \"user_data\"",
+        "result": [
+          {
+            "total_customers": 30
+          }
+        ],
+        "row_count": 1,
+        "explanation": "The dataset contains 30 unique customers, as identified by their customer IDs. This means there are 30 individual customers represented in the \"user_data\" table.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT COUNT(customer_id) AS total_customers\nFROM \"user_data\""
+        },
+        "summary_for_rag": "SQL Query: SELECT COUNT(customer_id) AS total_customers\nFROM \"user_data\"\nRows returned: 1\nSelf-check retried: False\nExplanation: The dataset contains 30 unique customers, as identified by their customer IDs. This means there are 30 individual customers represented in the \"user_data\" table.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 10,
+          "completion_tokens_used": 41,
+          "correctness_note": "found number ≈ 30.0"
+        }
+      }
+    },
+    {
+      "case_id": "churned_customers_count",
+      "prompt": "How many customers churned?",
+      "final_answer": "According to the data, 15 customers have churned. This means that out of the total customers in the \"user_data\" table, 15 of them have been marked as having stopped using the service (churn = 'Yes').",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 817.3830999876373,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 4.363e-05,
+      "judge_reason": "found number ≈ 15.0",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "How many customers churned?",
+        "sql": "SELECT COUNT(customer_id) AS churned_customers\nFROM \"user_data\"\nWHERE churn = 'Yes'",
+        "result": [
+          {
+            "churned_customers": 15
+          }
+        ],
+        "row_count": 1,
+        "explanation": "According to the data, 15 customers have churned. This means that out of the total customers in the \"user_data\" table, 15 of them have been marked as having stopped using the service (churn = 'Yes').",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT COUNT(customer_id) AS churned_customers\nFROM \"user_data\"\nWHERE churn = 'Yes'"
+        },
+        "summary_for_rag": "SQL Query: SELECT COUNT(customer_id) AS churned_customers\nFROM \"user_data\"\nWHERE churn = 'Yes'\nRows returned: 1\nSelf-check retried: False\nExplanation: According to the data, 15 customers have churned. This means that out of the total customers in the \"user_data\" table, 15 of them have been marked as having stopped using the service (churn = 'Yes').",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 7,
+          "completion_tokens_used": 50,
+          "correctness_note": "found number ≈ 15.0"
+        }
+      }
+    },
+    {
+      "case_id": "retained_customers_count",
+      "prompt": "How many customers did not churn?",
+      "final_answer": "The results show that there are 15 customers who did not churn, meaning they are still active or have not stopped using the service. This count only includes customers who are explicitly marked as 'No' for churn in the user data.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 769.3059999728575,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 5.113e-05,
+      "judge_reason": "found number ≈ 15.0",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "How many customers did not churn?",
+        "sql": "SELECT COUNT(customer_id) AS non_churn_customers\nFROM \"user_data\"\nWHERE churn = 'No'",
+        "result": [
+          {
+            "non_churn_customers": 15
+          }
+        ],
+        "row_count": 1,
+        "explanation": "The results show that there are 15 customers who did not churn, meaning they are still active or have not stopped using the service. This count only includes customers who are explicitly marked as 'No' for churn in the user data.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT COUNT(customer_id) AS non_churn_customers\nFROM \"user_data\"\nWHERE churn = 'No'"
+        },
+        "summary_for_rag": "SQL Query: SELECT COUNT(customer_id) AS non_churn_customers\nFROM \"user_data\"\nWHERE churn = 'No'\nRows returned: 1\nSelf-check retried: False\nExplanation: The results show that there are 15 customers who did not churn, meaning they are still active or have not stopped using the service. This count only includes customers who are explicitly marked as 'No' for churn in the user data.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 9,
+          "completion_tokens_used": 58,
+          "correctness_note": "found number ≈ 15.0"
+        }
+      }
+    },
+    {
+      "case_id": "avg_monthly_charges",
+      "prompt": "What is the average monthly charges?",
+      "final_answer": "The average monthly charge for users is approximately $63.79. This means that if you were to add up all the monthly charges for every user and divide by the total number of users, you would get this amount.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 752.7969999937341,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 4.639e-05,
+      "judge_reason": "found number ≈ 63.78",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "What is the average monthly charges?",
+        "sql": "SELECT AVG(monthly_charges) AS average_monthly_charges\nFROM user_data",
+        "result": [
+          {
+            "average_monthly_charges": 63.784666666666666
+          }
+        ],
+        "row_count": 1,
+        "explanation": "The average monthly charge for users is approximately $63.79. This means that if you were to add up all the monthly charges for every user and divide by the total number of users, you would get this amount.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT AVG(monthly_charges) AS average_monthly_charges\nFROM user_data"
+        },
+        "summary_for_rag": "SQL Query: SELECT AVG(monthly_charges) AS average_monthly_charges\nFROM user_data\nRows returned: 1\nSelf-check retried: False\nExplanation: The average monthly charge for users is approximately $63.79. This means that if you were to add up all the monthly charges for every user and divide by the total number of users, you would get this amount.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 9,
+          "completion_tokens_used": 52,
+          "correctness_note": "found number ≈ 63.78"
+        }
+      }
+    },
+    {
+      "case_id": "max_monthly_charges",
+      "prompt": "What is the maximum monthly charges in the data?",
+      "final_answer": "The maximum monthly charge found in the data is $91.50. This means that the highest amount any user is charged per month is $91.50.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 10671.333300007973,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 3.315e-05,
+      "judge_reason": "found number ≈ 91.5",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "What is the maximum monthly charges in the data?",
+        "sql": "SELECT MAX(monthly_charges) AS max_monthly_charges\nFROM \"user_data\"",
+        "result": [
+          {
+            "max_monthly_charges": 91.5
+          }
+        ],
+        "row_count": 1,
+        "explanation": "The maximum monthly charge found in the data is $91.50. This means that the highest amount any user is charged per month is $91.50.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT MAX(monthly_charges) AS max_monthly_charges\nFROM \"user_data\""
+        },
+        "summary_for_rag": "SQL Query: SELECT MAX(monthly_charges) AS max_monthly_charges\nFROM \"user_data\"\nRows returned: 1\nSelf-check retried: False\nExplanation: The maximum monthly charge found in the data is $91.50. This means that the highest amount any user is charged per month is $91.50.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 12,
+          "completion_tokens_used": 33,
+          "correctness_note": "found number ≈ 91.5"
+        }
+      }
+    },
+    {
+      "case_id": "min_monthly_charges",
+      "prompt": "What is the minimum monthly charges?",
+      "final_answer": "The minimum monthly charge is $39.99. This is the lowest monthly charge found in the user data.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 776.9314000033773,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 2.427e-05,
+      "judge_reason": "found number ≈ 39.99",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "What is the minimum monthly charges?",
+        "sql": "SELECT MIN(monthly_charges) AS min_monthly_charges\nFROM user_data",
+        "result": [
+          {
+            "min_monthly_charges": 39.99
+          }
+        ],
+        "row_count": 1,
+        "explanation": "The minimum monthly charge is $39.99. This is the lowest monthly charge found in the user data.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT MIN(monthly_charges) AS min_monthly_charges\nFROM user_data"
+        },
+        "summary_for_rag": "SQL Query: SELECT MIN(monthly_charges) AS min_monthly_charges\nFROM user_data\nRows returned: 1\nSelf-check retried: False\nExplanation: The minimum monthly charge is $39.99. This is the lowest monthly charge found in the user data.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 9,
+          "completion_tokens_used": 24,
+          "correctness_note": "found number ≈ 39.99"
+        }
+      }
+    },
+    {
+      "case_id": "sum_total_charges",
+      "prompt": "What is the sum of total charges for all customers?",
+      "final_answer": "The total sum of charges for all customers is $54,826.17. This is the combined total of all charges incurred by every customer in the database.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 1977.7143999817781,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 3.611e-05,
+      "judge_reason": "found number ≈ 54826.17",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "What is the sum of total charges for all customers?",
+        "sql": "SELECT SUM(total_charges) AS total_charges_sum\nFROM \"user_data\"",
+        "result": [
+          {
+            "total_charges_sum": 54826.17
+          }
+        ],
+        "row_count": 1,
+        "explanation": "The total sum of charges for all customers is $54,826.17. This is the combined total of all charges incurred by every customer in the database.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT SUM(total_charges) AS total_charges_sum\nFROM \"user_data\""
+        },
+        "summary_for_rag": "SQL Query: SELECT SUM(total_charges) AS total_charges_sum\nFROM \"user_data\"\nRows returned: 1\nSelf-check retried: False\nExplanation: The total sum of charges for all customers is $54,826.17. This is the combined total of all charges incurred by every customer in the database.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 13,
+          "completion_tokens_used": 36,
+          "correctness_note": "found number ≈ 54826.17"
+        }
+      }
+    },
+    {
+      "case_id": "fiber_optic_count",
+      "prompt": "How many customers have Fiber optic internet service?",
+      "final_answer": "According to the data, there are 16 customers who have Fiber optic internet service. This count only includes customers with Fiber optic service and does not account for customers with other types of internet services.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 6587.155100016389,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 5.171e-05,
+      "judge_reason": "found number ≈ 16.0",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "How many customers have Fiber optic internet service?",
+        "sql": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE internet_service = 'Fiber optic'",
+        "result": [
+          {
+            "num_customers": 16
+          }
+        ],
+        "row_count": 1,
+        "explanation": "According to the data, there are 16 customers who have Fiber optic internet service. This count only includes customers with Fiber optic service and does not account for customers with other types of internet services.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE internet_service = 'Fiber optic'"
+        },
+        "summary_for_rag": "SQL Query: SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE internet_service = 'Fiber optic'\nRows returned: 1\nSelf-check retried: False\nExplanation: According to the data, there are 16 customers who have Fiber optic internet service. This count only includes customers with Fiber optic service and does not account for customers with other types of internet services.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 14,
+          "completion_tokens_used": 55,
+          "correctness_note": "found number ≈ 16.0"
+        }
+      }
+    },
+    {
+      "case_id": "dsl_count",
+      "prompt": "How many customers have DSL internet service?",
+      "final_answer": "The results show that there are 13 customers who have DSL internet service. This count only includes customers with DSL service and does not account for customers with other types of internet services.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 6772.379299975,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 4.7369999999999995e-05,
+      "judge_reason": "found number ≈ 13.0",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "How many customers have DSL internet service?",
+        "sql": "SELECT COUNT(customer_id) AS dsl_customers\nFROM \"user_data\"\nWHERE internet_service = 'DSL'",
+        "result": [
+          {
+            "dsl_customers": 13
+          }
+        ],
+        "row_count": 1,
+        "explanation": "The results show that there are 13 customers who have DSL internet service. This count only includes customers with DSL service and does not account for customers with other types of internet services.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT COUNT(customer_id) AS dsl_customers\nFROM \"user_data\"\nWHERE internet_service = 'DSL'"
+        },
+        "summary_for_rag": "SQL Query: SELECT COUNT(customer_id) AS dsl_customers\nFROM \"user_data\"\nWHERE internet_service = 'DSL'\nRows returned: 1\nSelf-check retried: False\nExplanation: The results show that there are 13 customers who have DSL internet service. This count only includes customers with DSL service and does not account for customers with other types of internet services.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 12,
+          "completion_tokens_used": 51,
+          "correctness_note": "found number ≈ 13.0"
+        }
+      }
+    },
+    {
+      "case_id": "month_to_month_count",
+      "prompt": "How many customers are on a Month-to-month contract?",
+      "final_answer": "There are 15 customers who are currently on a Month-to-month contract. This count only includes customers with this specific contract type and does not account for customers with other types of contracts or any other characteristics.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 5943.9649999840185,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 5.428e-05,
+      "judge_reason": "found number ≈ 15.0",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "How many customers are on a Month-to-month contract?",
+        "sql": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE contract_type = 'Month-to-month'",
+        "result": [
+          {
+            "num_customers": 15
+          }
+        ],
+        "row_count": 1,
+        "explanation": "There are 15 customers who are currently on a Month-to-month contract. This count only includes customers with this specific contract type and does not account for customers with other types of contracts or any other characteristics.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE contract_type = 'Month-to-month'"
+        },
+        "summary_for_rag": "SQL Query: SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE contract_type = 'Month-to-month'\nRows returned: 1\nSelf-check retried: False\nExplanation: There are 15 customers who are currently on a Month-to-month contract. This count only includes customers with this specific contract type and does not account for customers with other types of contracts or any other characteristics.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 13,
+          "completion_tokens_used": 59,
+          "correctness_note": "found number ≈ 15.0"
+        }
+      }
+    },
+    {
+      "case_id": "two_year_contract_count",
+      "prompt": "How many customers have a Two year contract?",
+      "final_answer": "The results show that there are 7 customers who have a contract type of 'Two year'. This means that out of the total number of customers in the database, 7 of them are currently under a 2-year contract.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 6865.0945000117645,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 4.678e-05,
+      "judge_reason": "found number ≈ 7.0",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "How many customers have a Two year contract?",
+        "sql": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE contract_type = 'Two year'",
+        "result": [
+          {
+            "num_customers": 7
+          }
+        ],
+        "row_count": 1,
+        "explanation": "The results show that there are 7 customers who have a contract type of 'Two year'. This means that out of the total number of customers in the database, 7 of them are currently under a 2-year contract.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE contract_type = 'Two year'"
+        },
+        "summary_for_rag": "SQL Query: SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE contract_type = 'Two year'\nRows returned: 1\nSelf-check retried: False\nExplanation: The results show that there are 7 customers who have a contract type of 'Two year'. This means that out of the total number of customers in the database, 7 of them are currently under a 2-year contract.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 11,
+          "completion_tokens_used": 51,
+          "correctness_note": "found number ≈ 7.0"
+        }
+      }
+    },
+    {
+      "case_id": "one_year_contract_count",
+      "prompt": "How many customers have a One year contract?",
+      "final_answer": "According to the data, there are 8 customers who have a contract that is specifically classified as a 'One year' contract. This count only includes customers with this exact contract type and does not account for customers with other contract durations.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 6043.66869997466,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 5.7050000000000004e-05,
+      "judge_reason": "found number ≈ 8.0",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "How many customers have a One year contract?",
+        "sql": "SELECT COUNT(customer_id) AS one_year_contract_customers\nFROM \"user_data\"\nWHERE contract_type = 'One year'",
+        "result": [
+          {
+            "one_year_contract_customers": 8
+          }
+        ],
+        "row_count": 1,
+        "explanation": "According to the data, there are 8 customers who have a contract that is specifically classified as a 'One year' contract. This count only includes customers with this exact contract type and does not account for customers with other contract durations.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT COUNT(customer_id) AS one_year_contract_customers\nFROM \"user_data\"\nWHERE contract_type = 'One year'"
+        },
+        "summary_for_rag": "SQL Query: SELECT COUNT(customer_id) AS one_year_contract_customers\nFROM \"user_data\"\nWHERE contract_type = 'One year'\nRows returned: 1\nSelf-check retried: False\nExplanation: According to the data, there are 8 customers who have a contract that is specifically classified as a 'One year' contract. This count only includes customers with this exact contract type and does not account for customers with other contract durations.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 11,
+          "completion_tokens_used": 64,
+          "correctness_note": "found number ≈ 8.0"
+        }
+      }
+    },
+    {
+      "case_id": "customers_age_over_50",
+      "prompt": "How many customers are older than 50?",
+      "final_answer": "The results show that there are 7 customers in the database who are older than 50. This count only includes customers with an age greater than 50, as specified in the query. No other factors, such as location or purchase history, were considered in this count.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 6818.875400000252,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 5.725e-05,
+      "judge_reason": "found number ≈ 7.0",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "How many customers are older than 50?",
+        "sql": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE age > 50",
+        "result": [
+          {
+            "num_customers": 7
+          }
+        ],
+        "row_count": 1,
+        "explanation": "The results show that there are 7 customers in the database who are older than 50. This count only includes customers with an age greater than 50, as specified in the query. No other factors, such as location or purchase history, were considered in this count.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE age > 50"
+        },
+        "summary_for_rag": "SQL Query: SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE age > 50\nRows returned: 1\nSelf-check retried: False\nExplanation: The results show that there are 7 customers in the database who are older than 50. This count only includes customers with an age greater than 50, as specified in the query. No other factors, such as location or purchase history, were considered in this count.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 10,
+          "completion_tokens_used": 65,
+          "correctness_note": "found number ≈ 7.0"
+        }
+      }
+    },
+    {
+      "case_id": "avg_tenure_months",
+      "prompt": "What is the average tenure in months?",
+      "final_answer": "The average tenure, or length of time users have been with the service, is approximately 25 months. This is calculated by taking the average of the \"tenure_months\" values for all users in the database.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 5820.348100038245,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": false,
+      "hallucination_flag": true,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 4.6189999999999997e-05,
+      "judge_reason": "expected ≈ 25.23 (tol=0.05); found [25.0]",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "What is the average tenure in months?",
+        "sql": "SELECT AVG(tenure_months) AS average_tenure\nFROM user_data",
+        "result": [
+          {
+            "average_tenure": 25.233333333333334
+          }
+        ],
+        "row_count": 1,
+        "explanation": "The average tenure, or length of time users have been with the service, is approximately 25 months. This is calculated by taking the average of the \"tenure_months\" values for all users in the database.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT AVG(tenure_months) AS average_tenure\nFROM user_data"
+        },
+        "summary_for_rag": "SQL Query: SELECT AVG(tenure_months) AS average_tenure\nFROM user_data\nRows returned: 1\nSelf-check retried: False\nExplanation: The average tenure, or length of time users have been with the service, is approximately 25 months. This is calculated by taking the average of the \"tenure_months\" values for all users in the database.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 10,
+          "completion_tokens_used": 51,
+          "correctness_note": "expected ≈ 25.23 (tol=0.05); found [25.0]"
+        }
+      }
+    },
+    {
+      "case_id": "internet_service_counts_table",
+      "prompt": "How many customers are there for each internet service type?",
+      "final_answer": "The results show the number of customers for each type of internet service. There are 16 customers with Fiber optic internet, 13 with DSL, and 1 customer with no internet service. The results are listed in order from most customers to least, with Fiber optic having the most customers.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 6997.091299970634,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 6.573000000000001e-05,
+      "judge_reason": "all table values present",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "How many customers are there for each internet service type?",
+        "sql": "SELECT \n  internet_service, \n  COUNT(customer_id) AS customer_count\nFROM \n  \"user_data\"\nGROUP BY \n  internet_service\nORDER BY \n  customer_count DESC",
+        "result": [
+          {
+            "internet_service": "Fiber optic",
+            "customer_count": 16
+          },
+          {
+            "internet_service": "DSL",
+            "customer_count": 13
+          },
+          {
+            "internet_service": "No",
+            "customer_count": 1
+          }
+        ],
+        "row_count": 3,
+        "explanation": "The results show the number of customers for each type of internet service. There are 16 customers with Fiber optic internet, 13 with DSL, and 1 customer with no internet service. The results are listed in order from most customers to least, with Fiber optic having the most customers.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT \n  internet_service, \n  COUNT(customer_id) AS customer_count\nFROM \n  \"user_data\"\nGROUP BY \n  internet_service\nORDER BY \n  customer_count DESC"
+        },
+        "summary_for_rag": "SQL Query: SELECT \n  internet_service, \n  COUNT(customer_id) AS customer_count\nFROM \n  \"user_data\"\nGROUP BY \n  internet_service\nORDER BY \n  customer_count DESC\nRows returned: 3\nSelf-check retried: False\nExplanation: The results show the number of customers for each type of internet service. There are 16 customers with Fiber optic internet, 13 with DSL, and 1 customer with no internet service. The results are listed in order from most customers to least, with Fiber optic having the most customers.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 15,
+          "completion_tokens_used": 72,
+          "correctness_note": "all table values present"
+        }
+      }
+    },
+    {
+      "case_id": "contract_type_counts_table",
+      "prompt": "Show the count of customers by contract type.",
+      "final_answer": "The results show the number of customers grouped by their contract type. There are 3 types of contracts: Month-to-month, One year, and Two year. \n\n- The most common contract type is Month-to-month, with 15 customers.\n- The One year contract has 8 customers.\n- The Two year contract has the fewest customers, with 7.\n\nThis query provides a clear breakdown of the customer distribution across different contract types, but it does not provide information about other potential customer characteristics or contract details.",
+      "tools_called": [
+        "sql_agent"
+      ],
+      "nodes_fired": [
+        "route:sql",
+        "agent:sql"
+      ],
+      "latency_ms": 6237.776800000574,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 0.00010978,
+      "judge_reason": "all table values present",
+      "raw": {
+        "success": true,
+        "agent": "sql",
+        "question": "Show the count of customers by contract type.",
+        "sql": "SELECT \n  contract_type, \n  COUNT(customer_id) AS customer_count\nFROM \n  \"user_data\"\nGROUP BY \n  contract_type\nORDER BY \n  customer_count DESC",
+        "result": [
+          {
+            "contract_type": "Month-to-month",
+            "customer_count": 15
+          },
+          {
+            "contract_type": "One year",
+            "customer_count": 8
+          },
+          {
+            "contract_type": "Two year",
+            "customer_count": 7
+          }
+        ],
+        "row_count": 3,
+        "explanation": "The results show the number of customers grouped by their contract type. There are 3 types of contracts: Month-to-month, One year, and Two year. \n\n- The most common contract type is Month-to-month, with 15 customers.\n- The One year contract has 8 customers.\n- The Two year contract has the fewest customers, with 7.\n\nThis query provides a clear breakdown of the customer distribution across different contract types, but it does not provide information about other potential customer characteristics or contract details.",
+        "explanation_error": null,
+        "self_check": {
+          "attempts": 1,
+          "issues_first": [],
+          "issues_final": [],
+          "retried": false,
+          "sql_first": "SELECT \n  contract_type, \n  COUNT(customer_id) AS customer_count\nFROM \n  \"user_data\"\nGROUP BY \n  contract_type\nORDER BY \n  customer_count DESC"
+        },
+        "summary_for_rag": "SQL Query: SELECT \n  contract_type, \n  COUNT(customer_id) AS customer_count\nFROM \n  \"user_data\"\nGROUP BY \n  contract_type\nORDER BY \n  customer_count DESC\nRows returned: 3\nSelf-check retried: False\nExplanation: The results show the number of customers grouped by their contract type. There are 3 types of contracts: Month-to-month, One year, and Two year. \n\n- The most common contract type is Month-to-month, with 15 customers.\n- The One year contract has 8 customers.\n- The Two year contract has the fewest customers, with 7.\n\nThis query provides a clear breakdown of the customer distribution across different contract types, but it does not provide information about other potential customer characteristics or contract details.",
+        "route": "sql",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 12,
+          "completion_tokens_used": 130,
+          "correctness_note": "all table values present"
+        }
+      }
+    },
+    {
+      "case_id": "data_quality_report",
+      "prompt": "Show me a data quality report for this dataset.",
+      "final_answer": "### Data Quality Report\n**Score:** 100.0/100  |  **Rows:** 30  |  **Columns:** 9\n\n**Missing values:** none detected\n\n**Exact duplicate rows:** 0\n\n**Decisions needed (your call — nothing auto-applied)**\n- `customer_id` looks ID-like (high uniqueness / name pattern). Treat as identifier (exclude from ML features) or keep as a numeric feature?\n  Options: Exclude from ML (treat as ID) | Keep as feature | Show sample values",
+      "tools_called": [
+        "quality_agent"
+      ],
+      "nodes_fired": [
+        "route:quality",
+        "agent:quality"
+      ],
+      "latency_ms": 122.88849998731166,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 9.082e-05,
+      "judge_reason": "contains match",
+      "raw": {
+        "success": true,
+        "agent": "quality",
+        "row_count": 30,
+        "column_count": 9,
+        "quality_score": 100.0,
+        "missing": {},
+        "duplicate_count": 0,
+        "duplicate_indices": [],
+        "type_issues": [],
+        "outliers": {},
+        "categorical_issues": {},
+        "suggestions": [],
+        "summary": "### Data Quality Report\n**Score:** 100.0/100  |  **Rows:** 30  |  **Columns:** 9\n\n**Missing values:** none detected\n\n**Exact duplicate rows:** 0\n\n**Decisions needed (your call — nothing auto-applied)**\n- `customer_id` looks ID-like (high uniqueness / name pattern). Treat as identifier (exclude from ML features) or keep as a numeric feature?\n  Options: Exclude from ML (treat as ID) | Keep as feature | Show sample values",
+        "summary_for_rag": "Data Quality Report\nData quality score: 100.0/100\nRows: 30, Columns: 9\nMissing columns: 0\nDuplicate rows: 0\nType issues: 0\nColumns with outliers: 0\nCategorical inconsistencies flagged: 0",
+        "decisions": [
+          {
+            "id": "id_or_feature::customer_id",
+            "type": "id_or_feature",
+            "column": "customer_id",
+            "prompt": "`customer_id` looks ID-like (high uniqueness / name pattern). Treat as identifier (exclude from ML features) or keep as a numeric feature?",
+            "options": [
+              {
+                "id": "exclude_ml",
+                "label": "Exclude from ML (treat as ID)"
+              },
+              {
+                "id": "keep_feature",
+                "label": "Keep as feature"
+              },
+              {
+                "id": "show",
+                "label": "Show sample values"
+              }
+            ]
+          }
+        ],
+        "markdown": "### Data Quality Report\n**Score:** 100.0/100  |  **Rows:** 30  |  **Columns:** 9\n\n**Missing values:** none detected\n\n**Exact duplicate rows:** 0\n\n**Decisions needed (your call — nothing auto-applied)**\n- `customer_id` looks ID-like (high uniqueness / name pattern). Treat as identifier (exclude from ML features) or keep as a numeric feature?\n  Options: Exclude from ML (treat as ID) | Keep as feature | Show sample values",
+        "route": "quality",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 12,
+          "completion_tokens_used": 106,
+          "correctness_note": "contains match"
+        }
+      }
+    },
+    {
+      "case_id": "proactive_insights",
+      "prompt": "Suggest what to explore in this data.",
+      "final_answer": "Suggested explorations for `user_data` (30 rows × 9 cols):\n1. `age` and `monthly_charges` look positively correlated (r≈0.99) — quantify that?\n2. `tenure_months` and `total_charges` look positively correlated (r≈0.98) — quantify that?\n3. Does average `monthly_charges` differ meaningfully across `churn`?\n4. `churn` looks like a key outcome — train a model to predict it?\n5. Top categories of `contract_type` by average `customer_id`",
+      "tools_called": [
+        "insight_agent"
+      ],
+      "nodes_fired": [
+        "route:insight",
+        "agent:insight"
+      ],
+      "latency_ms": 206.48499997332692,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 9.201000000000001e-05,
+      "judge_reason": "proposes multiple concrete data-specific exploration ideas",
+      "raw": {
+        "success": true,
+        "agent": "insight",
+        "suggestions": [
+          {
+            "id": "corr_age_monthly_charges",
+            "kind": "correlation",
+            "label": "`age` and `monthly_charges` look positively correlated (r≈0.99) — quantify that?",
+            "question": "What's correlated with age? Focus on relationship with monthly_charges",
+            "detail": "Pearson r=0.986"
+          },
+          {
+            "id": "corr_tenure_months_total_charges",
+            "kind": "correlation",
+            "label": "`tenure_months` and `total_charges` look positively correlated (r≈0.98) — quantify that?",
+            "question": "What's correlated with tenure_months? Focus on relationship with total_charges",
+            "detail": "Pearson r=0.985"
+          },
+          {
+            "id": "group_churn_monthly_charges",
+            "kind": "comparison",
+            "label": "Does average `monthly_charges` differ meaningfully across `churn`?",
+            "question": "Is there a significant difference in monthly_charges between churn groups?",
+            "detail": "Compare group means of monthly_charges by churn"
+          },
+          {
+            "id": "target_churn",
+            "kind": "modeling",
+            "label": "`churn` looks like a key outcome — train a model to predict it?",
+            "question": "Train a model to predict churn and explain the top drivers",
+            "detail": "AutoML on target `churn`"
+          },
+          {
+            "id": "top_n",
+            "kind": "sql",
+            "label": "Top categories of `contract_type` by average `customer_id`",
+            "question": "Show the top 5 contract_type values by average customer_id",
+            "detail": "Ranking / aggregate query"
+          }
+        ],
+        "anomalies": [],
+        "business_context": "",
+        "summary": "Suggested explorations for `user_data` (30 rows × 9 cols):\n1. `age` and `monthly_charges` look positively correlated (r≈0.99) — quantify that?\n2. `tenure_months` and `total_charges` look positively correlated (r≈0.98) — quantify that?\n3. Does average `monthly_charges` differ meaningfully across `churn`?\n4. `churn` looks like a key outcome — train a model to predict it?\n5. Top categories of `contract_type` by average `customer_id`",
+        "summary_for_rag": "Proactive insights:\nSuggested explorations for `user_data` (30 rows × 9 cols):\n1. `age` and `monthly_charges` look positively correlated (r≈0.99) — quantify that?\n2. `tenure_months` and `total_charges` look positively correlated (r≈0.98) — quantify that?\n3. Does average `monthly_charges` differ meaningfully across `churn`?\n4. `churn` looks like a key outcome — train a model to predict it?\n5. Top categories of `contract_type` by average `customer_id`",
+        "route": "insight",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 10,
+          "completion_tokens_used": 109,
+          "correctness_note": "proposes multiple concrete data-specific exploration ideas"
+        }
+      }
+    },
+    {
+      "case_id": "correlated_with_churn",
+      "prompt": "What's correlated with churn?",
+      "final_answer": "Correlations with target `churn` (Pearson):\n- `monthly_charges`: r=0.878 (strong positive, p=0.0000)\n- `age`: r=0.867 (strong positive, p=0.0000)\n- `tenure_months`: r=0.855 (strong positive, p=0.0000)\n- `total_charges`: r=0.844 (strong positive, p=0.0000)\n- `customer_id`: r=0.058 (weak positive, p=0.7617)\n\nNote: correlation measures linear association only and does not imply causation. Small samples can produce unstable estimates.",
+      "tools_called": [
+        "stats_agent"
+      ],
+      "nodes_fired": [
+        "route:stats",
+        "agent:stats"
+      ],
+      "latency_ms": 185.03849999979138,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 9.083e-05,
+      "judge_reason": "correctly identifies correlated features with churn",
+      "raw": {
+        "success": true,
+        "agent": "stats",
+        "task": "correlation",
+        "target_column": "churn",
+        "rankings": [
+          {
+            "column": "monthly_charges",
+            "correlation": 0.8783244240842082,
+            "abs_correlation": 0.8783244240842082,
+            "p_value": 1.7876018866282912e-10
+          },
+          {
+            "column": "age",
+            "correlation": 0.8674905076114551,
+            "abs_correlation": 0.8674905076114551,
+            "p_value": 5.503639620179623e-10
+          },
+          {
+            "column": "tenure_months",
+            "correlation": 0.8550424343581607,
+            "abs_correlation": 0.8550424343581607,
+            "p_value": 1.7850149901597235e-09
+          },
+          {
+            "column": "total_charges",
+            "correlation": 0.8438708150812424,
+            "abs_correlation": 0.8438708150812424,
+            "p_value": 4.693888023815166e-09
+          },
+          {
+            "column": "customer_id",
+            "correlation": 0.05776712868787004,
+            "abs_correlation": 0.05776712868787004,
+            "p_value": 0.7617280256440149
+          }
+        ],
+        "interpretation": "Correlations with target `churn` (Pearson):\n- `monthly_charges`: r=0.878 (strong positive, p=0.0000)\n- `age`: r=0.867 (strong positive, p=0.0000)\n- `tenure_months`: r=0.855 (strong positive, p=0.0000)\n- `total_charges`: r=0.844 (strong positive, p=0.0000)\n- `customer_id`: r=0.058 (weak positive, p=0.7617)\n\nNote: correlation measures linear association only and does not imply causation. Small samples can produce unstable estimates.",
+        "summary": "Correlations with target `churn` (Pearson):\n- `monthly_charges`: r=0.878 (strong positive, p=0.0000)\n- `age`: r=0.867 (strong positive, p=0.0000)\n- `tenure_months`: r=0.855 (strong positive, p=0.0000)\n- `total_charges`: r=0.844 (strong positive, p=0.0000)\n- `customer_id`: r=0.058 (weak positive, p=0.7617)\n\nNote: correlation measures linear association only and does not imply causation. Small samples can produce unstable estimates.",
+        "summary_for_rag": "Correlation analysis vs churn\nCorrelations with target `churn` (Pearson):\n- `monthly_charges`: r=0.878 (strong positive, p=0.0000)\n- `age`: r=0.867 (strong positive, p=0.0000)\n- `tenure_months`: r=0.855 (strong positive, p=0.0000)\n- `total_charges`: r=0.844 (strong positive, p=0.0000)\n- `customer_id`: r=0.058 (weak positive, p=0.7617)\n\nNote: correlation measures linear association only and does not imply causation. Small samples can produce unstable estimates.",
+        "route": "stats",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 8,
+          "completion_tokens_used": 109,
+          "correctness_note": "correctly identifies correlated features with churn"
+        }
+      }
+    },
+    {
+      "case_id": "train_churn_classifier",
+      "prompt": "Train a model to predict which customers are at risk of churn.",
+      "final_answer": "We've trained a model to predict customer churn using automated machine learning (AutoML). The winning model, LogisticRegression(C=0.5), achieved perfect accuracy and F1 score on the test set, outperforming other candidates. The model relies heavily on monthly charges, tenure months, and age to make predictions. However, we must note that the dataset is very small (only 30 rows), which raises concerns about the model's stability and potential overfitting. The near-perfect accuracy is also a red flag, suggesting that the model may be too closely fit to the training data or that there may be leakage in the features. As a result, these results should be treated with caution and not considered production-ready without further validation and testing on a larger dataset.\n\n**Drivers:** The model relied most on **monthly_charges**, **tenure_months**, and **age** to make predictions (top signals among 14 features).\n\n**Caveats:**\n- Small dataset (n=30): metrics can be unstable and may look better than real-world performance.\n- Accuracy is very high (1.000) on a modest sample — treat as a possible overfit / lucky split, not production-ready.\n- Near-perfect accuracy often signals leakage or a trivial target — double-check features.\n\n**Feature prep:**\n- Excluded likely ID columns from features: customer_id",
+      "tools_called": [
+        "ml_agent"
+      ],
+      "nodes_fired": [
+        "route:ml",
+        "agent:ml"
+      ],
+      "latency_ms": 3919.356699974742,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 0.00026935,
+      "judge_reason": "correctly applied AutoML for churn prediction",
+      "raw": {
+        "success": true,
+        "agent": "ml",
+        "task": "classification",
+        "target_column": "churn",
+        "eda": {
+          "missing_report": {},
+          "numeric_stats": {
+            "customer_id": {
+              "mean": 1015.5,
+              "median": 1015.5,
+              "std": 8.803408430829505,
+              "min": 1001.0,
+              "max": 1030.0,
+              "q25": 1008.25,
+              "q75": 1022.75,
+              "count": 30
+            },
+            "age": {
+              "mean": 41.3,
+              "median": 41.5,
+              "std": 9.73139250056229,
+              "min": 25.0,
+              "max": 58.0,
+              "q25": 33.25,
+              "q75": 48.75,
+              "count": 30
+            },
+            "tenure_months": {
+              "mean": 25.233333333333334,
+              "median": 25.0,
+              "std": 13.99675660295266,
+              "min": 3.0,
+              "max": 51.0,
+              "q25": 12.75,
+              "q75": 36.0,
+              "count": 30
+            },
+            "monthly_charges": {
+              "mean": 63.784666666666666,
+              "median": 63.2,
+              "std": 16.577083835999236,
+              "min": 39.99,
+              "max": 91.5,
+              "q25": 49.1375,
+              "q75": 74.85000000000001,
+              "count": 30
+            },
+            "total_charges": {
+              "mean": 1827.5389999999998,
+              "median": 1601.5,
+              "std": 1354.8011016416062,
+              "min": 119.97,
+              "max": 4666.5,
+              "q25": 671.7,
+              "q75": 2625.675,
+              "count": 30
+            }
+          },
+          "describe_table": [
+            {
+              "column": "customer_id",
+              "mean": 1015.5,
+              "median": 1015.5,
+              "std": 8.803408430829505,
+              "min": 1001.0,
+              "max": 1030.0,
+              "q25": 1008.25,
+              "q75": 1022.75,
+              "count": 30
+            },
+            {
+              "column": "age",
+              "mean": 41.3,
+              "median": 41.5,
+              "std": 9.73139250056229,
+              "min": 25.0,
+              "max": 58.0,
+              "q25": 33.25,
+              "q75": 48.75,
+              "count": 30
+            },
+            {
+              "column": "tenure_months",
+              "mean": 25.233333333333334,
+              "median": 25.0,
+              "std": 13.99675660295266,
+              "min": 3.0,
+              "max": 51.0,
+              "q25": 12.75,
+              "q75": 36.0,
+              "count": 30
+            },
+            {
+              "column": "monthly_charges",
+              "mean": 63.784666666666666,
+              "median": 63.2,
+              "std": 16.577083835999236,
+              "min": 39.99,
+              "max": 91.5,
+              "q25": 49.1375,
+              "q75": 74.85000000000001,
+              "count": 30
+            },
+            {
+              "column": "total_charges",
+              "mean": 1827.5389999999998,
+              "median": 1601.5,
+              "std": 1354.8011016416062,
+              "min": 119.97,
+              "max": 4666.5,
+              "q25": 671.7,
+              "q75": 2625.675,
+              "count": 30
+            }
+          ],
+          "correlation_matrix": [
+            {
+              "customer_id": 1.0,
+              "age": 0.144,
+              "tenure_months": 0.005,
+              "monthly_charges": 0.099,
+              "total_charges": 0.027
+            },
+            {
+              "customer_id": 0.144,
+              "age": 1.0,
+              "tenure_months": 0.949,
+              "monthly_charges": 0.986,
+              "total_charges": 0.958
+            },
+            {
+              "customer_id": 0.005,
+              "age": 0.949,
+              "tenure_months": 1.0,
+              "monthly_charges": 0.972,
+              "total_charges": 0.985
+            },
+            {
+              "customer_id": 0.099,
+              "age": 0.986,
+              "tenure_months": 0.972,
+              "monthly_charges": 1.0,
+              "total_charges": 0.979
+            },
+            {
+              "customer_id": 0.027,
+              "age": 0.958,
+              "tenure_months": 0.985,
+              "monthly_charges": 0.979,
+              "total_charges": 1.0
+            }
+          ],
+          "categorical_summary": {
+            "contract_type": {
+              "Month-to-month": 15,
+              "One year": 8,
+              "Two year": 7
+            },
+            "payment_method": {
+              "Electronic": 8,
+              "Mailed check": 8,
+              "Credit card": 7,
+              "Bank transfer": 7
+            },
+            "internet_service": {
+              "Fiber optic": 16,
+              "DSL": 13,
+              "No": 1
+            },
+            "churn": {
+              "Yes": 15,
+              "No": 15
+            }
+          },
+          "charts": {
+            "missing": "<non-serializable:Figure>",
+            "correlation": "<non-serializable:Figure>",
+            "distributions": {
+              "customer_id": "<non-serializable:Figure>",
+              "age": "<non-serializable:Figure>",
+              "tenure_months": "<non-serializable:Figure>",
+              "monthly_charges": "<non-serializable:Figure>",
+              "total_charges": "<non-serializable:Figure>",
+              "contract_type": "<non-serializable:Figure>",
+              "payment_method": "<non-serializable:Figure>",
+              "internet_service": "<non-serializable:Figure>",
+              "churn": "<non-serializable:Figure>"
+            },
+            "groupbys": {
+              "monthly_charges_by_churn": "<non-serializable:Figure>",
+              "total_charges_by_churn": "<non-serializable:Figure>",
+              "customer_id_by_churn": "<non-serializable:Figure>"
+            },
+            "timeseries": {
+              "monthly_charges_over_time": "<non-serializable:Figure>",
+              "total_charges_over_time": "<non-serializable:Figure>"
+            }
+          },
+          "summary_text": "Dataset: 30 rows, 9 columns\nNumeric columns: customer_id, age, tenure_months, monthly_charges, total_charges\nCategorical columns: contract_type, payment_method, internet_service, churn\nDate/time column detected: tenure_months\nNo missing values detected.\nNumeric highlights (mean / median / std):\n  - customer_id: mean=1.02e+03, median=1.02e+03, std=8.8, range=[1e+03, 1.03e+03]\n  - age: mean=41.3, median=41.5, std=9.73, range=[25, 58]\n  - tenure_months: mean=25.2, median=25, std=14, range=[3, 51]\n  - monthly_charges: mean=63.8, median=63.2, std=16.6, range=[40, 91.5]\n  - total_charges: mean=1.83e+03, median=1.6e+03, std=1.35e+03, range=[120, 4.67e+03]\nSuggested groupings: monthly_charges by churn, total_charges by churn, customer_id by churn",
+          "numeric_columns": [
+            "customer_id",
+            "age",
+            "tenure_months",
+            "monthly_charges",
+            "total_charges"
+          ],
+          "categorical_columns": [
+            "contract_type",
+            "payment_method",
+            "internet_service",
+            "churn"
+          ],
+          "date_column": "tenure_months",
+          "groupings": [
+            {
+              "group_col": "churn",
+              "metric_col": "monthly_charges",
+              "agg": "mean"
+            },
+            {
+              "group_col": "churn",
+              "metric_col": "total_charges",
+              "agg": "mean"
+            },
+            {
+              "group_col": "churn",
+              "metric_col": "customer_id",
+              "agg": "mean"
+            }
+          ]
+        },
+        "metrics": {
+          "accuracy": 1.0,
+          "f1": 1.0
+        },
+        "model_name": "LogisticRegression(C=0.5)",
+        "leaderboard": [
+          {
+            "model": "LogisticRegression(C=0.5)",
+            "accuracy": 1.0,
+            "f1": 1.0
+          },
+          {
+            "model": "LogisticRegression(C=2.0)",
+            "accuracy": 1.0,
+            "f1": 1.0
+          },
+          {
+            "model": "RandomForest(n=50, depth=3)",
+            "accuracy": 1.0,
+            "f1": 1.0
+          },
+          {
+            "model": "RandomForest(n=100, depth=3)",
+            "accuracy": 1.0,
+            "f1": 1.0
+          },
+          {
+            "model": "RandomForest(n=50, depth=6)",
+            "accuracy": 1.0,
+            "f1": 1.0
+          },
+          {
+            "model": "RandomForest(n=100, depth=6)",
+            "accuracy": 1.0,
+            "f1": 1.0
+          },
+          {
+            "model": "XGBoost(n=50, depth=3)",
+            "accuracy": 1.0,
+            "f1": 1.0
+          },
+          {
+            "model": "XGBoost(n=100, depth=3)",
+            "accuracy": 1.0,
+            "f1": 1.0
+          },
+          {
+            "model": "XGBoost(n=50, depth=4)",
+            "accuracy": 1.0,
+            "f1": 1.0
+          },
+          {
+            "model": "XGBoost(n=100, depth=4)",
+            "accuracy": 1.0,
+            "f1": 1.0
+          }
+        ],
+        "why_best": "**LogisticRegression(C=0.5)** scored highest F1 (1.000) among 10 candidates on a hold-out test split.",
+        "drivers": "The model relied most on **monthly_charges**, **tenure_months**, and **age** to make predictions (top signals among 14 features).",
+        "risk_flags": [
+          "Small dataset (n=30): metrics can be unstable and may look better than real-world performance.",
+          "Accuracy is very high (1.000) on a modest sample — treat as a possible overfit / lucky split, not production-ready.",
+          "Near-perfect accuracy often signals leakage or a trivial target — double-check features."
+        ],
+        "feature_notes": [
+          "Excluded likely ID columns from features: customer_id"
+        ],
+        "charts": {
+          "missing": "<non-serializable:Figure>",
+          "correlation": "<non-serializable:Figure>",
+          "distributions": {
+            "customer_id": "<non-serializable:Figure>",
+            "age": "<non-serializable:Figure>",
+            "tenure_months": "<non-serializable:Figure>",
+            "monthly_charges": "<non-serializable:Figure>",
+            "total_charges": "<non-serializable:Figure>",
+            "contract_type": "<non-serializable:Figure>",
+            "payment_method": "<non-serializable:Figure>",
+            "internet_service": "<non-serializable:Figure>",
+            "churn": "<non-serializable:Figure>"
+          },
+          "groupbys": {
+            "monthly_charges_by_churn": "<non-serializable:Figure>",
+            "total_charges_by_churn": "<non-serializable:Figure>",
+            "customer_id_by_churn": "<non-serializable:Figure>"
+          },
+          "timeseries": {
+            "monthly_charges_over_time": "<non-serializable:Figure>",
+            "total_charges_over_time": "<non-serializable:Figure>"
+          },
+          "feature_importance": "<non-serializable:Figure>"
+        },
+        "summary": "We've trained a model to predict customer churn using automated machine learning (AutoML). The winning model, LogisticRegression(C=0.5), achieved perfect accuracy and F1 score on the test set, outperforming other candidates. The model relies heavily on monthly charges, tenure months, and age to make predictions. However, we must note that the dataset is very small (only 30 rows), which raises concerns about the model's stability and potential overfitting. The near-perfect accuracy is also a red flag, suggesting that the model may be too closely fit to the training data or that there may be leakage in the features. As a result, these results should be treated with caution and not considered production-ready without further validation and testing on a larger dataset.\n\n**Drivers:** The model relied most on **monthly_charges**, **tenure_months**, and **age** to make predictions (top signals among 14 features).\n\n**Caveats:**\n- Small dataset (n=30): metrics can be unstable and may look better than real-world performance.\n- Accuracy is very high (1.000) on a modest sample — treat as a possible overfit / lucky split, not production-ready.\n- Near-perfect accuracy often signals leakage or a trivial target — double-check features.\n\n**Feature prep:**\n- Excluded likely ID columns from features: customer_id",
+        "summary_error": null,
+        "summary_for_rag": "ML Task: classification\nTarget: churn\nWinner: LogisticRegression(C=0.5)\nMetrics: {'accuracy': 1.0, 'f1': 1.0}\nDrivers: The model relied most on **monthly_charges**, **tenure_months**, and **age** to make predictions (top signals among 14 features).\nRisks: ['Small dataset (n=30): metrics can be unstable and may look better than real-world performance.', 'Accuracy is very high (1.000) on a modest sample — treat as a possible overfit / lucky split, not production-ready.', 'Near-perfect accuracy often signals leakage or a trivial target — double-check features.']\nSummary: We've trained a model to predict customer churn using automated machine learning (AutoML). The winning model, LogisticRegression(C=0.5), achieved perfect accuracy and F1 score on the test set, outperforming other candidates. The model relies heavily on monthly charges, tenure months, and age to make predictions. However, we must note that the dataset is very small (only 30 rows), which raises concerns about the model's stability and potential overfitting. The near-perfect accuracy is also a red flag, suggesting that the model may be too closely fit to the training data or that there may be leakage in the features. As a result, these results should be treated with caution and not considered production-ready without further validation and testing on a larger dataset.\n\n**Drivers:** The model relied most on **monthly_charges**, **tenure_months**, and **age** to make predictions (top signals among 14 features).\n\n**Caveats:**\n- Small dataset (n=30): metrics can be unstable and may look better than real-world performance.\n- Accuracy is very high (1.000) on a modest sample — treat as a possible overfit / lucky split, not production-ready.\n- Near-perfect accuracy often signals leakage or a trivial target — double-check features.\n\n**Feature prep:**\n- Excluded likely ID columns from features: customer_id",
+        "route": "ml",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 16,
+          "completion_tokens_used": 329,
+          "correctness_note": "correctly applied AutoML for churn prediction"
+        }
+      }
+    },
+    {
+      "case_id": "generate_analysis_report",
+      "prompt": "Generate a report summarizing the analysis so far.",
+      "final_answer": "Here is a 2-4 sentence executive summary for a business manager:\nOur analysis of customer data has identified key factors that contribute to customer churn, including monthly charges, tenure, and age. A machine learning model was trained to predict churn and achieved high accuracy using these factors. The strong correlations between these factors and churn suggest that customers with higher monthly charges, longer tenure, and older age are more likely to stop doing business with us. This insight can inform strategies to retain high-value customers and reduce churn.",
+      "tools_called": [
+        "report_agent"
+      ],
+      "nodes_fired": [
+        "route:report",
+        "agent:report"
+      ],
+      "latency_ms": 2651.7435999703594,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "correctness_pass": true,
+      "hallucination_flag": false,
+      "tool_call_precision": 1.0,
+      "tool_call_recall": 1.0,
+      "cost_usd": 0.00012064,
+      "judge_reason": "coherent analysis summary",
+      "raw": {
+        "success": true,
+        "agent": "report",
+        "executive_summary": "Here is a 2-4 sentence executive summary for a business manager:\nOur analysis of customer data has identified key factors that contribute to customer churn, including monthly charges, tenure, and age. A machine learning model was trained to predict churn and achieved high accuracy using these factors. The strong correlations between these factors and churn suggest that customers with higher monthly charges, longer tenure, and older age are more likely to stop doing business with us. This insight can inform strategies to retain high-value customers and reduce churn.",
+        "html": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<title>Agentic Data Analyst Report</title>\n<style>\n  body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1.25rem; color: #1a1a1a; line-height: 1.55; }\n  h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }\n  h2 { color: #1565C0; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.35rem; margin-top: 1.75rem; }\n  h3 { font-size: 1.05rem; margin-top: 1rem; }\n  .meta { color: #666; font-size: 0.9rem; }\n  .exec { background: #E3F2FD; padding: 1rem 1.25rem; border-radius: 8px; border-left: 4px solid #1565C0; }\n  pre { background: #f5f5f5; padding: 0.75rem 1rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; font-size: 0.88rem; }\n  code { background: #f0f0f0; padding: 0.1rem 0.35rem; border-radius: 3px; }\n  .footer { color: #888; font-size: 0.85rem; }\n</style>\n</head>\n<body>\n<h1>Agentic Data Analyst Report</h1>\n<p class='meta'>Generated 2026-07-14 20:19 UTC</p>\n<h2>Executive Summary</h2>\n<p class='exec'>Here is a 2-4 sentence executive summary for a business manager:\nOur analysis of customer data has identified key factors that contribute to customer churn, including monthly charges, tenure, and age. A machine learning model was trained to predict churn and achieved high accuracy using these factors. The strong correlations between these factors and churn suggest that customers with higher monthly charges, longer tenure, and older age are more likely to stop doing business with us. This insight can inform strategies to retain high-value customers and reduce churn.</p>\n<h2>Dataset</h2>\n<p>Rows: <b>30</b> · Columns: <b>9</b></p>\n<p>Columns: <code>customer_id</code>, <code>age</code>, <code>tenure_months</code>, <code>monthly_charges</code>, <code>total_charges</code>, <code>contract_type</code>, <code>payment_method</code>, <code>internet_service</code>, <code>churn</code></p>\n<h2>Data Quality</h2>\n<p>Score: <b>100.0/100</b></p>\n<pre>### Data Quality Report\n**Score:** 100.0/100  |  **Rows:** 30  |  **Columns:** 9\n\n**Missing values:** none detected\n\n**Exact duplicate rows:** 0\n\n**Decisions needed (your call — nothing auto-applied)**\n- `customer_id` looks ID-like (high uniqueness / name pattern). Treat as identifier (exclude from ML features) or keep as a numeric feature?\n  Options: Exclude from ML (treat as ID) | Keep as feature | Show sample values</pre>\n<h2>SQL Insights</h2>\n<h3>Finding 1: How many customers are in the dataset?</h3>\n<p>The dataset contains 30 unique customers, as identified by their customer IDs. This means there are 30 individual customers represented in the &quot;user_data&quot; table.</p>\n<pre>SELECT COUNT(customer_id) AS total_customers\nFROM &quot;user_data&quot;</pre>\n<h3>Finding 2: How many customers churned?</h3>\n<p>According to the data, 15 customers have churned. This means that out of the total customers in the &quot;user_data&quot; table, 15 of them have been marked as having stopped using the service (churn = &#x27;Yes&#x27;).</p>\n<pre>SELECT COUNT(customer_id) AS churned_customers\nFROM &quot;user_data&quot;\nWHERE churn = &#x27;Yes&#x27;</pre>\n<h3>Finding 3: How many customers did not churn?</h3>\n<p>The results show that there are 15 customers who did not churn, meaning they are still active or have not stopped using the service. This count only includes customers who are explicitly marked as &#x27;No&#x27; for churn in the user data.</p>\n<pre>SELECT COUNT(customer_id) AS non_churn_customers\nFROM &quot;user_data&quot;\nWHERE churn = &#x27;No&#x27;</pre>\n<h3>Finding 4: What is the average monthly charges?</h3>\n<p>The average monthly charge for users is approximately $63.79. This means that if you were to add up all the monthly charges for every user and divide by the total number of users, you would get this amount.</p>\n<pre>SELECT AVG(monthly_charges) AS average_monthly_charges\nFROM user_data</pre>\n<h3>Finding 5: What is the maximum monthly charges in the data?</h3>\n<p>The maximum monthly charge found in the data is $91.50. This means that the highest amount any user is charged per month is $91.50.</p>\n<pre>SELECT MAX(monthly_charges) AS max_monthly_charges\nFROM &quot;user_data&quot;</pre>\n<h3>Finding 6: What is the minimum monthly charges?</h3>\n<p>The minimum monthly charge is $39.99. This is the lowest monthly charge found in the user data.</p>\n<pre>SELECT MIN(monthly_charges) AS min_monthly_charges\nFROM user_data</pre>\n<h3>Finding 7: What is the sum of total charges for all customers?</h3>\n<p>The total sum of charges for all customers is $54,826.17. This is the combined total of all charges incurred by every customer in the database.</p>\n<pre>SELECT SUM(total_charges) AS total_charges_sum\nFROM &quot;user_data&quot;</pre>\n<h3>Finding 8: How many customers have Fiber optic internet service?</h3>\n<p>According to the data, there are 16 customers who have Fiber optic internet service. This count only includes customers with Fiber optic service and does not account for customers with other types of internet services.</p>\n<pre>SELECT COUNT(customer_id) AS num_customers\nFROM &quot;user_data&quot;\nWHERE internet_service = &#x27;Fiber optic&#x27;</pre>\n<h3>Finding 9: How many customers have DSL internet service?</h3>\n<p>The results show that there are 13 customers who have DSL internet service. This count only includes customers with DSL service and does not account for customers with other types of internet services.</p>\n<pre>SELECT COUNT(customer_id) AS dsl_customers\nFROM &quot;user_data&quot;\nWHERE internet_service = &#x27;DSL&#x27;</pre>\n<h3>Finding 10: How many customers are on a Month-to-month contract?</h3>\n<p>There are 15 customers who are currently on a Month-to-month contract. This count only includes customers with this specific contract type and does not account for customers with other types of contracts or any other characteristics.</p>\n<pre>SELECT COUNT(customer_id) AS num_customers\nFROM &quot;user_data&quot;\nWHERE contract_type = &#x27;Month-to-month&#x27;</pre>\n<h3>Finding 11: How many customers have a Two year contract?</h3>\n<p>The results show that there are 7 customers who have a contract type of &#x27;Two year&#x27;. This means that out of the total number of customers in the database, 7 of them are currently under a 2-year contract.</p>\n<pre>SELECT COUNT(customer_id) AS num_customers\nFROM &quot;user_data&quot;\nWHERE contract_type = &#x27;Two year&#x27;</pre>\n<h3>Finding 12: How many customers have a One year contract?</h3>\n<p>According to the data, there are 8 customers who have a contract that is specifically classified as a &#x27;One year&#x27; contract. This count only includes customers with this exact contract type and does not account for customers with other contract durations.</p>\n<pre>SELECT COUNT(customer_id) AS one_year_contract_customers\nFROM &quot;user_data&quot;\nWHERE contract_type = &#x27;One year&#x27;</pre>\n<h3>Finding 13: How many customers are older than 50?</h3>\n<p>The results show that there are 7 customers in the database who are older than 50. This count only includes customers with an age greater than 50, as specified in the query. No other factors, such as location or purchase history, were considered in this count.</p>\n<pre>SELECT COUNT(customer_id) AS num_customers\nFROM &quot;user_data&quot;\nWHERE age &gt; 50</pre>\n<h3>Finding 14: What is the average tenure in months?</h3>\n<p>The average tenure, or length of time users have been with the service, is approximately 25 months. This is calculated by taking the average of the &quot;tenure_months&quot; values for all users in the database.</p>\n<pre>SELECT AVG(tenure_months) AS average_tenure\nFROM user_data</pre>\n<h3>Finding 15: How many customers are there for each internet service type?</h3>\n<p>The results show the number of customers for each type of internet service. There are 16 customers with Fiber optic internet, 13 with DSL, and 1 customer with no internet service. The results are listed in order from most customers to least, with Fiber optic having the most customers.</p>\n<pre>SELECT \n  internet_service, \n  COUNT(customer_id) AS customer_count\nFROM \n  &quot;user_data&quot;\nGROUP BY \n  internet_service\nORDER BY \n  customer_count DESC</pre>\n<h3>Finding 16: Show the count of customers by contract type.</h3>\n<p>The results show the number of customers grouped by their contract type. There are 3 types of contracts: Month-to-month, One year, and Two year. \n\n- The most common contract type is Month-to-month, with 15 customers.\n- The One year contract has 8 customers.\n- The Two year contract has the fewest customers, with 7.\n\nThis query provides a clear breakdown of the customer distribution across different contract types, but it does not provide information about other potential customer characteristics or contract details.</p>\n<pre>SELECT \n  contract_type, \n  COUNT(customer_id) AS customer_count\nFROM \n  &quot;user_data&quot;\nGROUP BY \n  contract_type\nORDER BY \n  customer_count DESC</pre>\n<h2>Machine Learning</h2>\n<h3>Finding 1: Train a model to predict which customers are at risk of churn.</h3>\n<p>We&#x27;ve trained a model to predict customer churn using automated machine learning (AutoML). The winning model, LogisticRegression(C=0.5), achieved perfect accuracy and F1 score on the test set, outperforming other candidates. The model relies heavily on monthly charges, tenure months, and age to make predictions. However, we must note that the dataset is very small (only 30 rows), which raises concerns about the model&#x27;s stability and potential overfitting. The near-perfect accuracy is also a red flag, suggesting that the model may be too closely fit to the training data or that there may be leakage in the features. As a result, these results should be treated with caution and not considered production-ready without further validation and testing on a larger dataset.\n\n**Drivers:** The model relied most on **monthly_charges**, **tenure_months**, and **age** to make predictions (top signals among 14 features).\n\n**Caveats:**\n- Small dataset (n=30): metrics can be unstable and may look better than real-world performance.\n- Accuracy is very high (1.000) on a modest sample — treat as a possible overfit / lucky split, not production-ready.\n- Near-perfect accuracy often signals leakage or a trivial target — double-check features.\n\n**Feature prep:**\n- Excluded likely ID columns from features: customer_id</p>\n<ul>\n<li><b>accuracy</b>: 1.0</li>\n<li><b>f1</b>: 1.0</li>\n</ul>\n<h2>Statistical Analysis</h2>\n<h3>Finding 1: What&#x27;s correlated with churn?</h3>\n<p>Correlations with target `churn` (Pearson):\n- `monthly_charges`: r=0.878 (strong positive, p=0.0000)\n- `age`: r=0.867 (strong positive, p=0.0000)\n- `tenure_months`: r=0.855 (strong positive, p=0.0000)\n- `total_charges`: r=0.844 (strong positive, p=0.0000)\n- `customer_id`: r=0.058 (weak positive, p=0.7617)\n\nNote: correlation measures linear association only and does not imply causation. Small samples can produce unstable estimates.</p>\n<hr><p class='footer'>Generated by Agentic Data Analyst. Forecasts and statistical results are estimates; verify before business-critical decisions.</p>\n</body>\n</html>\n",
+        "findings": {
+          "quality": {
+            "success": true,
+            "agent": "quality",
+            "row_count": 30,
+            "column_count": 9,
+            "quality_score": 100.0,
+            "missing": {},
+            "duplicate_count": 0,
+            "duplicate_indices": [],
+            "type_issues": [],
+            "outliers": {},
+            "categorical_issues": {},
+            "suggestions": [],
+            "summary": "### Data Quality Report\n**Score:** 100.0/100  |  **Rows:** 30  |  **Columns:** 9\n\n**Missing values:** none detected\n\n**Exact duplicate rows:** 0\n\n**Decisions needed (your call — nothing auto-applied)**\n- `customer_id` looks ID-like (high uniqueness / name pattern). Treat as identifier (exclude from ML features) or keep as a numeric feature?\n  Options: Exclude from ML (treat as ID) | Keep as feature | Show sample values",
+            "summary_for_rag": "Data Quality Report\nData quality score: 100.0/100\nRows: 30, Columns: 9\nMissing columns: 0\nDuplicate rows: 0\nType issues: 0\nColumns with outliers: 0\nCategorical inconsistencies flagged: 0",
+            "decisions": [
+              {
+                "id": "id_or_feature::customer_id",
+                "type": "id_or_feature",
+                "column": "customer_id",
+                "prompt": "`customer_id` looks ID-like (high uniqueness / name pattern). Treat as identifier (exclude from ML features) or keep as a numeric feature?",
+                "options": [
+                  {
+                    "id": "exclude_ml",
+                    "label": "Exclude from ML (treat as ID)"
+                  },
+                  {
+                    "id": "keep_feature",
+                    "label": "Keep as feature"
+                  },
+                  {
+                    "id": "show",
+                    "label": "Show sample values"
+                  }
+                ]
+              }
+            ],
+            "markdown": "### Data Quality Report\n**Score:** 100.0/100  |  **Rows:** 30  |  **Columns:** 9\n\n**Missing values:** none detected\n\n**Exact duplicate rows:** 0\n\n**Decisions needed (your call — nothing auto-applied)**\n- `customer_id` looks ID-like (high uniqueness / name pattern). Treat as identifier (exclude from ML features) or keep as a numeric feature?\n  Options: Exclude from ML (treat as ID) | Keep as feature | Show sample values",
+            "route": "quality"
+          },
+          "ml_results": [
+            {
+              "query": "Train a model to predict which customers are at risk of churn.",
+              "summary": "We've trained a model to predict customer churn using automated machine learning (AutoML). The winning model, LogisticRegression(C=0.5), achieved perfect accuracy and F1 score on the test set, outperforming other candidates. The model relies heavily on monthly charges, tenure months, and age to make predictions. However, we must note that the dataset is very small (only 30 rows), which raises concerns about the model's stability and potential overfitting. The near-perfect accuracy is also a red flag, suggesting that the model may be too closely fit to the training data or that there may be leakage in the features. As a result, these results should be treated with caution and not considered production-ready without further validation and testing on a larger dataset.\n\n**Drivers:** The model relied most on **monthly_charges**, **tenure_months**, and **age** to make predictions (top signals among 14 features).\n\n**Caveats:**\n- Small dataset (n=30): metrics can be unstable and may look better than real-world performance.\n- Accuracy is very high (1.000) on a modest sample — treat as a possible overfit / lucky split, not production-ready.\n- Near-perfect accuracy often signals leakage or a trivial target — double-check features.\n\n**Feature prep:**\n- Excluded likely ID columns from features: customer_id",
+              "metrics": {
+                "accuracy": 1.0,
+                "f1": 1.0
+              },
+              "sql": null
+            }
+          ],
+          "stats_results": [
+            {
+              "query": "What's correlated with churn?",
+              "summary": "Correlations with target `churn` (Pearson):\n- `monthly_charges`: r=0.878 (strong positive, p=0.0000)\n- `age`: r=0.867 (strong positive, p=0.0000)\n- `tenure_months`: r=0.855 (strong positive, p=0.0000)\n- `total_charges`: r=0.844 (strong positive, p=0.0000)\n- `customer_id`: r=0.058 (weak positive, p=0.7617)\n\nNote: correlation measures linear association only and does not imply causation. Small samples can produce unstable estimates.",
+              "metrics": null,
+              "sql": null
+            }
+          ],
+          "forecast_results": [],
+          "sql_results": [
+            {
+              "query": "How many customers are in the dataset?",
+              "summary": "The dataset contains 30 unique customers, as identified by their customer IDs. This means there are 30 individual customers represented in the \"user_data\" table.",
+              "metrics": null,
+              "sql": "SELECT COUNT(customer_id) AS total_customers\nFROM \"user_data\""
+            },
+            {
+              "query": "How many customers churned?",
+              "summary": "According to the data, 15 customers have churned. This means that out of the total customers in the \"user_data\" table, 15 of them have been marked as having stopped using the service (churn = 'Yes').",
+              "metrics": null,
+              "sql": "SELECT COUNT(customer_id) AS churned_customers\nFROM \"user_data\"\nWHERE churn = 'Yes'"
+            },
+            {
+              "query": "How many customers did not churn?",
+              "summary": "The results show that there are 15 customers who did not churn, meaning they are still active or have not stopped using the service. This count only includes customers who are explicitly marked as 'No' for churn in the user data.",
+              "metrics": null,
+              "sql": "SELECT COUNT(customer_id) AS non_churn_customers\nFROM \"user_data\"\nWHERE churn = 'No'"
+            },
+            {
+              "query": "What is the average monthly charges?",
+              "summary": "The average monthly charge for users is approximately $63.79. This means that if you were to add up all the monthly charges for every user and divide by the total number of users, you would get this amount.",
+              "metrics": null,
+              "sql": "SELECT AVG(monthly_charges) AS average_monthly_charges\nFROM user_data"
+            },
+            {
+              "query": "What is the maximum monthly charges in the data?",
+              "summary": "The maximum monthly charge found in the data is $91.50. This means that the highest amount any user is charged per month is $91.50.",
+              "metrics": null,
+              "sql": "SELECT MAX(monthly_charges) AS max_monthly_charges\nFROM \"user_data\""
+            },
+            {
+              "query": "What is the minimum monthly charges?",
+              "summary": "The minimum monthly charge is $39.99. This is the lowest monthly charge found in the user data.",
+              "metrics": null,
+              "sql": "SELECT MIN(monthly_charges) AS min_monthly_charges\nFROM user_data"
+            },
+            {
+              "query": "What is the sum of total charges for all customers?",
+              "summary": "The total sum of charges for all customers is $54,826.17. This is the combined total of all charges incurred by every customer in the database.",
+              "metrics": null,
+              "sql": "SELECT SUM(total_charges) AS total_charges_sum\nFROM \"user_data\""
+            },
+            {
+              "query": "How many customers have Fiber optic internet service?",
+              "summary": "According to the data, there are 16 customers who have Fiber optic internet service. This count only includes customers with Fiber optic service and does not account for customers with other types of internet services.",
+              "metrics": null,
+              "sql": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE internet_service = 'Fiber optic'"
+            },
+            {
+              "query": "How many customers have DSL internet service?",
+              "summary": "The results show that there are 13 customers who have DSL internet service. This count only includes customers with DSL service and does not account for customers with other types of internet services.",
+              "metrics": null,
+              "sql": "SELECT COUNT(customer_id) AS dsl_customers\nFROM \"user_data\"\nWHERE internet_service = 'DSL'"
+            },
+            {
+              "query": "How many customers are on a Month-to-month contract?",
+              "summary": "There are 15 customers who are currently on a Month-to-month contract. This count only includes customers with this specific contract type and does not account for customers with other types of contracts or any other characteristics.",
+              "metrics": null,
+              "sql": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE contract_type = 'Month-to-month'"
+            },
+            {
+              "query": "How many customers have a Two year contract?",
+              "summary": "The results show that there are 7 customers who have a contract type of 'Two year'. This means that out of the total number of customers in the database, 7 of them are currently under a 2-year contract.",
+              "metrics": null,
+              "sql": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE contract_type = 'Two year'"
+            },
+            {
+              "query": "How many customers have a One year contract?",
+              "summary": "According to the data, there are 8 customers who have a contract that is specifically classified as a 'One year' contract. This count only includes customers with this exact contract type and does not account for customers with other contract durations.",
+              "metrics": null,
+              "sql": "SELECT COUNT(customer_id) AS one_year_contract_customers\nFROM \"user_data\"\nWHERE contract_type = 'One year'"
+            },
+            {
+              "query": "How many customers are older than 50?",
+              "summary": "The results show that there are 7 customers in the database who are older than 50. This count only includes customers with an age greater than 50, as specified in the query. No other factors, such as location or purchase history, were considered in this count.",
+              "metrics": null,
+              "sql": "SELECT COUNT(customer_id) AS num_customers\nFROM \"user_data\"\nWHERE age > 50"
+            },
+            {
+              "query": "What is the average tenure in months?",
+              "summary": "The average tenure, or length of time users have been with the service, is approximately 25 months. This is calculated by taking the average of the \"tenure_months\" values for all users in the database.",
+              "metrics": null,
+              "sql": "SELECT AVG(tenure_months) AS average_tenure\nFROM user_data"
+            },
+            {
+              "query": "How many customers are there for each internet service type?",
+              "summary": "The results show the number of customers for each type of internet service. There are 16 customers with Fiber optic internet, 13 with DSL, and 1 customer with no internet service. The results are listed in order from most customers to least, with Fiber optic having the most customers.",
+              "metrics": null,
+              "sql": "SELECT \n  internet_service, \n  COUNT(customer_id) AS customer_count\nFROM \n  \"user_data\"\nGROUP BY \n  internet_service\nORDER BY \n  customer_count DESC"
+            },
+            {
+              "query": "Show the count of customers by contract type.",
+              "summary": "The results show the number of customers grouped by their contract type. There are 3 types of contracts: Month-to-month, One year, and Two year. \n\n- The most common contract type is Month-to-month, with 15 customers.\n- The One year contract has 8 customers.\n- The Two year contract has the fewest customers, with 7.\n\nThis query provides a clear breakdown of the customer distribution across different contract types, but it does not provide information about other potential customer characteristics or contract details.",
+              "metrics": null,
+              "sql": "SELECT \n  contract_type, \n  COUNT(customer_id) AS customer_count\nFROM \n  \"user_data\"\nGROUP BY \n  contract_type\nORDER BY \n  customer_count DESC"
+            }
+          ],
+          "dataset": {
+            "rows": 30,
+            "columns": 9,
+            "column_names": [
+              "customer_id",
+              "age",
+              "tenure_months",
+              "monthly_charges",
+              "total_charges",
+              "contract_type",
+              "payment_method",
+              "internet_service",
+              "churn"
+            ]
+          }
+        },
+        "summary": "Here is a 2-4 sentence executive summary for a business manager:\nOur analysis of customer data has identified key factors that contribute to customer churn, including monthly charges, tenure, and age. A machine learning model was trained to predict churn and achieved high accuracy using these factors. The strong correlations between these factors and churn suggest that customers with higher monthly charges, longer tenure, and older age are more likely to stop doing business with us. This insight can inform strategies to retain high-value customers and reduce churn.",
+        "summary_for_rag": "Generated analysis report.\nExecutive summary: Here is a 2-4 sentence executive summary for a business manager:\nOur analysis of customer data has identified key factors that contribute to customer churn, including monthly charges, tenure, and age. A machine learning model was trained to predict churn and achieved high accuracy using these factors. The strong correlations between these factors and churn suggest that customers with higher monthly charges, longer tenure, and older age are more likely to stop doing business with us. This insight can inform strategies to retain high-value customers and reduce churn.",
+        "route": "report",
+        "_metrics": {
+          "tokens_estimated": true,
+          "prompt_tokens_used": 13,
+          "completion_tokens_used": 143,
+          "correctness_note": "coherent analysis summary"
+        }
+      }
+    }
+  ],
+  "correctness_rate": 0.9523809523809523,
+  "hallucination_rate": 0.047619047619047616,
+  "tool_call_accuracy": 1.0,
+  "latency_p50_ms": 5820.348100038245,
+  "latency_p95_ms": 10671.333300007973,
+  "total_cost_usd": 0.00147276
+}
