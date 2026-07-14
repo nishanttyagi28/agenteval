@@ -1,0 +1,233 @@
+# Golden suite for Agentic Data Analyst — customer_churn.csv (30 rows).
+# Ground truth computed from sample_data/customer_churn.csv.
+# Tool names match DataAnalystAdapter ROUTE_TO_TOOL (sql_agent, stats_agent, ...).
+#
+# correctness_type: exact | numeric | numeric_table | contains | llm_judge
+# Metrics scoring is NOT applied yet; expects are for the future metrics step.
+
+# ── SQL / aggregation (deterministic) ───────────────────────────────────────
+
+- id: total_customers
+  prompt: "How many customers are in the dataset?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 30
+    numeric_tolerance: 0
+  tags: [sql, count, churn]
+
+- id: churned_customers_count
+  prompt: "How many customers churned?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 15
+    numeric_tolerance: 0
+  tags: [sql, churn]
+
+- id: retained_customers_count
+  prompt: "How many customers did not churn?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 15
+    numeric_tolerance: 0
+  tags: [sql, churn]
+
+- id: avg_monthly_charges
+  prompt: "What is the average monthly charges?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 63.78
+    numeric_tolerance: 0.05
+  tags: [sql, aggregation]
+
+- id: max_monthly_charges
+  prompt: "What is the maximum monthly charges in the data?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 91.5
+    numeric_tolerance: 0.01
+  tags: [sql, aggregation]
+
+- id: min_monthly_charges
+  prompt: "What is the minimum monthly charges?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 39.99
+    numeric_tolerance: 0.01
+  tags: [sql, aggregation]
+
+- id: sum_total_charges
+  prompt: "What is the sum of total charges for all customers?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 54826.17
+    numeric_tolerance: 0.5
+  tags: [sql, aggregation]
+
+- id: fiber_optic_count
+  prompt: "How many customers have Fiber optic internet service?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 16
+    numeric_tolerance: 0
+  tags: [sql, filter]
+
+- id: dsl_count
+  prompt: "How many customers have DSL internet service?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 13
+    numeric_tolerance: 0
+  tags: [sql, filter]
+
+- id: month_to_month_count
+  prompt: "How many customers are on a Month-to-month contract?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 15
+    numeric_tolerance: 0
+  tags: [sql, filter, contract]
+
+- id: two_year_contract_count
+  prompt: "How many customers have a Two year contract?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 7
+    numeric_tolerance: 0
+  tags: [sql, filter, contract]
+
+- id: one_year_contract_count
+  prompt: "How many customers have a One year contract?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 8
+    numeric_tolerance: 0
+  tags: [sql, filter, contract]
+
+- id: customers_age_over_50
+  prompt: "How many customers are older than 50?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth: 7
+    numeric_tolerance: 0
+  tags: [sql, filter]
+
+- id: avg_tenure_months
+  prompt: "What is the average tenure in months?"
+  expects:
+    correctness_type: numeric
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    # True mean ≈ 25.23 — rounding to 25 is a real error the harness must catch
+    ground_truth: 25.23
+    numeric_tolerance: 0.05
+  tags: [sql, aggregation]
+
+- id: internet_service_counts_table
+  prompt: "How many customers are there for each internet service type?"
+  expects:
+    correctness_type: numeric_table
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth:
+      "Fiber optic": 16
+      DSL: 13
+      "No": 1
+    numeric_tolerance: 0
+  tags: [sql, groupby]
+
+- id: contract_type_counts_table
+  prompt: "Show the count of customers by contract type."
+  expects:
+    correctness_type: numeric_table
+    must_call_tools: [sql_agent]
+    must_not_hallucinate: true
+    ground_truth:
+      Month-to-month: 15
+      "One year": 8
+      "Two year": 7
+    numeric_tolerance: 0
+  tags: [sql, groupby]
+
+# ── Quality / insights / stats / ML / report (routing + open-ended) ──────────
+
+- id: data_quality_report
+  prompt: "Show me a data quality report for this dataset."
+  expects:
+    correctness_type: contains
+    must_call_tools: [quality_agent]
+    must_not_hallucinate: false
+    ground_truth: "quality"
+    numeric_tolerance: 0.01
+  tags: [quality]
+
+- id: proactive_insights
+  prompt: "Suggest what to explore in this data."
+  expects:
+    correctness_type: llm_judge
+    must_call_tools: [insight_agent]
+    must_not_hallucinate: false
+    ground_truth: >
+      Pass if the answer proposes multiple concrete, data-specific exploration ideas
+      (e.g. correlations, group comparisons, modeling targets) for the uploaded customer
+      dataset. Wording may vary; do not require any exact keyword.
+    numeric_tolerance: 0.01
+  tags: [insight]
+
+- id: correlated_with_churn
+  prompt: "What's correlated with churn?"
+  expects:
+    correctness_type: llm_judge
+    must_call_tools: [stats_agent]
+    must_not_hallucinate: false
+    ground_truth: "Features most associated with churn should be ranked or discussed with caveats; no invented columns."
+    numeric_tolerance: 0.01
+  tags: [stats, churn]
+
+- id: train_churn_classifier
+  prompt: "Train a model to predict which customers are at risk of churn."
+  expects:
+    correctness_type: llm_judge
+    must_call_tools: [ml_agent]
+    must_not_hallucinate: false
+    ground_truth: "Should run classification/AutoML on churn; report metrics without inventing nonexistent columns."
+    numeric_tolerance: 0.01
+  tags: [ml, churn]
+
+- id: generate_analysis_report
+  prompt: "Generate a report summarizing the analysis so far."
+  expects:
+    correctness_type: llm_judge
+    must_call_tools: [report_agent]
+    must_not_hallucinate: false
+    ground_truth: >
+      Pass if the answer is a coherent analysis summary or executive write-up based on
+      session findings (churn, quality, stats, models, etc.). Accept HTML report body,
+      markdown, or plain executive summary. Do not require the literal word "report".
+    numeric_tolerance: 0.01
+  tags: [report]
