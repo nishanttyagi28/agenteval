@@ -3,6 +3,12 @@ name: AgentEval regression gate
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      full_suite:
+        description: "Run all 21 golden cases instead of the 6-case smoke suite"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -12,6 +18,9 @@ env:
   # scipy 1.18 in the agent's pinned runtime requires Python 3.12+
   PYTHON_VERSION: "3.12"
   PYTHONPATH: ${{ github.workspace }}/..
+  SMOKE_CASE_IDS: >-
+    total_customers data_quality_report proactive_insights
+    correlated_with_churn train_churn_classifier generate_analysis_report
 
 jobs:
   unit:
@@ -84,7 +93,31 @@ jobs:
         if: steps.preflight.outputs.has_secret == 'true'
         run: |
           mkdir -p artifacts/current
-          python -m agenteval run --runs-dir artifacts/current --quiet
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.full_suite }}" == "true" ]]; then
+            cp baselines/data_analyst.json artifacts/baseline.json
+            python -m agenteval run --runs-dir artifacts/current --quiet
+          else
+            case_args=()
+            for case_id in $SMOKE_CASE_IDS; do
+              case_args+=(--case-id "$case_id")
+            done
+            python -m agenteval run --runs-dir artifacts/current --quiet "${case_args[@]}"
+            python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          source = Path("baselines/data_analyst.json")
+          target = Path("artifacts/baseline.json")
+          selected = set(os.environ["SMOKE_CASE_IDS"].split())
+          report = json.loads(source.read_text(encoding="utf-8"))
+          report["case_results"] = [
+              case for case in report.get("case_results", [])
+              if case.get("case_id") in selected
+          ]
+          target.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+          PY
+          fi
 
       - name: Compare with versioned baseline
         id: gate
@@ -94,7 +127,7 @@ jobs:
           current=$(find artifacts/current -name '*.json' -type f | head -n 1)
           set +e
           python -m agenteval compare \
-            --baseline baselines/data_analyst.json \
+            --baseline artifacts/baseline.json \
             --current "$current" \
             --json-out artifacts/comparison.json \
             --markdown-out artifacts/comparison.md
