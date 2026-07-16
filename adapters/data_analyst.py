@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 import time
 import uuid
+from contextlib import nullcontext
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,22 @@ ROUTE_TO_TOOL: dict[str, str] = {
     "rag": "rag_agent",
     "general": "general",
 }
+
+
+@dataclass
+class _EmptyUsage:
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    calls: int = 0
+    model: str = "unknown"
+
+
+def _usage_capture():
+    """Use provider tracking when the agent version supports it, else remain compatible."""
+    from agents import llm_client
+
+    capture = getattr(llm_client, "capture_llm_usage", None)
+    return capture() if callable(capture) else nullcontext(_EmptyUsage())
 
 
 def _extract_final_answer(result: dict[str, Any]) -> str:
@@ -103,17 +121,27 @@ class DataAnalystAdapter(AgentAdapter):
 
     def run(self, prompt: str) -> AgentRun:
         started = time.perf_counter()
-        result = self.orchestrator.handle_query(prompt)
+        with _usage_capture() as usage:
+            result = self.orchestrator.handle_query(prompt)
         latency_ms = (time.perf_counter() - started) * 1000.0
         if not isinstance(result, dict):
             result = {"success": False, "error": str(result), "route": "none"}
         tools, nodes = _tools_and_nodes(result)
+        raw = dict(result)
+        raw["_llm_usage"] = {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.prompt_tokens + usage.completion_tokens,
+            "calls": usage.calls,
+            "model": usage.model,
+            "provider_reported": usage.calls > 0,
+        }
         return AgentRun(
             final_answer=_extract_final_answer(result),
             tools_called=tools,
             nodes_fired=nodes,
-            prompt_tokens=None,
-            completion_tokens=None,
+            prompt_tokens=usage.prompt_tokens if usage.calls > 0 else None,
+            completion_tokens=usage.completion_tokens if usage.calls > 0 else None,
             latency_ms=latency_ms,
-            raw=result,
+            raw=raw,
         )
