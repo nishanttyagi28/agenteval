@@ -15,6 +15,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         resolve_agent_repo,
     )
     from agenteval.core.metrics import format_report_summary
+    from agenteval.core.provenance import collect_provenance
     from agenteval.core.runner import DEFAULT_GOLDEN_PATH, run_golden_suite
     from agenteval.core.store import DEFAULT_RUNS_DIR, save_run_report
 
@@ -49,6 +50,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
         stop_on_error=args.stop_on_error,
         score=not args.no_score,
         use_llm_judge=not args.no_llm_judge,
+    )
+    report.provenance = collect_provenance(
+        agenteval_repo=Path(__file__).resolve().parent,
+        agent_repo=agent_repo,
+        cases_path=cases_path,
+        dataset_path=csv_path,
     )
     out = save_run_report(report, runs_dir=args.runs_dir or DEFAULT_RUNS_DIR)
     print(f"saved {out}")
