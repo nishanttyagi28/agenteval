@@ -55,6 +55,22 @@ def test_evaluator_errors_are_excluded_from_denominator():
     assert aggregated.evaluator_error_count == 1
 
 
+def test_provider_error_is_not_scored_as_hallucination():
+    case = numeric_case()
+    result = score_case(
+        case,
+        CaseResult(
+            case_id=case.id,
+            prompt=case.prompt,
+            final_answer="429 rate limit; try again in 3 seconds",
+            raw={"success": False, "error": "429 rate limit", "route": "sql"},
+        ),
+    )
+    assert result.status == "agent_error"
+    assert result.correctness_pass is None
+    assert result.hallucination_flag is False
+
+
 def test_break_rate_uses_only_executed_adversarial_cases():
     report = RunReport(
         case_results=[
