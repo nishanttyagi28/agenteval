@@ -9,7 +9,8 @@ permissions:
   pull-requests: write
 
 env:
-  PYTHON_VERSION: "3.11"
+  # scipy 1.18 in the agent's pinned runtime requires Python 3.12+
+  PYTHON_VERSION: "3.12"
   PYTHONPATH: ${{ github.workspace }}/..
 
 jobs:
@@ -106,13 +107,16 @@ jobs:
         run: |
           if [ -f artifacts/comparison.md ]; then
             cat artifacts/comparison.md >> "$GITHUB_STEP_SUMMARY"
-          else
+          elif [ "${{ steps.preflight.outputs.has_secret }}" != "true" ]; then
             echo "## Live evaluation skipped" >> "$GITHUB_STEP_SUMMARY"
             echo "Add the GROQ_API_KEY Actions secret to enable the 21-case regression gate." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Live evaluation did not produce a report" >> "$GITHUB_STEP_SUMMARY"
+            echo "Inspect the dependency and evaluation steps above for the root cause." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload evaluation evidence
-        if: always() && steps.preflight.outputs.has_secret == 'true'
+        if: always() && hashFiles('artifacts/**') != ''
         uses: actions/upload-artifact@v4
         with:
           name: agenteval-${{ github.sha }}
