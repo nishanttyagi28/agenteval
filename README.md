@@ -2,7 +2,7 @@
 
 **CI for AI agents** — an evaluation & regression harness that runs an LLM agent against a golden test suite, scores it on correctness, hallucination, tool-call accuracy, latency and cost, tracks those metrics across prompt versions to catch regressions, and reports everything in a Streamlit dashboard.
 
-Adversarial generation and break-rate tracking are the next robustness layer on the roadmap; the current CI gate uses the hand-written golden suite only.
+It also generates reviewable adversarial variants and measures their **break-rate**. Adversarial cases stay outside the blocking CI gate until a human approves them.
 
 Think **pytest + GitHub Actions, but for LLM agents.**
 
@@ -117,13 +117,28 @@ python -m streamlit run agenteval/dashboard/app.py
 
 ---
 
+## Adversarial robustness
+
+Generate three expectation-preserving candidates per golden case:
+
+```bash
+python -m agenteval generate \
+  --cases agenteval/tests/golden/analyst_cases.yaml \
+  --variants 3 \
+  --output agenteval/tests/adversarial/candidates.yaml
+```
+
+Each candidate retains the original ground truth and tool expectations, records its parent and mutation type, and starts with `review_status: candidate`. Review the YAML before running it. The existing runner and metrics calculate break-rate; generated cases are not part of the blocking golden CI gate.
+
+---
+
 ## Roadmap
 
 - [x] Adapter + golden suite + runner + five metrics + LLM judge
 - [x] Baseline compare + regression detection
 - [x] Streamlit dashboard (summary / regression / per-case drill-down)
 - [x] GitHub Actions gate — unit tests plus a live golden-suite regression decision
-- [ ] Adversarial case generator — auto-produce hostile variants of each golden case and report a **break-rate** that trends over time
+- [x] Adversarial candidate generator + break-rate dashboard (kept outside the blocking CI gate)
 
 ---
 
