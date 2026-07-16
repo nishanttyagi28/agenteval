@@ -2,7 +2,7 @@
 
 **CI for AI agents** — an evaluation & regression harness that runs an LLM agent against a golden test suite, scores it on correctness, hallucination, tool-call accuracy, latency and cost, tracks those metrics across prompt versions to catch regressions, and reports everything in a Streamlit dashboard.
 
-It also auto-generates *adversarial* test cases to break the agent before production does.
+Adversarial generation and break-rate tracking are the next robustness layer on the roadmap; the current CI gate uses the hand-written golden suite only.
 
 Think **pytest + GitHub Actions, but for LLM agents.**
 
@@ -96,14 +96,23 @@ Test cases live in YAML — no code needed to add one:
 ## Quickstart
 
 ```bash
+# keep both repositories as siblings
+git clone https://github.com/nishanttyagi28/agentic-data-analyst
+git clone https://github.com/nishanttyagi28/agenteval
+
+# from their parent directory
+export AGENTIC_ANALYST_PATH="$PWD/agentic-data-analyst"
+
 # run the golden suite
 python -m agenteval run
 
-# compare the latest run to a baseline (non-zero exit on regression)
-python -m agenteval compare
+# compare an explicit current run to the versioned baseline
+python -m agenteval compare \
+  --baseline agenteval/baselines/data_analyst.json \
+  --current agenteval/runs/<run>.json
 
 # open the dashboard
-streamlit run dashboard/app.py
+python -m streamlit run agenteval/dashboard/app.py
 ```
 
 ---
@@ -113,7 +122,7 @@ streamlit run dashboard/app.py
 - [x] Adapter + golden suite + runner + five metrics + LLM judge
 - [x] Baseline compare + regression detection
 - [x] Streamlit dashboard (summary / regression / per-case drill-down)
-- [ ] GitHub Actions gate — fail a PR when correctness drops below baseline
+- [x] GitHub Actions gate — unit tests plus a live golden-suite regression decision
 - [ ] Adversarial case generator — auto-produce hostile variants of each golden case and report a **break-rate** that trends over time
 
 ---
