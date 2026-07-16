@@ -157,6 +157,21 @@ def compare_runs(
         )
         for case_id in all_case_ids
     ]
+    missing_cases = sum(
+        1
+        for transition in transitions
+        if transition.baseline_status != "missing"
+        and transition.current_status == "missing"
+    )
+    if missing_cases:
+        reasons.append(f"current run is missing {missing_cases} baseline case(s)")
+
+    skipped_cases = sum(
+        1 for transition in transitions if transition.current_status == "skipped"
+    )
+    if skipped_cases:
+        reasons.append(f"current run contains {skipped_cases} skipped case(s)")
+
     evaluator_errors = sum(
         1 for transition in transitions if transition.current_status == "evaluator_error"
     )
