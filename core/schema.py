@@ -16,6 +16,15 @@ class CorrectnessType(str, Enum):
     llm_judge = "llm_judge"
 
 
+class EvaluationStatus(str, Enum):
+    unscored = "unscored"
+    passed = "passed"
+    failed = "failed"
+    agent_error = "agent_error"
+    evaluator_error = "evaluator_error"
+    skipped = "skipped"
+
+
 @dataclass
 class Expects:
     """Expectations for a single golden (or adversarial) test case."""
@@ -51,6 +60,7 @@ class TestCase:
     # Reserved for §9b adversarial generation (optional on golden cases)
     source: str | None = None
     parent_id: str | None = None
+    mutation_type: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TestCase:
@@ -64,6 +74,7 @@ class TestCase:
             tags=list(data.get("tags") or []),
             source=data.get("source"),
             parent_id=data.get("parent_id"),
+            mutation_type=data.get("mutation_type"),
         )
 
 
@@ -73,6 +84,10 @@ class CaseResult:
 
     case_id: str
     prompt: str
+    status: str = EvaluationStatus.unscored.value
+    source: str | None = None
+    parent_id: str | None = None
+    mutation_type: str | None = None
     final_answer: str = ""
     tools_called: list[str] = field(default_factory=list)
     nodes_fired: list[str] = field(default_factory=list)
@@ -108,6 +123,9 @@ class RunReport:
     latency_p50_ms: float | None = None
     latency_p95_ms: float | None = None
     total_cost_usd: float | None = None
+    evaluator_error_count: int = 0
+    break_rate: float | None = None
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
