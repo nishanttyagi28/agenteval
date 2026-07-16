@@ -44,15 +44,8 @@ def extract_numbers(text: str) -> list[float]:
 
 
 def numbers_close(a: float, b: float, tolerance: float) -> bool:
-    """Absolute tolerance, with a small relative cushion for large values."""
-    tol = abs(tolerance)
-    if math.isclose(a, b, rel_tol=0.0, abs_tol=tol):
-        return True
-    # relative 0.1% when |b| is large (helps sum/avg phrasing)
-    if b != 0 and abs(a - b) / abs(b) <= max(tol / max(abs(b), 1.0), 1e-4):
-        if abs(a - b) <= max(tol * 10, abs(b) * 0.001):
-            return True
-    return abs(a - b) <= tol
+    """Use only the absolute tolerance explicitly configured in YAML."""
+    return math.isclose(a, b, rel_tol=0.0, abs_tol=abs(tolerance))
 
 
 def flatten_ground_truth_numbers(ground_truth: Any) -> list[float]:
@@ -272,8 +265,8 @@ def tool_call_precision_recall(
     if not expected and not actual:
         return 1.0, 1.0
     if not expected:
-        # No requirement: precision is 1 if we don't penalize extras; treat as perfect recall
-        return 1.0, 1.0
+        # Calling an unexpected tool is observable routing noise, not a perfect result.
+        return (0.0, 1.0) if actual else (1.0, 1.0)
     if not actual:
         return 0.0, 0.0
 
@@ -362,7 +355,8 @@ def score_case(
         )
         return replace(
             result,
-            correctness_pass=False,
+            status="agent_error",
+            correctness_pass=None,
             hallucination_flag=False,
             tool_call_precision=prec,
             tool_call_recall=rec,
@@ -399,10 +393,21 @@ def score_case(
         "correctness_note": note,
     }
 
+    evaluator_error = bool(
+        note
+        and (
+            note.lower().startswith("judge error")
+            or note.lower().startswith("unparseable judge output")
+            or note.lower() in {"empty judge response", "llm_judge skipped"}
+        )
+    )
+    status = "evaluator_error" if evaluator_error else ("passed" if ok else "failed")
+
     return replace(
         result,
-        correctness_pass=ok,
-        hallucination_flag=hall,
+        status=status,
+        correctness_pass=None if evaluator_error else ok,
+        hallucination_flag=False if evaluator_error else hall,
         tool_call_precision=prec,
         tool_call_recall=rec,
         cost_usd=cost,
@@ -415,7 +420,13 @@ def score_case(
 def aggregate_report(report: RunReport) -> RunReport:
     """Compute suite-level aggregates from already-scored CaseResults."""
     scored = list(report.case_results)
-    n = len(scored)
+    eligible = [
+        case
+        for case in scored
+        if case.status not in {"agent_error", "evaluator_error", "skipped"}
+        and case.correctness_pass is not None
+    ]
+    n = len(eligible)
     if n == 0:
         return replace(
             report,
@@ -426,13 +437,15 @@ def aggregate_report(report: RunReport) -> RunReport:
             latency_p50_ms=0.0,
             latency_p95_ms=0.0,
             total_cost_usd=0.0,
+            evaluator_error_count=sum(1 for c in scored if c.status == "evaluator_error"),
+            break_rate=None,
         )
 
-    correctness_rate = sum(1 for c in scored if c.correctness_pass is True) / n
-    hallucination_rate = sum(1 for c in scored if c.hallucination_flag is True) / n
+    correctness_rate = sum(1 for c in eligible if c.correctness_pass is True) / n
+    hallucination_rate = sum(1 for c in eligible if c.hallucination_flag is True) / n
 
     f1s: list[float] = []
-    for c in scored:
+    for c in eligible:
         p = c.tool_call_precision if c.tool_call_precision is not None else 0.0
         r = c.tool_call_recall if c.tool_call_recall is not None else 0.0
         f1s.append(tool_call_f1(p, r))
@@ -440,6 +453,13 @@ def aggregate_report(report: RunReport) -> RunReport:
 
     latencies = [c.latency_ms for c in scored]
     total_cost = sum(c.cost_usd or 0.0 for c in scored)
+    evaluator_errors = sum(1 for c in scored if c.status == "evaluator_error")
+    adversarial = [c for c in eligible if c.source == "adversarial"]
+    break_rate = (
+        sum(1 for c in adversarial if c.correctness_pass is False) / len(adversarial)
+        if adversarial
+        else None
+    )
 
     return replace(
         report,
@@ -450,6 +470,8 @@ def aggregate_report(report: RunReport) -> RunReport:
         latency_p50_ms=percentile(latencies, 50),
         latency_p95_ms=percentile(latencies, 95),
         total_cost_usd=total_cost,
+        evaluator_error_count=evaluator_errors,
+        break_rate=break_rate,
     )
 
 
@@ -487,7 +509,7 @@ def format_report_summary(report: RunReport) -> str:
         "--- per case ---",
     ]
     for c in report.case_results:
-        flag = "PASS" if c.correctness_pass else "FAIL"
+        flag = c.status.upper()
         hall = "HALL" if c.hallucination_flag else "ok"
         tools = ",".join(c.tools_called) or "-"
         lines.append(
