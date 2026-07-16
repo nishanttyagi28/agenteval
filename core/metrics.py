@@ -206,6 +206,11 @@ def check_hallucination(
       OR if every GT value is present (supporting context is OK).
     - If any GT number is missing and the answer asserts other non-trivial numbers
       not matching GT → True (invented / wrong claims).
+
+    Hallucination matching intentionally applies a minimum absolute tolerance of
+    0.01 to avoid labeling harmless numeric formatting noise as fabrication.
+    This is separate from correctness: correctness continues to use exactly the
+    YAML-configured tolerance, so the floor cannot turn a wrong answer into a pass.
     """
     if not expects.must_not_hallucinate:
         return False
