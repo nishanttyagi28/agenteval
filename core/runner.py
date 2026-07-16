@@ -23,6 +23,9 @@ def agent_run_to_case_result(case: TestCase, agent_run: AgentRun) -> CaseResult:
     return CaseResult(
         case_id=case.id,
         prompt=case.prompt,
+        source=case.source,
+        parent_id=case.parent_id,
+        mutation_type=case.mutation_type,
         final_answer=agent_run.final_answer,
         tools_called=list(agent_run.tools_called),
         nodes_fired=list(agent_run.nodes_fired),
@@ -88,6 +91,10 @@ def run_suite(
             result = CaseResult(
                 case_id=case.id,
                 prompt=case.prompt,
+                status="agent_error",
+                source=case.source,
+                parent_id=case.parent_id,
+                mutation_type=case.mutation_type,
                 final_answer="",
                 tools_called=[],
                 nodes_fired=[],
