@@ -54,6 +54,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: nishanttyagi28/agentic-data-analyst
+          # Validate the paired usage/retry PR before it is merged to agent main.
+          ref: codex/llm-usage-tracking
           path: _deps/agentic-data-analyst
 
       - uses: actions/setup-python@v5
