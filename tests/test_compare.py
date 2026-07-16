@@ -69,6 +69,17 @@ def test_evaluator_error_is_not_reported_as_agent_failure():
     assert not result.passed
 
 
+def test_agent_execution_error_fails_loudly_without_becoming_wrong_answer():
+    baseline = report(cases=[{"case_id": "sql", "correctness_pass": True}])
+    current = report(
+        cases=[{"case_id": "sql", "status": "agent_error", "correctness_pass": None}]
+    )
+    result = compare_runs(baseline, current)
+    assert result.agent_error_count == 1
+    assert any("agent execution error" in reason for reason in result.reasons)
+    assert result.case_transitions[0].current_status == "agent_error"
+
+
 def test_case_transitions_include_new_and_missing_cases():
     baseline = report(cases=[{"case_id": "old", "correctness_pass": True}])
     current = report(cases=[{"case_id": "new", "correctness_pass": True}])
