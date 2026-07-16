@@ -57,6 +57,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         cases_path=cases_path,
         dataset_path=csv_path,
     )
+    report.provenance["token_source"] = (
+        "provider_usage"
+        if any(case.prompt_tokens is not None for case in report.case_results)
+        else "character_estimate"
+    )
     out = save_run_report(report, runs_dir=args.runs_dir or DEFAULT_RUNS_DIR)
     print(f"saved {out}")
     print(f"run_id={report.run_id} cases={len(report.case_results)}")
