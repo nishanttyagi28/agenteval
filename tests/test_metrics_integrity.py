@@ -1,5 +1,6 @@
 from agenteval.core.metrics import (
     aggregate_report,
+    check_hallucination,
     numbers_close,
     score_case,
     tool_call_precision_recall,
@@ -23,6 +24,22 @@ def numeric_case(case_id="n", *, source=None):
 def test_numeric_tolerance_has_no_hidden_relative_cushion():
     assert numbers_close(54826.60, 54826.17, 0.5)
     assert not numbers_close(54827.00, 54826.17, 0.5)
+
+
+def test_hallucination_tolerance_floor_is_separate_from_correctness():
+    expects = Expects(
+        correctness_type=CorrectnessType.numeric,
+        ground_truth=25.23,
+        numeric_tolerance=0.0,
+        must_not_hallucinate=True,
+    )
+
+    assert not check_hallucination(
+        expects,
+        "What is the average tenure?",
+        "The average tenure is 25.225 months.",
+        correctness_pass=False,
+    )
 
 
 def test_unexpected_tool_is_penalized():
