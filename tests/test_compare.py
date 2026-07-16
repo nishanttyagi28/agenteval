@@ -77,6 +77,37 @@ def test_case_transitions_include_new_and_missing_cases():
     assert values == {"new": ("missing", "passed"), "old": ("passed", "missing")}
 
 
+def test_missing_baseline_case_fails_gate():
+    baseline = report(
+        cases=[
+            {"case_id": "one", "status": "passed"},
+            {"case_id": "two", "status": "passed"},
+            {"case_id": "three", "status": "passed"},
+        ]
+    )
+    current = report(
+        cases=[
+            {"case_id": "one", "status": "passed"},
+            {"case_id": "two", "status": "passed"},
+        ]
+    )
+
+    result = compare_runs(baseline, current)
+
+    assert not result.passed
+    assert "current run is missing 1 baseline case(s)" in result.reasons
+
+
+def test_skipped_current_case_fails_gate():
+    baseline = report(cases=[{"case_id": "one", "status": "passed"}])
+    current = report(cases=[{"case_id": "one", "status": "skipped"}])
+
+    result = compare_runs(baseline, current)
+
+    assert not result.passed
+    assert "current run contains 1 skipped case(s)" in result.reasons
+
+
 def test_missing_metric_fails_loudly():
     current = report()
     current["correctness_rate"] = None
