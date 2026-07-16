@@ -364,6 +364,33 @@ def score_case(
             judge_reason=str(result.raw.get("error") or "harness_error"),
         )
 
+    # Provider, SQL, ingestion, and other execution failures are not wrong answers.
+    # Keep them out of correctness/hallucination denominators while failing loudly in CI.
+    if result.raw.get("success") is False:
+        prec, rec = tool_call_precision_recall(expects.must_call_tools, result.tools_called)
+        cost, prompt_used, completion_used, estimated = compute_cost_usd(
+            result.prompt_tokens, result.completion_tokens, case.prompt, result.final_answer
+        )
+        error = str(result.raw.get("error") or result.final_answer or "agent execution failed")
+        raw = dict(result.raw or {})
+        raw["_metrics"] = {
+            "tokens_estimated": estimated,
+            "prompt_tokens_used": prompt_used,
+            "completion_tokens_used": completion_used,
+            "correctness_note": "not scored: agent execution error",
+        }
+        return replace(
+            result,
+            status="agent_error",
+            correctness_pass=None,
+            hallucination_flag=False,
+            tool_call_precision=prec,
+            tool_call_recall=rec,
+            cost_usd=cost,
+            judge_reason=error,
+            raw=raw,
+        )
+
     ok, note = check_correctness(
         expects,
         case.prompt,
@@ -438,6 +465,7 @@ def aggregate_report(report: RunReport) -> RunReport:
             latency_p95_ms=0.0,
             total_cost_usd=0.0,
             evaluator_error_count=sum(1 for c in scored if c.status == "evaluator_error"),
+            agent_error_count=sum(1 for c in scored if c.status == "agent_error"),
             break_rate=None,
         )
 
@@ -454,6 +482,7 @@ def aggregate_report(report: RunReport) -> RunReport:
     latencies = [c.latency_ms for c in scored]
     total_cost = sum(c.cost_usd or 0.0 for c in scored)
     evaluator_errors = sum(1 for c in scored if c.status == "evaluator_error")
+    agent_errors = sum(1 for c in scored if c.status == "agent_error")
     adversarial = [c for c in eligible if c.source == "adversarial"]
     break_rate = (
         sum(1 for c in adversarial if c.correctness_pass is False) / len(adversarial)
@@ -471,6 +500,7 @@ def aggregate_report(report: RunReport) -> RunReport:
         latency_p95_ms=percentile(latencies, 95),
         total_cost_usd=total_cost,
         evaluator_error_count=evaluator_errors,
+        agent_error_count=agent_errors,
         break_rate=break_rate,
     )
 
