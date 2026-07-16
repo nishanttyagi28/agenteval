@@ -4,6 +4,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: eval-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: write
@@ -12,11 +16,13 @@ env:
   # scipy 1.18 in the agent's pinned runtime requires Python 3.12+
   PYTHON_VERSION: "3.12"
   PYTHONPATH: ${{ github.workspace }}/..
+  PYTHONUNBUFFERED: "1"
 
 jobs:
   unit:
     name: Deterministic tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +46,7 @@ jobs:
   live-eval:
     name: Live golden evaluation
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: unit
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -86,7 +93,7 @@ jobs:
         if: steps.preflight.outputs.has_secret == 'true'
         run: |
           mkdir -p artifacts/current
-          python -m agenteval run --runs-dir artifacts/current --quiet
+          python -m agenteval run --runs-dir artifacts/current
 
       - name: Compare with versioned baseline
         id: gate
