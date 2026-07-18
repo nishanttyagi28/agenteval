@@ -115,6 +115,38 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     return 0 if result.passed else 1
 
 
+def _cmd_generate(args: argparse.Namespace) -> int:
+    from agenteval.core.generator import generate_suite, write_candidate_yaml
+    from agenteval.core.runner import DEFAULT_GOLDEN_PATH
+    from agenteval.core.schema import load_test_cases
+
+    cases_path = Path(args.cases) if args.cases else DEFAULT_GOLDEN_PATH
+    output = (
+        Path(args.output)
+        if args.output
+        else Path(__file__).resolve().parent / "tests" / "adversarial" / "candidates.yaml"
+    )
+    if output.exists() and not args.overwrite:
+        print(f"error: output exists: {output} (use --overwrite)", file=sys.stderr)
+        return 2
+    try:
+        cases = load_test_cases(cases_path)
+        if args.case_id:
+            wanted = set(args.case_id)
+            cases = [case for case in cases if case.id in wanted]
+        if not cases:
+            raise ValueError("No source cases selected")
+        generated = generate_suite(cases, variants_per_case=args.variants)
+        path = write_candidate_yaml(generated, output)
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"generated={len(generated)} source_cases={len(cases)}")
+    print(f"candidates={path}")
+    print("review_status=candidate (not included in the CI gate)")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agenteval", description="AI agent evaluation harness")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -157,6 +189,14 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_p.add_argument("--json-out", default=None, help="Write machine-readable comparison")
     cmp_p.add_argument("--markdown-out", default=None, help="Write Markdown comparison")
     cmp_p.set_defaults(func=_cmd_compare)
+
+    gen_p = sub.add_parser("generate", help="Generate reviewable adversarial candidates")
+    gen_p.add_argument("--cases", default=None, help="Source golden YAML")
+    gen_p.add_argument("--output", default=None, help="Candidate YAML output")
+    gen_p.add_argument("--variants", type=int, default=3, help="Variants per golden case")
+    gen_p.add_argument("--case-id", action="append", default=None, help="Generate for one case")
+    gen_p.add_argument("--overwrite", action="store_true", help="Replace an existing output")
+    gen_p.set_defaults(func=_cmd_generate)
 
     return parser
 

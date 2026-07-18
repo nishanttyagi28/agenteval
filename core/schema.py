@@ -61,6 +61,7 @@ class TestCase:
     source: str | None = None
     parent_id: str | None = None
     mutation_type: str | None = None
+    review_status: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TestCase:
@@ -75,6 +76,7 @@ class TestCase:
             source=data.get("source"),
             parent_id=data.get("parent_id"),
             mutation_type=data.get("mutation_type"),
+            review_status=data.get("review_status"),
         )
 
 

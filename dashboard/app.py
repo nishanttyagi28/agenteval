@@ -5,6 +5,7 @@ Views:
   1. Latest run summary — big numbers + green/red status
   2. Regression view — latest vs baseline deltas (money screenshot)
   3. Per-case drill-down — prompt / expected / actual / metrics
+  4. Adversarial robustness — break-rate by mutation and parent case
 
 Data source: JSON files under runs/ only. No database, no auth.
 """
@@ -41,6 +42,7 @@ METRICS: list[tuple[str, str, bool, str]] = [
     ("Total cost (USD)", "total_cost_usd", False, "usd"),
     ("Latency p50 (ms)", "latency_p50_ms", False, "ms"),
     ("Latency p95 (ms)", "latency_p95_ms", False, "ms"),
+    ("Adversarial break-rate", "break_rate", False, "pct"),
 ]
 
 # Suite "healthy" thresholds for big green/red status (absolute, not vs baseline)
@@ -192,6 +194,17 @@ def case_by_id(run: dict[str, Any], case_id: str) -> dict[str, Any] | None:
     return None
 
 
+def case_status(case: dict[str, Any]) -> str:
+    explicit = case.get("status")
+    if explicit:
+        return str(explicit)
+    if case.get("correctness_pass") is True:
+        return "passed"
+    if case.get("correctness_pass") is False:
+        return "failed"
+    return "unscored"
+
+
 # ── views ────────────────────────────────────────────────────────────────────
 
 
@@ -205,13 +218,14 @@ def render_summary(run: dict[str, Any], path: Path) -> None:
     else:
         st.error("**STATUS: RED** — " + "; ".join(reasons))
 
-    cols = st.columns(5)
+    cols = st.columns(6)
     big = [
         ("Correctness", "correctness_rate", "pct", True),
         ("Hallucination", "hallucination_rate", "pct", False),
         ("Tool-call acc.", "tool_call_accuracy", "pct", True),
         ("Total cost", "total_cost_usd", "usd", False),
         ("Latency p95", "latency_p95_ms", "ms", False),
+        ("Break-rate", "break_rate", "pct", False),
     ]
     for col, (label, key, kind, higher_better) in zip(cols, big):
         val = metric_value(run, key)
@@ -235,17 +249,19 @@ def render_summary(run: dict[str, Any], path: Path) -> None:
         st.markdown("#### Case outcomes")
         rows = []
         for c in cases:
+            status = case_status(c)
             rows.append(
                 {
                     "case_id": c.get("case_id"),
-                    "pass": 1 if c.get("correctness_pass") else 0,
-                    "fail": 0 if c.get("correctness_pass") else 1,
+                    "pass": 1 if status == "passed" else 0,
+                    "fail": 1 if status == "failed" else 0,
+                    "error": 1 if status in {"agent_error", "evaluator_error"} else 0,
                     "hallucination": 1 if c.get("hallucination_flag") else 0,
                     "latency_ms": float(c.get("latency_ms") or 0),
                 }
             )
         df = pd.DataFrame(rows).set_index("case_id")
-        st.bar_chart(df[["pass", "fail"]])
+        st.bar_chart(df[["pass", "fail", "error"]])
         with st.expander("Latency by case"):
             st.bar_chart(df[["latency_ms"]])
 
@@ -256,6 +272,11 @@ def render_summary(run: dict[str, Any], path: Path) -> None:
             f"**{n_hall}** flagged hallucination · "
             f"adapter=`{run.get('adapter', '?')}` · git=`{run.get('git_sha', '?')}`"
         )
+
+    provenance = run.get("provenance") or {}
+    if provenance:
+        with st.expander("Run provenance"):
+            st.json(provenance)
 
 
 def render_regression(
@@ -328,7 +349,7 @@ def render_regression(
         )
 
     df = pd.DataFrame(table_rows)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
 
     if any_worse:
         st.error("**REGRESSION DETECTED** — one or more metrics got worse vs baseline.")
@@ -386,7 +407,7 @@ def render_regression(
                 "change": change,
             }
         )
-    st.dataframe(pd.DataFrame(flip_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(flip_rows), width="stretch", hide_index=True)
 
 
 def render_drilldown(
@@ -412,7 +433,7 @@ def render_drilldown(
     labels = []
     for i in order:
         c = cases[i]
-        flag = "PASS" if c.get("correctness_pass") else "FAIL"
+        flag = case_status(c).upper()
         hall = " · HALL" if c.get("hallucination_flag") else ""
         labels.append(f"{flag}{hall} — {ids[i]}")
 
@@ -420,11 +441,13 @@ def render_drilldown(
     c = cases[order[choice]]
     cid = c.get("case_id")
 
-    status = c.get("correctness_pass")
-    if status is True:
+    status = case_status(c)
+    if status == "passed":
         st.success(f"**PASS** — `{cid}`")
-    elif status is False:
+    elif status == "failed":
         st.error(f"**FAIL** — `{cid}`")
+    elif status in {"agent_error", "evaluator_error"}:
+        st.error(f"**{status.upper()}** — `{cid}`")
     else:
         st.warning(f"**UNSCORED** — `{cid}`")
 
@@ -442,7 +465,8 @@ def render_drilldown(
     st.markdown("#### Prompt")
     st.code(c.get("prompt") or "", language=None)
 
-    g = golden.get(str(cid) or "", {})
+    expected_id = c.get("parent_id") or cid
+    g = golden.get(str(expected_id) or "", {})
     expects = g.get("expects") or {}
     st.markdown("#### Expected")
     if expects:
@@ -473,6 +497,60 @@ def render_drilldown(
         else:
             slim = {k: v for k, v in raw.items() if k != "raw"}
             st.json(slim)
+
+
+def render_adversarial(run: dict[str, Any]) -> None:
+    st.subheader("Adversarial robustness")
+    cases = [
+        case for case in (run.get("case_results") or []) if case.get("source") == "adversarial"
+    ]
+    if not cases:
+        st.info(
+            "This run contains no adversarial cases. Generate review candidates with "
+            "`python -m agenteval generate`, approve them, then run that YAML through the existing runner."
+        )
+        return
+
+    executed = [
+        case for case in cases if case_status(case) not in {"evaluator_error", "skipped", "unscored"}
+    ]
+    failed = [case for case in executed if case_status(case) in {"failed", "agent_error"}]
+    break_rate = metric_value(run, "break_rate")
+    if break_rate is None and executed:
+        break_rate = len(failed) / len(executed)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Break-rate", fmt_metric(break_rate, "pct"))
+    c2.metric("Variants executed", len(executed))
+    c3.metric("Broken", len(failed))
+    c4.metric(
+        "Evaluator errors",
+        sum(1 for case in cases if case_status(case) == "evaluator_error"),
+    )
+
+    rows = []
+    for case in cases:
+        rows.append(
+            {
+                "case_id": case.get("case_id"),
+                "parent_id": case.get("parent_id"),
+                "mutation_type": case.get("mutation_type") or "unknown",
+                "status": case_status(case),
+                "latency_ms": round(float(case.get("latency_ms") or 0)),
+                "reason": case.get("judge_reason") or "",
+            }
+        )
+    frame = pd.DataFrame(rows)
+    summary = (
+        frame.assign(broken=frame["status"].isin(["failed", "agent_error"]).astype(int))
+        .groupby("mutation_type", as_index=False)
+        .agg(variants=("case_id", "count"), broken=("broken", "sum"))
+    )
+    summary["break_rate"] = summary["broken"] / summary["variants"]
+    st.markdown("#### Robustness by mutation")
+    st.dataframe(summary, width="stretch", hide_index=True)
+    st.markdown("#### Variant evidence")
+    st.dataframe(frame, width="stretch", hide_index=True)
 
 
 # ── app ──────────────────────────────────────────────────────────────────────
@@ -574,8 +652,13 @@ def main() -> None:
         f"tools ≥ {HEALTHY_TOOL_ACC_MIN*100:.0f}%."
     )
 
-    tab1, tab2, tab3 = st.tabs(
-        ["1 · Latest summary", "2 · Regression", "3 · Case drill-down"]
+    tab1, tab2, tab3, tab4 = st.tabs(
+        [
+            "1 · Latest summary",
+            "2 · Regression",
+            "3 · Case drill-down",
+            "4 · Adversarial robustness",
+        ]
     )
     with tab1:
         render_summary(current, latest_path)
@@ -583,6 +666,8 @@ def main() -> None:
         render_regression(current, latest_path, baseline, baseline_path)
     with tab3:
         render_drilldown(current, latest_path, golden)
+    with tab4:
+        render_adversarial(current)
 
 
 if __name__ == "__main__":
