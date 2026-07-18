@@ -1,0 +1,195 @@
+name: AgentEval regression gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      full_suite:
+        description: "Run all 21 golden cases instead of the 6-case smoke suite"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: eval-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  # scipy 1.18 in the agent's pinned runtime requires Python 3.12+
+  PYTHON_VERSION: "3.12"
+  PYTHONPATH: ${{ github.workspace }}/..
+  SMOKE_CASE_IDS: >-
+    total_customers data_quality_report proactive_insights
+    correlated_with_churn train_churn_classifier generate_analysis_report
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  unit:
+    name: Deterministic tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run unit tests
+        run: python -m pytest -q
+
+      - name: Validate CLI
+        run: |
+          python -m agenteval --help
+          python -m agenteval compare --help
+
+  live-eval:
+    name: Live golden evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: unit
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      AGENTIC_ANALYST_PATH: ${{ github.workspace }}/_deps/agentic-data-analyst
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout agent under test
+        uses: actions/checkout@v4
+        with:
+          repository: nishanttyagi28/agentic-data-analyst
+          # The usage collector and bounded Groq retry are merged into agent main.
+          ref: main
+          path: _deps/agentic-data-analyst
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            _deps/agentic-data-analyst/requirements.txt
+
+      - name: Detect Groq secret
+        id: preflight
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "has_secret=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Live evaluation skipped: add GROQ_API_KEY in repository Actions secrets."
+          else
+            echo "has_secret=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install runtime dependencies
+        if: steps.preflight.outputs.has_secret == 'true'
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -r _deps/agentic-data-analyst/requirements.txt
+
+      - name: Run hand-written golden suite
+        if: steps.preflight.outputs.has_secret == 'true'
+        run: |
+          mkdir -p artifacts/current
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.full_suite }}" == "true" ]]; then
+            cp baselines/data_analyst.json artifacts/baseline.json
+            python -m agenteval run --runs-dir artifacts/current --quiet
+          else
+            case_args=()
+            for case_id in $SMOKE_CASE_IDS; do
+              case_args+=(--case-id "$case_id")
+            done
+            python -m agenteval run --runs-dir artifacts/current --quiet "${case_args[@]}"
+            python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          source = Path("baselines/data_analyst.json")
+          target = Path("artifacts/baseline.json")
+          selected = set(os.environ["SMOKE_CASE_IDS"].split())
+          report = json.loads(source.read_text(encoding="utf-8"))
+          report["case_results"] = [
+              case for case in report.get("case_results", [])
+              if case.get("case_id") in selected
+          ]
+          target.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+          PY
+          fi
+
+      - name: Compare with versioned baseline
+        id: gate
+        if: steps.preflight.outputs.has_secret == 'true'
+        shell: bash
+        run: |
+          current=$(find artifacts/current -name '*.json' -type f | head -n 1)
+          set +e
+          python -m agenteval compare \
+            --baseline artifacts/baseline.json \
+            --current "$current" \
+            --json-out artifacts/comparison.json \
+            --markdown-out artifacts/comparison.md
+          gate_exit=$?
+          set -e
+          echo "gate_exit=$gate_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Publish job summary
+        if: always()
+        run: |
+          if [ -f artifacts/comparison.md ]; then
+            cat artifacts/comparison.md >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.preflight.outputs.has_secret }}" != "true" ]; then
+            echo "## Live evaluation skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "Add the GROQ_API_KEY Actions secret to enable the 21-case regression gate." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Live evaluation did not produce a report" >> "$GITHUB_STEP_SUMMARY"
+            echo "Inspect the dependency and evaluation steps above for the root cause." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload evaluation evidence
+        if: always() && hashFiles('artifacts/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: agenteval-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+
+      - name: Update pull request report
+        if: always() && github.event_name == 'pull_request' && hashFiles('artifacts/comparison.md') != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- agenteval-regression-report -->';
+            const report = fs.readFileSync('artifacts/comparison.md', 'utf8');
+            const body = `${marker}\n${report}`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100
+            });
+            const previous = comments.find(comment =>
+              comment.user.type === 'Bot' && comment.body.includes(marker)
+            );
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: previous.id, body
+              });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Enforce regression decision
+        if: always() && steps.preflight.outputs.has_secret == 'true'
+        run: exit "${{ steps.gate.outputs.gate_exit || '2' }}"

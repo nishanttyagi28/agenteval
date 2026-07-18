@@ -3,7 +3,7 @@
 # Tool names match DataAnalystAdapter ROUTE_TO_TOOL (sql_agent, stats_agent, ...).
 #
 # correctness_type: exact | numeric | numeric_table | contains | llm_judge
-# Metrics scoring is NOT applied yet; expects are for the future metrics step.
+# Expectations are scored by core/metrics.py; deterministic checks are preferred.
 
 # ── SQL / aggregation (deterministic) ───────────────────────────────────────
 
