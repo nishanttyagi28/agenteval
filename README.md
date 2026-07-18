@@ -1,5 +1,9 @@
 # AgentEval
 
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://agenteval-6honbe24hradazngswxkrq.streamlit.app/)
+
+**Live dashboard:** [agenteval-6honbe24hradazngswxkrq.streamlit.app](https://agenteval-6honbe24hradazngswxkrq.streamlit.app/)
+
 **CI for AI agents** — an evaluation & regression harness that runs an LLM agent against a golden test suite, scores it on correctness, hallucination, tool-call accuracy, latency and cost, tracks those metrics across prompt versions to catch regressions, and reports everything in a Streamlit dashboard.
 
 It also generates reviewable adversarial variants and measures their **break-rate**. Adversarial cases stay outside the blocking CI gate until a human approves them.
