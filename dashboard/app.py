@@ -13,7 +13,9 @@ Data source: JSON files under runs/ only. No database, no auth.
 from __future__ import annotations
 
 import json
+import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -73,9 +75,61 @@ def candidate_runs_dirs() -> list[Path]:
 def list_run_files(runs_dir: Path) -> list[Path]:
     if not runs_dir.is_dir():
         return []
-    files = sorted(runs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    # Prefer named baseline as selectable, but keep chronological listing
-    return files
+    return list(runs_dir.glob("*.json"))
+
+
+_COMPACT_TIMESTAMP = re.compile(r"(\d{8}T\d{6}Z)")
+
+
+def run_timestamp(path: Path, data: dict[str, Any]) -> float:
+    """Return a stable run timestamp, independent of checkout file mtimes."""
+    raw = data.get("timestamp")
+    if raw:
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.timestamp()
+        except ValueError:
+            pass
+
+    for value in (data.get("run_id"), path.stem):
+        match = _COMPACT_TIMESTAMP.search(str(value or ""))
+        if match:
+            return datetime.strptime(
+                match.group(1), "%Y%m%dT%H%M%SZ"
+            ).replace(tzinfo=timezone.utc).timestamp()
+
+    # Last-resort compatibility for manually named legacy reports.
+    return path.stat().st_mtime
+
+
+def order_run_files(
+    files: list[Path], loaded: dict[Path, dict[str, Any]]
+) -> list[Path]:
+    """Newest report first, using report metadata rather than filesystem order."""
+    return sorted(
+        (path for path in files if path in loaded),
+        key=lambda path: (run_timestamp(path, loaded[path]), path.name),
+        reverse=True,
+    )
+
+
+def default_baseline_index(usable: list[Path], current_path: Path) -> int:
+    """Prefer a pinned baseline, otherwise the newest run older than current."""
+    for index, path in enumerate(usable):
+        if path.name == "baseline.json":
+            return index
+    try:
+        current_index = usable.index(current_path)
+    except ValueError:
+        return 0
+    if current_index + 1 < len(usable):
+        return current_index + 1
+    for index, path in enumerate(usable):
+        if path != current_path:
+            return index
+    return current_index
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -597,40 +651,32 @@ def main() -> None:
         except (OSError, json.JSONDecodeError) as e:
             st.sidebar.warning(f"Skip {p.name}: {e}")
 
-    usable = [p for p in files if p in loaded]
+    usable = order_run_files(files, loaded)
     if not usable:
         st.error("No valid run JSON files.")
         st.stop()
 
-    default_latest = usable[0]
     latest_path = Path(
         st.sidebar.selectbox(
             "Latest / current run",
             options=usable,
             index=0,
+            key="current_run_v2",
             format_func=lambda p: run_label(p, loaded.get(p)),
         )
     )
     current = loaded[latest_path]
 
     # Baseline: prefer baseline.json, else second-newest, else same as current
-    baseline_name = runs_dir / "baseline.json"
     baseline_options = usable
-    default_bi = 0
-    if baseline_name in loaded:
-        default_bi = usable.index(baseline_name)
-    elif len(usable) > 1:
-        # second file in mtime-desc list if latest is [0]
-        if usable[0] == latest_path and len(usable) > 1:
-            default_bi = 1
-        else:
-            default_bi = min(1, len(usable) - 1)
+    default_bi = default_baseline_index(usable, latest_path)
 
     baseline_path = Path(
         st.sidebar.selectbox(
             "Baseline run",
             options=baseline_options,
             index=default_bi,
+            key="baseline_run_v2",
             format_func=lambda p: (
                 f"📌 {run_label(p, loaded.get(p))}"
                 if p.name == "baseline.json"
