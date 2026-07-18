@@ -20,6 +20,7 @@ class GateThresholds:
     max_hallucination_rate: float = 0.10
     min_tool_accuracy: float = 0.90
     fail_on_evaluator_error: bool = True
+    fail_on_agent_error: bool = True
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class ComparisonResult:
     metrics: list[MetricDelta] = field(default_factory=list)
     case_transitions: list[CaseTransition] = field(default_factory=list)
     evaluator_error_count: int = 0
+    agent_error_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -157,11 +159,31 @@ def compare_runs(
         )
         for case_id in all_case_ids
     ]
+    missing_cases = sum(
+        1
+        for transition in transitions
+        if transition.baseline_status != "missing"
+        and transition.current_status == "missing"
+    )
+    if missing_cases:
+        reasons.append(f"current run is missing {missing_cases} baseline case(s)")
+
+    skipped_cases = sum(
+        1 for transition in transitions if transition.current_status == "skipped"
+    )
+    if skipped_cases:
+        reasons.append(f"current run contains {skipped_cases} skipped case(s)")
+
     evaluator_errors = sum(
         1 for transition in transitions if transition.current_status == "evaluator_error"
     )
     if limits.fail_on_evaluator_error and evaluator_errors:
         reasons.append(f"current run contains {evaluator_errors} evaluator error(s)")
+    agent_errors = sum(
+        1 for transition in transitions if transition.current_status == "agent_error"
+    )
+    if limits.fail_on_agent_error and agent_errors:
+        reasons.append(f"current run contains {agent_errors} agent execution error(s)")
 
     return ComparisonResult(
         passed=not reasons,
@@ -169,6 +191,7 @@ def compare_runs(
         metrics=metrics,
         case_transitions=transitions,
         evaluator_error_count=evaluator_errors,
+        agent_error_count=agent_errors,
     )
 
 

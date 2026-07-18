@@ -57,6 +57,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         cases_path=cases_path,
         dataset_path=csv_path,
     )
+    report.provenance["token_source"] = (
+        "provider_usage"
+        if any(case.prompt_tokens is not None for case in report.case_results)
+        else "character_estimate"
+    )
     out = save_run_report(report, runs_dir=args.runs_dir or DEFAULT_RUNS_DIR)
     print(f"saved {out}")
     print(f"run_id={report.run_id} cases={len(report.case_results)}")
@@ -92,6 +97,7 @@ def _cmd_compare(args: argparse.Namespace) -> int:
             max_hallucination_rate=args.max_hallucination_rate,
             min_tool_accuracy=args.min_tool_accuracy,
             fail_on_evaluator_error=not args.allow_evaluator_errors,
+            fail_on_agent_error=not args.allow_agent_errors,
         )
         result = compare_runs(baseline, current, thresholds)
         write_outputs(
@@ -174,6 +180,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-evaluator-errors",
         action="store_true",
         help="Report evaluator errors without failing the gate",
+    )
+    cmp_p.add_argument(
+        "--allow-agent-errors",
+        action="store_true",
+        help="Report agent execution errors without failing the gate",
     )
     cmp_p.add_argument("--json-out", default=None, help="Write machine-readable comparison")
     cmp_p.add_argument("--markdown-out", default=None, help="Write Markdown comparison")

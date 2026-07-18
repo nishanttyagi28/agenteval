@@ -69,12 +69,54 @@ def test_evaluator_error_is_not_reported_as_agent_failure():
     assert not result.passed
 
 
+def test_agent_execution_error_fails_loudly_without_becoming_wrong_answer():
+    baseline = report(cases=[{"case_id": "sql", "correctness_pass": True}])
+    current = report(
+        cases=[{"case_id": "sql", "status": "agent_error", "correctness_pass": None}]
+    )
+    result = compare_runs(baseline, current)
+    assert result.agent_error_count == 1
+    assert any("agent execution error" in reason for reason in result.reasons)
+    assert result.case_transitions[0].current_status == "agent_error"
+
+
 def test_case_transitions_include_new_and_missing_cases():
     baseline = report(cases=[{"case_id": "old", "correctness_pass": True}])
     current = report(cases=[{"case_id": "new", "correctness_pass": True}])
     result = compare_runs(baseline, current)
     values = {item.case_id: (item.baseline_status, item.current_status) for item in result.case_transitions}
     assert values == {"new": ("missing", "passed"), "old": ("passed", "missing")}
+
+
+def test_missing_baseline_case_fails_gate():
+    baseline = report(
+        cases=[
+            {"case_id": "one", "status": "passed"},
+            {"case_id": "two", "status": "passed"},
+            {"case_id": "three", "status": "passed"},
+        ]
+    )
+    current = report(
+        cases=[
+            {"case_id": "one", "status": "passed"},
+            {"case_id": "two", "status": "passed"},
+        ]
+    )
+
+    result = compare_runs(baseline, current)
+
+    assert not result.passed
+    assert "current run is missing 1 baseline case(s)" in result.reasons
+
+
+def test_skipped_current_case_fails_gate():
+    baseline = report(cases=[{"case_id": "one", "status": "passed"}])
+    current = report(cases=[{"case_id": "one", "status": "skipped"}])
+
+    result = compare_runs(baseline, current)
+
+    assert not result.passed
+    assert "current run contains 1 skipped case(s)" in result.reasons
 
 
 def test_missing_metric_fails_loudly():

@@ -126,6 +126,7 @@ class RunReport:
     latency_p95_ms: float | None = None
     total_cost_usd: float | None = None
     evaluator_error_count: int = 0
+    agent_error_count: int = 0
     break_rate: float | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
 
