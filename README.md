@@ -231,7 +231,10 @@ Deterministic tests cover schema and metrics behaviour, error handling, baseline
 - Flakiness is not yet part of CI gating and has no cross-agent comparison view.
 - Numeric-table flakiness currently compares verdicts only rather than extracting and clustering each table cell.
 - The smoke suite's only scalar numeric case currently falls back to verdict consistency because its answer restates the same count; `largest_complete_link_cluster` is covered deterministically but has not yet been exercised by a live CI repeat run.
-- No license file is currently included.
+
+## License
+
+AgentEval is available under the [MIT License](LICENSE).
 
 ---
 
