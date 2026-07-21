@@ -8,6 +8,45 @@ from pathlib import Path
 from typing import Any
 
 
+@dataclass(frozen=True)
+class RepositoryConfig:
+    """How to locate and identify an agent's repository."""
+
+    env_var: str
+    default_path: str | None = None
+    required_paths: tuple[str, ...] = ()
+    ci_repository: str | None = None
+    ci_checkout_path: str | None = None
+
+
+@dataclass(frozen=True)
+class GateConfig:
+    """Default regression thresholds for one registered agent."""
+
+    max_correctness_drop: float = 0.05
+    max_hallucination_rate: float = 0.10
+    min_tool_accuracy: float = 0.90
+    fail_on_evaluator_error: bool = True
+    fail_on_agent_error: bool = True
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    """Validated configuration for one pluggable agent."""
+
+    name: str
+    display_name: str
+    adapter: str
+    repository: RepositoryConfig
+    golden_suite: Path
+    baseline: Path
+    runs_dir: Path
+    enabled: bool = True
+    adapter_options: dict[str, Any] = field(default_factory=dict)
+    gates: GateConfig = field(default_factory=GateConfig)
+    smoke_case_ids: tuple[str, ...] = ()
+
+
 class CorrectnessType(str, Enum):
     exact = "exact"
     numeric = "numeric"

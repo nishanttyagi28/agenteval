@@ -185,3 +185,81 @@ def run_golden_suite(
         score=score,
         use_llm_judge=use_llm_judge,
     )
+
+
+def run_flakiness_suite(
+    adapter: AgentAdapter,
+    cases: Sequence[TestCase],
+    primary_report: RunReport,
+    *,
+    repeat_count: int,
+    agent_name: str,
+    stop_on_error: bool = False,
+    use_llm_judge: bool = True,
+    verbose: bool = True,
+):
+    """Run selected cases to ``repeat_count`` total observations and analyze them.
+
+    The primary observation is reused from ``primary_report``. Only the
+    additional ``repeat_count - 1`` invocations happen here. Consistency logic
+    remains in ``core.flakiness`` and normal suite execution does not call this
+    function.
+    """
+    from agenteval.core.flakiness import (
+        FlakinessReport,
+        analyze_case_flakiness,
+        summarize_flakiness,
+    )
+
+    if repeat_count <= 1:
+        raise ValueError("run_flakiness_suite requires repeat_count > 1")
+    primary_by_id = {result.case_id: result for result in primary_report.case_results}
+    analyzed = []
+    for case in cases:
+        primary = primary_by_id.get(case.id)
+        if primary is None:
+            raise ValueError(f"Primary run is missing repeat case {case.id!r}")
+        observations = [primary]
+        for repeat_index in range(2, repeat_count + 1):
+            if verbose:
+                print(
+                    f"[repeat {repeat_index}/{repeat_count}] {case.id} ...",
+                    flush=True,
+                )
+            try:
+                repeated = run_case(
+                    adapter,
+                    case,
+                    score=True,
+                    use_llm_judge=use_llm_judge,
+                )
+            except Exception as exc:  # noqa: BLE001 — same isolation as run_suite
+                if stop_on_error:
+                    raise
+                repeated = CaseResult(
+                    case_id=case.id,
+                    prompt=case.prompt,
+                    status="agent_error",
+                    source=case.source,
+                    parent_id=case.parent_id,
+                    mutation_type=case.mutation_type,
+                    raw={
+                        "success": False,
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "route": "harness_error",
+                    },
+                )
+                repeated = score_case(case, repeated, use_llm_judge=False)
+            observations.append(repeated)
+        result = analyze_case_flakiness(case, observations)
+        if result is not None:
+            analyzed.append(result)
+
+    summary = summarize_flakiness(analyzed, repeat_count=repeat_count)
+    return FlakinessReport(
+        run_id=primary_report.run_id,
+        agent=agent_name,
+        repeat_count=repeat_count,
+        summary=summary,
+        cases=tuple(analyzed),
+    )

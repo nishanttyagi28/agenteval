@@ -1,0 +1,77 @@
+version: 1
+
+agents:
+  agentic_data_analyst:
+    display_name: Agentic Data Analyst
+    enabled: true
+    adapter: agenteval.adapters.agentic_data_analyst:AgenticDataAnalystAdapter
+    repository:
+      env_var: AGENTIC_ANALYST_PATH
+      default_path: ../agentic-data-analyst
+      required_paths:
+        - agents/orchestrator.py
+        - sample_data/customer_churn.csv
+      ci_repository: nishanttyagi28/agentic-data-analyst
+      ci_checkout_path: _deps/agentic-data-analyst
+    # Keep the current artifact paths until the Phase 2 CLI migration.
+    golden_suite: tests/golden/analyst_cases.yaml
+    baseline: baselines/data_analyst.json
+    runs_dir: runs
+    adapter_options:
+      csv_path: ${AGENT_REPO}/sample_data/customer_churn.csv
+      business_context: ""
+    gates:
+      max_correctness_drop: 0.05
+      max_hallucination_rate: 0.10
+      min_tool_accuracy: 0.90
+      fail_on_evaluator_error: true
+      fail_on_agent_error: true
+    smoke_case_ids:
+      - total_customers
+      - data_quality_report
+      - proactive_insights
+      - correlated_with_churn
+      - train_churn_classifier
+      - generate_analysis_report
+
+  scheme_saathi:
+    display_name: Scheme Saathi
+    enabled: false
+    adapter: agenteval.adapters.scheme_saathi:SchemeSaathiAdapter
+    repository:
+      env_var: SCHEME_SAATHI_PATH
+      default_path: ../scheme-saathi
+      # TODO: add real entrypoint markers after its invocation API is confirmed.
+      required_paths: []
+    golden_suite: tests/golden/scheme_saathi.yaml
+    baseline: baselines/scheme_saathi.json
+    runs_dir: runs/scheme_saathi
+    adapter_options: {}
+    smoke_case_ids: []
+    gates:
+      max_correctness_drop: 0.05
+      max_hallucination_rate: 0.05
+      min_tool_accuracy: 0.90
+      fail_on_evaluator_error: true
+      fail_on_agent_error: true
+
+  contract_shield:
+    display_name: Contract Shield
+    enabled: false
+    adapter: agenteval.adapters.contract_shield:ContractShieldAdapter
+    repository:
+      env_var: CONTRACT_SHIELD_PATH
+      default_path: ../contract-shield
+      # TODO: add real entrypoint markers after its invocation API is confirmed.
+      required_paths: []
+    golden_suite: tests/golden/contract_shield.yaml
+    baseline: baselines/contract_shield.json
+    runs_dir: runs/contract_shield
+    adapter_options: {}
+    smoke_case_ids: []
+    gates:
+      max_correctness_drop: 0.05
+      max_hallucination_rate: 0.05
+      min_tool_accuracy: 0.90
+      fail_on_evaluator_error: true
+      fail_on_agent_error: true
