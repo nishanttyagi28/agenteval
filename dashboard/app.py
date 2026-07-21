@@ -72,6 +72,28 @@ def candidate_runs_dirs() -> list[Path]:
     return out
 
 
+def load_dashboard_agent_sources(
+    registry_path: str | Path | None = None,
+) -> list[tuple[str, str, Path, Path, Path]]:
+    """Return enabled agent names and registry-scoped dashboard paths."""
+    from agenteval.core.registry import DEFAULT_REGISTRY_PATH, load_agent_registry
+
+    path = Path(registry_path) if registry_path else DEFAULT_REGISTRY_PATH
+    root = path.resolve().parent
+    registry = load_agent_registry(path)
+    return [
+        (
+            config.name,
+            config.display_name,
+            (root / config.runs_dir).resolve(),
+            (root / config.baseline).resolve(),
+            (root / config.golden_suite).resolve(),
+        )
+        for config in registry.values()
+        if config.enabled
+    ]
+
+
 def list_run_files(runs_dir: Path) -> list[Path]:
     if not runs_dir.is_dir():
         return []
@@ -158,6 +180,80 @@ def load_golden_expects(golden_path: Path) -> dict[str, dict[str, Any]]:
                 "tags": item.get("tags") or [],
             }
     return out
+
+
+def load_flakiness_runs(
+    agent_name: str,
+    *,
+    runs_root: str | Path | None = None,
+) -> list[tuple[Path, Any]]:
+    """Load valid flakiness sidecars for one agent, newest first."""
+    from agenteval.core.store import load_flakiness_report
+
+    root = Path(runs_root) if runs_root else _PACKAGE_DIR / "runs"
+    directory = root / agent_name / "flakiness"
+    if not directory.is_dir():
+        return []
+    loaded: list[tuple[Path, Any]] = []
+    for path in directory.glob("*.json"):
+        try:
+            loaded.append((path, load_flakiness_report(path)))
+        except (OSError, ValueError):
+            # Flakiness is optional observability. A bad sidecar must not break
+            # the standard dashboard views.
+            continue
+
+    def sort_key(item: tuple[Path, Any]) -> tuple[float, str]:
+        path, report = item
+        match = _COMPACT_TIMESTAMP.search(str(report.run_id))
+        if match:
+            timestamp = datetime.strptime(
+                match.group(1), "%Y%m%dT%H%M%SZ"
+            ).replace(tzinfo=timezone.utc).timestamp()
+        else:
+            timestamp = path.stat().st_mtime
+        return timestamp, str(report.run_id)
+
+    return sorted(loaded, key=sort_key, reverse=True)
+
+
+def latest_flakiness_report(
+    agent_name: str,
+    *,
+    runs_root: str | Path | None = None,
+):
+    """Return the newest valid report, or None when the agent has no sidecar."""
+    reports = load_flakiness_runs(agent_name, runs_root=runs_root)
+    return reports[0][1] if reports else None
+
+
+def flakiness_table_rows(report: Any) -> list[dict[str, Any]]:
+    """Build the display rows used by the conditional Flakiness tab."""
+    return [
+        {
+            "case_id": case.case_id,
+            "consistency": (
+                f"{case.consistent_observations}/{case.total_observations}"
+            ),
+            "pass_rate": f"{case.pass_count}/{case.total_observations}",
+            "classification": case.classification,
+            "comparison_basis": case.comparison_basis,
+        }
+        for case in report.cases
+    ]
+
+
+def dashboard_tab_labels(flakiness_report: Any | None) -> list[str]:
+    """Keep the existing four tabs unless repeat evidence is available."""
+    labels = [
+        "1 · Latest summary",
+        "2 · Regression",
+        "3 · Case drill-down",
+        "4 · Adversarial robustness",
+    ]
+    if flakiness_report is not None:
+        labels.append("5 · Flakiness")
+    return labels
 
 
 def run_label(path: Path, data: dict[str, Any] | None = None) -> str:
@@ -607,6 +703,25 @@ def render_adversarial(run: dict[str, Any]) -> None:
     st.dataframe(frame, width="stretch", hide_index=True)
 
 
+def render_flakiness(report: Any) -> None:
+    """Render opt-in repeat consistency without affecting existing views."""
+    st.subheader("Flakiness / consistency")
+    summary = report.summary
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Repeat count", report.repeat_count)
+    c2.metric("Stable", summary.stable_cases)
+    c3.metric("Flaky", summary.flaky_cases)
+    c4.metric("Unstable", summary.unstable_cases)
+    c5.metric("Mean consistency", f"{summary.mean_consistency:.1%}")
+
+    st.markdown("#### Per-case consistency")
+    st.dataframe(
+        pd.DataFrame(flakiness_table_rows(report)),
+        width="stretch",
+        hide_index=True,
+    )
+
+
 # ── app ──────────────────────────────────────────────────────────────────────
 
 
@@ -620,20 +735,28 @@ def main() -> None:
     st.title("AgentEval")
     st.caption("CI for AI agents — run metrics, regressions, and per-case drill-down from `runs/*.json`.")
 
-    st.sidebar.header("Data source")
-    dirs = candidate_runs_dirs()
-    existing = [d for d in dirs if d.is_dir()]
-    if not existing:
-        existing = dirs[:1]
-        existing[0].mkdir(parents=True, exist_ok=True)
-
-    runs_dir = Path(
-        st.sidebar.selectbox(
-            "runs/ directory",
-            options=existing,
-            format_func=lambda p: str(p),
+    try:
+        agent_sources = load_dashboard_agent_sources()
+    except (OSError, ValueError) as exc:
+        st.error(f"Unable to load agents.yaml: {exc}")
+        st.stop()
+    if not agent_sources:
+        st.error("No enabled agents are registered in agents.yaml.")
+        st.stop()
+    if len(agent_sources) == 1:
+        selected_source = agent_sources[0]
+    else:
+        selected_source = st.selectbox(
+            "Agent",
+            options=agent_sources,
+            format_func=lambda source: source[1],
+            key="agent_selector",
         )
-    )
+    agent_name, display_name, runs_dir, configured_baseline, golden_path = selected_source
+
+    st.sidebar.header("Data source")
+    st.sidebar.caption(f"Agent: {display_name} (`{agent_name}`)")
+    st.sidebar.caption(f"Runs: `{runs_dir}`")
 
     files = list_run_files(runs_dir)
     if not files:
@@ -666,10 +789,21 @@ def main() -> None:
         )
     )
     current = loaded[latest_path]
+    flakiness_report = latest_flakiness_report(agent_name)
 
     # Baseline: prefer baseline.json, else second-newest, else same as current
-    baseline_options = usable
-    default_bi = default_baseline_index(usable, latest_path)
+    baseline_options = list(usable)
+    if configured_baseline.is_file() and configured_baseline not in baseline_options:
+        try:
+            loaded[configured_baseline] = load_json(configured_baseline)
+            baseline_options.append(configured_baseline)
+        except (OSError, json.JSONDecodeError) as exc:
+            st.sidebar.warning(f"Skip {configured_baseline.name}: {exc}")
+    default_bi = (
+        baseline_options.index(configured_baseline)
+        if configured_baseline in baseline_options
+        else default_baseline_index(baseline_options, latest_path)
+    )
 
     baseline_path = Path(
         st.sidebar.selectbox(
@@ -679,16 +813,14 @@ def main() -> None:
             key="baseline_run_v2",
             format_func=lambda p: (
                 f"📌 {run_label(p, loaded.get(p))}"
-                if p.name == "baseline.json"
+                if p == configured_baseline or p.name == "baseline.json"
                 else run_label(p, loaded.get(p))
             ),
         )
     )
     baseline = loaded.get(baseline_path)
 
-    golden_path = Path(
-        st.sidebar.text_input("Golden YAML (for expects)", value=str(DEFAULT_GOLDEN))
-    )
+    golden_path = Path(st.sidebar.text_input("Golden YAML (for expects)", value=str(golden_path)))
     golden = load_golden_expects(golden_path)
 
     st.sidebar.markdown("---")
@@ -698,14 +830,8 @@ def main() -> None:
         f"tools ≥ {HEALTHY_TOOL_ACC_MIN*100:.0f}%."
     )
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        [
-            "1 · Latest summary",
-            "2 · Regression",
-            "3 · Case drill-down",
-            "4 · Adversarial robustness",
-        ]
-    )
+    tabs = st.tabs(dashboard_tab_labels(flakiness_report))
+    tab1, tab2, tab3, tab4 = tabs[:4]
     with tab1:
         render_summary(current, latest_path)
     with tab2:
@@ -714,6 +840,9 @@ def main() -> None:
         render_drilldown(current, latest_path, golden)
     with tab4:
         render_adversarial(current)
+    if flakiness_report is not None:
+        with tabs[4]:
+            render_flakiness(flakiness_report)
 
 
 if __name__ == "__main__":

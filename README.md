@@ -66,6 +66,34 @@ AgentEval distinguishes output quality from execution and evaluation failures:
 
 Infrastructure failures are not counted as incorrect or hallucinated answers, so provider outages do not corrupt quality rates. They remain visible and fail the regression gate by default. Missing and skipped cases are also gated to prevent an incomplete run from appearing healthy.
 
+## Flakiness detection
+
+LLM agents can produce different answers for the same prompt even when the code and inputs have not changed. AgentEval's opt-in repeat mode separates two different problems: an agent can be **consistently wrong** (the same failing verdict every time) or **flaky** (the verdict or comparable numeric value changes across observations). The report stores both consistency and pass rate so repeatability is never mistaken for correctness.
+
+Run the normal suite once and repeat only explicitly selected cases:
+
+```bash
+python -m agenteval run \
+  --agent agentic_data_analyst \
+  --repeat 5 \
+  --repeat-case total_customers \
+  --repeat-case avg_monthly_charges
+```
+
+`--repeat 5` means five total observations for each selected case: the primary suite result plus four additional invocations. Requiring explicit `--repeat-case` values prevents an accidental N-times increase in API calls across the full suite. The default `--repeat 1` follows the existing single-pass path without creating flakiness evidence.
+
+| Classification | Consistency score |
+|---|---:|
+| `stable` | `1.0` |
+| `flaky` | `0.80` to `<1.0` |
+| `unstable` | `<0.80` |
+
+These labels are documented defaults rather than information-losing buckets: every artifact retains the raw consistency fraction, such as `4/5`, so thresholds can be adjusted later.
+
+Scalar numeric cases use `largest_complete_link_cluster`. Values cluster when the difference between the cluster maximum and minimum remains within the case's existing `numeric_tolerance`; the largest same-verdict cluster wins, and the primary observation receives no special preference. Exact, contains, and LLM-judge cases use verdict consistency. Ambiguous scalar numeric answers and numeric-table cases also fall back to verdict-only consistency.
+
+Flakiness is observability-only in this phase. It does not affect the regression gate or baseline comparison. Evidence is stored separately under `runs/<agent>/flakiness/<run_id>.json`, keeping repeated latency, cost, answers, and verdicts isolated from the primary run report.
+
 ## Golden case example
 
 ```yaml
@@ -162,10 +190,12 @@ Each candidate retains its parent case, ground truth, tool expectations, and mut
 
 ```text
 agenteval/
+├── agents.yaml           # Registered agents, adapters, suites, and gate defaults
 ├── adapters/             # Agent interface and concrete adapter
 ├── core/
 │   ├── schema.py         # Test-case and run-report models
 │   ├── runner.py         # Suite execution
+│   ├── flakiness.py      # Repeat consistency analysis and classification
 │   ├── metrics.py        # Correctness, hallucination, tools, latency, cost
 │   ├── judge.py          # LLM judge for open-ended correctness
 │   ├── compare.py        # Baseline comparison and CI decision
@@ -174,7 +204,9 @@ agenteval/
 ├── dashboard/app.py      # Streamlit dashboard
 ├── tests/golden/         # Hand-written YAML suite
 ├── baselines/            # Versioned baseline reports
-├── runs/                 # Saved run artifacts
+├── runs/                 # Standard single-pass run artifacts
+│   └── <agent>/
+│       └── flakiness/    # Isolated repeated-run evidence by run_id
 └── .github/workflows/    # CI regression workflow
 ```
 
@@ -196,6 +228,8 @@ Deterministic tests cover schema and metrics behaviour, error handling, baseline
 - LLM-judge correctness is reserved for open-ended cases and introduces provider dependence.
 - Adversarial candidates require human review before entering blocking evaluation.
 - Cost falls back to a character-based token estimate when provider usage is unavailable.
+- Flakiness is not yet part of CI gating and has no cross-agent comparison view.
+- Numeric-table flakiness currently compares verdicts only rather than extracting and clustering each table cell.
 - No license file is currently included.
 
 ---

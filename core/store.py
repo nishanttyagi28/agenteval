@@ -114,3 +114,99 @@ def load_run_report(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     with p.open(encoding="utf-8") as f:
         return json.load(f)
+
+
+def _flakiness_to_jsonable(report: Any) -> dict[str, Any]:
+    """Serialize a FlakinessReport with explicit audit-friendly method fields."""
+    payload = report.to_dict()
+    for case in payload.get("cases") or []:
+        cluster = case.get("numeric_cluster")
+        case["numeric_method"] = cluster.get("method") if cluster else None
+    return json.loads(json.dumps(payload, default=_json_default))
+
+
+def save_flakiness_report(
+    report: Any,
+    runs_root: str | Path | None = None,
+) -> Path:
+    """Persist repeat evidence separately under runs/<agent>/flakiness/.
+
+    This function never modifies the primary run artifact. ``runs_root`` is the
+    directory above the per-agent folder (the repository ``runs/`` by default).
+    """
+    from agenteval.core.flakiness import FlakinessReport
+
+    if not isinstance(report, FlakinessReport):
+        raise TypeError("report must be a FlakinessReport")
+    if not report.run_id.strip() or not report.agent.strip():
+        raise ValueError("flakiness report requires non-empty run_id and agent")
+    root = Path(runs_root) if runs_root else DEFAULT_RUNS_DIR
+    out_dir = root / report.agent / "flakiness"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{report.run_id}.json"
+    payload = _flakiness_to_jsonable(report)
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return path.resolve()
+
+
+def load_flakiness_report(path: str | Path):
+    """Load and validate one explicitly requested flakiness sidecar."""
+    from agenteval.core.flakiness import (
+        CaseFlakiness,
+        FlakinessObservation,
+        FlakinessReport,
+        FlakinessSummary,
+        NumericClusterAudit,
+    )
+
+    source = Path(path)
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid flakiness JSON in {source}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Flakiness report must be a JSON object: {source}")
+    try:
+        summary_raw = payload["summary"]
+        cases_raw = payload["cases"]
+        if not isinstance(summary_raw, dict) or not isinstance(cases_raw, list):
+            raise TypeError("summary must be an object and cases must be a list")
+        summary = FlakinessSummary(**summary_raw)
+        cases = []
+        for raw in cases_raw:
+            if not isinstance(raw, dict):
+                raise TypeError("case entry must be an object")
+            observations = tuple(
+                FlakinessObservation(**observation)
+                for observation in raw.get("observations", [])
+            )
+            cluster_raw = raw.get("numeric_cluster")
+            cluster = None
+            if cluster_raw is not None:
+                cluster_data = dict(cluster_raw)
+                cluster_data["member_indices"] = tuple(cluster_data["member_indices"])
+                cluster = NumericClusterAudit(**cluster_data)
+            case_data = {
+                key: value
+                for key, value in raw.items()
+                if key not in {"observations", "numeric_cluster", "numeric_method"}
+            }
+            cases.append(
+                CaseFlakiness(
+                    **case_data,
+                    observations=observations,
+                    numeric_cluster=cluster,
+                )
+            )
+        return FlakinessReport(
+            run_id=str(payload["run_id"]),
+            agent=str(payload["agent"]),
+            repeat_count=int(payload["repeat_count"]),
+            summary=summary,
+            cases=tuple(cases),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid or incomplete flakiness report {source}: {exc}") from exc
