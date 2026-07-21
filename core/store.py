@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,26 +12,35 @@ from typing import Any
 
 from agenteval.core.schema import RunReport
 
-# Repo root = parent of the agenteval/ package
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_RUNS_DIR = _REPO_ROOT / "runs"
+# Start git discovery inside the package checkout. ``git rev-parse`` walks up to
+# the nearest worktree root, so this works both when the checkout itself is the
+# ``agenteval`` package and when the package is nested below a repository root.
+_GIT_SEARCH_ROOT = Path(__file__).resolve().parents[1]
+_GITHUB_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
+DEFAULT_RUNS_DIR = _GIT_SEARCH_ROOT / "runs"
 
 
 def get_git_sha(short: bool = True) -> str:
-    """Return current git SHA, or 'unknown' if unavailable."""
+    """Return the checkout SHA, falling back to GitHub Actions provenance."""
     try:
         args = ["git", "rev-parse", "--short" if short else "HEAD", "HEAD"]
         out = subprocess.check_output(
             args,
-            cwd=_REPO_ROOT,
+            cwd=_GIT_SEARCH_ROOT,
             stderr=subprocess.DEVNULL,
             text=True,
             timeout=5,
         )
         sha = out.strip()
-        return sha or "unknown"
+        if sha:
+            return sha
     except (subprocess.SubprocessError, OSError, FileNotFoundError):
-        return "unknown"
+        pass
+
+    github_sha = os.getenv("GITHUB_SHA", "").strip()
+    if _GITHUB_SHA_RE.fullmatch(github_sha):
+        return github_sha[:7] if short else github_sha
+    return "unknown"
 
 
 def _json_default(obj: Any) -> Any:
