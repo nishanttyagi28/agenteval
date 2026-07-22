@@ -117,6 +117,58 @@ def _runner_usage(result: Any) -> Any:
     return value(context_wrapper, "usage") or value(result, "usage", "token_usage")
 
 
+def _response_usage(responses: Any) -> dict[str, int | float] | None:
+    if not isinstance(responses, Sequence) or isinstance(responses, (str, bytes)):
+        return None
+    totals: dict[str, int | float] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "cost_usd": 0.0,
+    }
+    seen = {key: False for key in totals}
+    for response in responses:
+        usage = value(response, "usage")
+        for target, names in (
+            ("input_tokens", ("input_tokens", "prompt_tokens")),
+            ("output_tokens", ("output_tokens", "completion_tokens")),
+            ("total_tokens", ("total_tokens",)),
+        ):
+            amount = as_int(value(usage, *names))
+            if amount is not None:
+                totals[target] += amount
+                seen[target] = True
+        cost = as_float(value(usage, "cost_usd", "total_cost", "cost"))
+        if cost is not None:
+            totals["cost_usd"] += cost
+            seen["cost_usd"] = True
+    if not any(seen.values()):
+        return None
+    return {key: amount for key, amount in totals.items() if seen[key]}
+
+
+def _item_evidence(item: Any) -> dict[str, Any]:
+    """Serialize run items without copying agent configuration or weakrefs."""
+    evidence: dict[str, Any] = {
+        "type": _item_type(item),
+        "agent": _agent_name(value(item, "agent")),
+        "raw_item": plain(value(item, "raw_item")),
+    }
+    tool_name = _tool_name(item)
+    if tool_name:
+        evidence["tool_name"] = tool_name
+    output = value(item, "output")
+    if output is not None:
+        evidence["output"] = plain(output)
+    source = _agent_name(value(item, "source_agent"))
+    target = _agent_name(value(item, "target_agent"))
+    if source:
+        evidence["source_agent"] = source
+    if target:
+        evidence["target_agent"] = target
+    return evidence
+
+
 def _running_event_loop() -> bool:
     try:
         asyncio.get_running_loop()
@@ -226,7 +278,8 @@ class OpenAIAgentsAdapter(AgentAdapter):
         latency_ms = (time.perf_counter() - started) * 1000.0
 
         items = _run_items(result)
-        usage = _runner_usage(result)
+        raw_responses = value(result, "raw_responses") or []
+        usage = _runner_usage(result) or _response_usage(raw_responses)
         prompt_tokens = as_int(value(usage, "input_tokens", "prompt_tokens"))
         completion_tokens = as_int(value(usage, "output_tokens", "completion_tokens"))
         cost_usd = usage_cost(
@@ -237,7 +290,6 @@ class OpenAIAgentsAdapter(AgentAdapter):
             output_cost_per_million=self.output_cost_per_million,
         )
         tools = [name for item in items if (name := _tool_name(item))]
-        raw_responses = value(result, "raw_responses") or []
         interruptions = value(result, "interruptions") or []
 
         return AgentResponse(
@@ -251,16 +303,20 @@ class OpenAIAgentsAdapter(AgentAdapter):
             latency_ms=latency_ms,
             raw={
                 "final_output": plain(value(result, "final_output")),
-                "new_items": [plain(item) for item in items],
+                "new_items": [_item_evidence(item) for item in items],
                 "raw_responses": plain(raw_responses),
                 "usage": plain(usage),
                 "last_agent": _agent_name(value(result, "last_agent")),
-                "interruptions": plain(interruptions),
+                "interruptions": [
+                    _item_evidence(item)
+                    if value(item, "raw_item", "type") is not None
+                    else plain(item)
+                    for item in interruptions
+                ],
                 "input": prompt,
-                "run_options": plain(options),
+                "run_option_keys": sorted(str(key) for key in options),
             },
         )
 
 
 __all__ = ["OpenAIAgentsAdapter"]
-

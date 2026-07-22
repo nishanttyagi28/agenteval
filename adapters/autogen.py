@@ -245,7 +245,13 @@ class AutoGenAdapter(AgentAdapter):
             raw={
                 "result": plain(result),
                 "messages": [plain(message) for message in messages],
-                "invocation": plain(invocation),
+                "invocation": {
+                    "task_key": self.task_key,
+                    "prompt": prompt,
+                    "option_keys": sorted(
+                        str(key) for key in invocation if key != self.task_key
+                    ),
+                },
             },
         )
 

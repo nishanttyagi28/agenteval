@@ -66,7 +66,11 @@ def test_autogen_normalizes_task_result_tools_trajectory_usage_and_cost():
     )
     assert response.cost_usd == pytest.approx(0.001)
     assert response.latency_ms >= 0
-    assert response.raw["invocation"]["task"] == "Research this"
+    assert response.raw["invocation"] == {
+        "task_key": "task",
+        "prompt": "Research this",
+        "option_keys": ["cancellation_token", "output_task_messages"],
+    }
     json.dumps(response.raw)
 
 
@@ -178,6 +182,7 @@ def test_malformed_messages_and_nested_options_are_rejected():
         ({"agent_factory": lambda: object(), "task_key": ""}, "non-empty"),
         ({"agent_factory": lambda: object(), "run_options": []}, "must be a mapping"),
         ({"agent_factory": lambda: object(), "input_cost_per_million": -1}, "non-negative"),
+        ({"agent_factory": lambda: object(), "input_cost_per_million": True}, "number"),
     ],
 )
 def test_constructor_validation(kwargs, message_text):
@@ -188,4 +193,3 @@ def test_constructor_validation(kwargs, message_text):
 def test_registry_loads_autogen_adapter_without_optional_dependency():
     loaded = load_adapter_class("agenteval.adapters.autogen:AutoGenAdapter")
     assert loaded is AutoGenAdapter
-

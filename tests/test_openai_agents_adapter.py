@@ -105,6 +105,7 @@ def test_openai_agents_normalizes_output_tools_handoffs_usage_and_cost():
     assert response.cost_usd == pytest.approx(0.0042)
     assert response.latency_ms >= 0
     assert response.raw["last_agent"] == "writer"
+    assert response.raw["new_items"][0]["agent"] == "researcher"
     json.dumps(response.raw)
 
 
@@ -122,6 +123,45 @@ def test_hosted_tools_are_named_and_duplicates_are_removed():
     response = OpenAIAgentsAdapter(agent, runner=FakeRunner).run("go")
 
     assert response.tool_calls == ["web_search", "code_interpreter"]
+
+
+def test_raw_item_evidence_does_not_serialize_agent_configuration():
+    agent = SimpleNamespace(name="assistant", instructions="do not persist this secret")
+    FakeRunner.result = make_result(
+        items=[run_item("tool_call_item", agent, {"type": "function_call", "name": "lookup"})],
+        usage=None,
+        last_agent=agent,
+    )
+
+    response = OpenAIAgentsAdapter(
+        agent,
+        runner=FakeRunner,
+        run_options={"context": {"api_key": "do not persist this secret"}},
+    ).run("go")
+    encoded = json.dumps(response.raw)
+
+    assert response.raw["new_items"][0]["agent"] == "assistant"
+    assert response.raw["run_option_keys"] == ["context"]
+    assert "do not persist this secret" not in encoded
+
+
+def test_usage_falls_back_to_raw_model_responses():
+    agent = named_agent("assistant")
+    FakeRunner.result = make_result(
+        usage=None,
+        raw_responses=[
+            SimpleNamespace(usage={"input_tokens": 8, "output_tokens": 3, "total_tokens": 11}),
+            SimpleNamespace(usage={"input_tokens": 5, "output_tokens": 2, "total_tokens": 7}),
+        ],
+    )
+
+    response = OpenAIAgentsAdapter(agent, runner=FakeRunner).run("go")
+
+    assert (response.prompt_tokens, response.completion_tokens, response.total_tokens) == (
+        13,
+        5,
+        18,
+    )
 
 
 def test_structured_output_pricing_and_interrupted_empty_output_are_safe():
@@ -149,6 +189,7 @@ def test_structured_output_pricing_and_interrupted_empty_output_are_safe():
     )
     interrupted = adapter.run("approval needed")
     assert interrupted.output == ""
+    assert interrupted.cost_usd is None
     assert interrupted.nodes_fired == ["agent:assistant"]
     assert interrupted.raw["interruptions"] == [{"tool_name": "delete_files"}]
 
@@ -235,6 +276,7 @@ def test_malformed_items_and_nested_options_are_rejected():
         ({"agent": object(), "runner": object()}, "callable run_sync or run"),
         ({"agent": object(), "run_options": []}, "must be a mapping"),
         ({"agent": object(), "output_cost_per_million": -1}, "non-negative"),
+        ({"agent": object(), "output_cost_per_million": False}, "number"),
     ],
 )
 def test_constructor_validation(kwargs, message_text):
@@ -247,4 +289,3 @@ def test_registry_loads_adapter_without_openai_agents_installed():
         "agenteval.adapters.openai_agents:OpenAIAgentsAdapter"
     )
     assert loaded is OpenAIAgentsAdapter
-

@@ -138,6 +138,8 @@ def validate_import_path(import_path: str | None, label: str) -> None:
 def validate_rate(rate: float | None, label: str) -> float | None:
     if rate is None:
         return None
+    if isinstance(rate, bool):
+        raise TypeError(f"{label} must be a non-negative number or None")
     try:
         normalized = float(rate)
     except (TypeError, ValueError) as exc:
@@ -161,9 +163,10 @@ def usage_cost(
         return exposed
     if input_cost_per_million is None and output_cost_per_million is None:
         return None
+    if prompt_tokens is None and completion_tokens is None:
+        return None
     prompt_cost = (prompt_tokens or 0) * (input_cost_per_million or 0) / 1_000_000
     completion_cost = (
         (completion_tokens or 0) * (output_cost_per_million or 0) / 1_000_000
     )
     return prompt_cost + completion_cost
-
