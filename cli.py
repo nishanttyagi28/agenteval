@@ -609,7 +609,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _harden_console_encoding() -> None:
+    """Never let a non-ASCII character (``≈``, ``→``, ...) crash CLI output.
+
+    Judge notes and case-transition summaries can contain characters that
+    don't exist in a legacy console codepage (e.g. Windows' default cp1252).
+    Without this, a plain ``print()`` of that text raises UnicodeEncodeError
+    and aborts the command — including, for ``run``, after the report JSON
+    was already written but before the history ledger got a chance to
+    record it. Replacing unencodable characters is strictly better than
+    crashing; UTF-8 targets (JSON/HTML files) are unaffected since they set
+    their own encoding explicitly.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="backslashreplace")
+        except (ValueError, OSError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> None:
+    _harden_console_encoding()
     args = build_parser().parse_args(argv)
     raise SystemExit(args.func(args))
 
