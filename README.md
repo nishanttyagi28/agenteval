@@ -13,12 +13,17 @@ AgentEval runs an agent against YAML golden suites, scores five reliability metr
 
 **Catch broken answers, wrong tool choices, flaky behavior, and regressions before your AI agent reaches production.**
 
+**[Explore the static AgentEval demo](https://nishanttyagi28.github.io/agenteval/)**
+
 **[Open the live dashboard](https://agenteval-6honbe24hradazngswxkrq.streamlit.app/)**
+
+The static demo explains the workflow without executing an agent or making API calls. The Streamlit dashboard presents stored evaluation evidence and historical runs.
 
 ## Table of contents
 
 - [Why AgentEval](#why-agenteval)
 - [Evaluation flow](#evaluation-flow)
+- [Architecture](#architecture)
 - [Five metrics](#five-metrics)
 - [Failure taxonomy and gate integrity](#failure-taxonomy-and-gate-integrity)
 - [Flakiness detection](#flakiness-detection)
@@ -27,12 +32,16 @@ AgentEval runs an agent against YAML golden suites, scores five reliability metr
 - [Dashboard evidence](#dashboard-evidence)
 - [Installation](#installation)
 - [Quickstart with Agentic Data Analyst](#quickstart-with-agentic-data-analyst)
+- [Supported frameworks](#supported-frameworks)
 - [CrewAI adapter](#crewai-adapter)
+- [Microsoft AutoGen adapter](#microsoft-autogen-adapter)
+- [OpenAI Agents SDK adapter](#openai-agents-sdk-adapter)
 - [GitHub Actions](#github-actions)
 - [Adversarial robustness](#adversarial-robustness)
 - [Project structure](#project-structure)
 - [Testing](#testing)
 - [Current limitations](#current-limitations)
+- [Contributing](#contributing)
 - [License](#license)
 
 ## Why AgentEval
@@ -51,6 +60,17 @@ AgentEval adds the missing evaluation layer:
 - GitHub Actions automation with a six-case smoke suite and optional 21-case full suite
 - reviewable adversarial variants that remain outside blocking CI until approved
 
+| Capability | AgentEval | Manual spot checks | Custom eval scripts |
+|---|:---:|:---:|:---:|
+| Versioned golden cases | ✅ | ❌ | ⚠️ You build it |
+| Correctness and hallucination scoring | ✅ | Subjective | ⚠️ You build it |
+| Tool-call and trajectory evidence | ✅ | Easy to miss | ⚠️ Framework-specific |
+| Flakiness detection | ✅ | Impractical | ⚠️ You build it |
+| Cost and latency tracking | ✅ | Rarely captured | ⚠️ Provider-specific |
+| Baseline regression gate | ✅ | ❌ | ⚠️ You maintain it |
+| JSON and Markdown reports | ✅ | ❌ | ⚠️ You build it |
+| Reusable GitHub Action | ✅ | ❌ | ⚠️ You maintain it |
+
 ## Evaluation flow
 
 ```mermaid
@@ -68,6 +88,40 @@ flowchart TD
 4. Compare the current report with a versioned baseline.
 5. Fail CI when configured quality gates or case-integrity checks are violated.
 6. Inspect suite and case-level evidence in the dashboard.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Action["Composite GitHub Action"] --> CLI["AgentEval CLI"]
+    Developer["Developer or CI"] --> CLI
+    Registry["agents.yaml registry"] --> CLI
+    CLI --> Loader["Adapter loader"]
+
+    subgraph AdapterLayer["Framework adapter layer"]
+        Contract["AgentAdapter.run contract"]
+        CrewAI["CrewAI adapter"]
+        AutoGen["AutoGen adapter"]
+        OpenAIAgents["OpenAI Agents SDK adapter"]
+        Custom["LangGraph or custom adapter"]
+        CrewAI --> Contract
+        AutoGen --> Contract
+        OpenAIAgents --> Contract
+        Custom --> Contract
+    end
+
+    Loader --> Contract
+    Contract --> Response["Normalized AgentResponse"]
+    Cases["YAML golden cases"] --> Runner["Suite runner"]
+    Response --> Runner
+    Runner --> Scoring["Correctness, tools, trajectory, flakiness, cost, latency"]
+    Scoring --> Reports["JSON and Markdown reports"]
+    Reports --> Gate["Baseline regression gate"]
+    Gate --> CI["Pull request status"]
+    Reports --> Dashboard["Dashboard and artifacts"]
+```
+
+Every framework adapter returns the same `AgentResponse` fields: output, tool calls, fired nodes, token usage, cost, latency, and JSON-safe raw evidence. The runner, scoring, comparison, and reporting layers therefore remain framework-independent.
 
 ## Five metrics
 
@@ -186,6 +240,14 @@ python -m pip install nishanttyagi-agenteval
 agenteval --help
 ```
 
+Install only the framework integration you need:
+
+```bash
+python -m pip install "nishanttyagi-agenteval[crewai]"
+python -m pip install "nishanttyagi-agenteval[autogen]"
+python -m pip install "nishanttyagi-agenteval[openai-agents]"
+```
+
 The PyPI distribution is named `nishanttyagi-agenteval`, while the Python package and console command remain `agenteval`:
 
 ```python
@@ -200,6 +262,8 @@ cd agenteval
 python -m pip install -e .
 python -m pip install -r requirements-dev.txt
 ```
+
+Alternatively, install the repository's development extra with `python -m pip install -e ".[dev]"`.
 
 ## Quickstart with Agentic Data Analyst
 
@@ -227,6 +291,20 @@ python -m streamlit run agenteval/dashboard/app.py
 ```
 
 The repositories may live anywhere when `AGENTIC_ANALYST_PATH` points to the Agentic Data Analyst checkout. Keeping them as siblings also supports the default local discovery path.
+
+## Supported frameworks
+
+All framework integrations are optional at import time, so AgentEval's core does not require every agent SDK.
+
+| Framework | Support | Adapter entry point | Captured evidence |
+|---|---|---|---|
+| [CrewAI](https://docs.crewai.com/) | First-party adapter | `agenteval.adapters.crewai:CrewAIAdapter` | Tasks, agents, tools, usage, cost, output |
+| [Microsoft AutoGen](https://microsoft.github.io/autogen/stable/) | First-party adapter | `agenteval.adapters.autogen:AutoGenAdapter` | Agent messages, tools, trajectory, usage, cost, output |
+| [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) | First-party adapter | `agenteval.adapters.openai_agents:OpenAIAgentsAdapter` | Run items, tools, handoffs, usage, cost, output |
+| [LangGraph](https://langchain-ai.github.io/langgraph/) | Contract-native | Custom `AgentAdapter` around the compiled graph | Graph state, tool calls, nodes, usage, output |
+| Any Python agent | Stable public contract | Subclass `agenteval.adapters.base.AgentAdapter` | Any evidence mapped to `AgentResponse` |
+
+LangGraph uses the public adapter contract in this release; the repository does not currently claim a dedicated `LangGraphAdapter` module.
 
 ## CrewAI adapter
 
@@ -271,6 +349,59 @@ crew-level step callbacks are chained and restored. CrewAI remains optional at
 AgentEval import time; pass `crew_factory` when independent state per case is
 important, or `crew` when the same instance should be reused.
 
+## Microsoft AutoGen adapter
+
+AutoGen's AgentChat `run(task=...)` method is asynchronous. The adapter preserves AgentEval's synchronous contract and safely handles ordinary scripts, notebooks, and applications that already have an event loop.
+
+```python
+from agenteval.adapters import AutoGenAdapter
+
+adapter = AutoGenAdapter(
+    agent_factory=build_fresh_autogen_agent,
+    input_cost_per_million=2.50,
+    output_cost_per_million=10.00,
+)
+response = adapter.run("Research the release notes")
+```
+
+Use `agent_factory` or `agent_import` for isolated state per golden case. A direct `agent` instance intentionally retains AutoGen's documented conversation state. Provider and network failures propagate to the runner so they are recorded as `agent_error` rather than successful answers.
+
+For registry-driven CLI runs, configure the adapter with an importable agent or factory:
+
+```yaml
+adapter: agenteval.adapters.autogen:AutoGenAdapter
+adapter_options:
+  agent_import: my_autogen_project.agents:build_research_agent
+  input_cost_per_million: 2.50
+  output_cost_per_million: 10.00
+```
+
+## OpenAI Agents SDK adapter
+
+The OpenAI Agents SDK adapter captures final output, tool calls, handoffs, agent trajectory, token usage, provider-reported or configured cost, latency, interruptions, and bounded JSON-safe run evidence.
+
+```python
+from agenteval.adapters import OpenAIAgentsAdapter
+
+adapter = OpenAIAgentsAdapter(
+    agent_factory=build_fresh_openai_agent,
+    run_options={"max_turns": 8},
+)
+response = adapter.run("Check the deployment evidence")
+```
+
+The adapter uses `Runner.run_sync` in ordinary synchronous code and `Runner.run` through a safe bridge when an event loop is already active. Provider failures propagate to the runner and are recorded as `agent_error`.
+
+For registry-driven CLI runs:
+
+```yaml
+adapter: agenteval.adapters.openai_agents:OpenAIAgentsAdapter
+adapter_options:
+  agent_import: my_agents.support:build_support_agent
+  run_options:
+    max_turns: 8
+```
+
 ## GitHub Actions
 
 `.github/workflows/eval.yml` runs on pull requests and manual dispatch:
@@ -284,6 +415,47 @@ important, or `crew` when the same instance should be reused.
 - a generated Markdown report is created or updated on the pull request
 - missing `GROQ_API_KEY` produces an explicit skipped-evaluation summary
 - concurrency cancellation and job timeouts prevent stale or runaway runs
+
+### Reusable composite action
+
+The root `action.yml` lets another repository install AgentEval, run a registered agent, compare the report with its baseline, and expose the result to later workflow steps.
+
+After a stable `v1` tag is published, consume the action with:
+
+```yaml
+name: AgentEval
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run AgentEval
+        id: agenteval
+        uses: nishanttyagi28/agenteval@v1
+        with:
+          agent: research_crew
+          config-file: agents.yaml
+          agent-path: .
+          cases-file: tests/golden/research.yaml
+          baseline-file: baselines/research_crew.json
+          runs-dir: .agenteval/runs
+          install-extras: crewai
+          no-llm-judge: "true"
+```
+
+Supported inputs include the registered agent, registry path, agent repository path, golden-case and baseline overrides, run directory, case IDs, tags, framework extras, Python version, LLM-judge behavior, and regression-failure behavior. The action exposes `passed`, `report-path`, and `comparison-path` outputs. See [the complete consumer workflow](examples/github-actions/agenteval.yml).
+
+GitHub resolves `uses` references as `owner/repository@ref`. Because the composite action is maintained in this repository, its coordinate is `nishanttyagi28/agenteval@v1`. The separate coordinate `nishanttyagi28/agenteval-action@v1` would require a repository named `agenteval-action`.
+
+The dedicated `.github/workflows/action-smoke.yml` workflow consumes the local composite action with deterministic fixtures and verifies both the gate decision and generated report paths.
 
 ## Adversarial robustness
 
@@ -304,7 +476,13 @@ Each candidate retains its parent case, ground truth, tool expectations, and mut
 agenteval/
 ├── pyproject.toml        # Package metadata and agenteval console entry point
 ├── agents.yaml           # Registered agents, adapters, suites, and gate defaults
+├── action.yml            # Reusable composite GitHub Action
+├── CONTRIBUTING.md       # Development and pull-request guidance
 ├── adapters/             # Agent interface and concrete adapter
+│   ├── base.py           # Framework-neutral AgentAdapter contract
+│   ├── crewai.py         # CrewAI integration
+│   ├── autogen.py        # Microsoft AutoGen integration
+│   └── openai_agents.py  # OpenAI Agents SDK integration
 ├── core/
 │   ├── schema.py         # Test-case and run-report models
 │   ├── runner.py         # Suite execution
@@ -316,6 +494,8 @@ agenteval/
 │   ├── provenance.py     # Reproducibility metadata
 │   └── store.py          # JSON run persistence
 ├── dashboard/app.py      # Streamlit dashboard
+├── landing-page/         # Static demo and Playwright browser tests
+├── examples/             # Composite-action fixtures and consumer workflow
 ├── tests/golden/         # Hand-written YAML suite
 ├── baselines/            # Versioned baseline reports
 ├── runs/                 # Standard single-pass run artifacts
@@ -337,6 +517,17 @@ python -m agenteval --help
 
 Deterministic tests cover schema and metrics behaviour, error handling, baseline comparison, missing/skipped-case gates, adversarial generation, provenance, flakiness, trajectory scoring, adapter event boundaries, dashboard evidence, packaging, and CLI paths without requiring a live provider call.
 
+Landing-page checks run separately:
+
+```bash
+cd landing-page
+npm ci
+npx playwright install chromium
+npm test
+```
+
+The composite action has both static contract tests and a hosted deterministic smoke workflow. Adapter tests use injected SDK-shaped fixtures, while compatibility checks can install the optional real framework packages without requiring live model calls.
+
 ## Current limitations
 
 - The included adapter and golden suite are demonstrated primarily with Agentic Data Analyst.
@@ -348,6 +539,13 @@ Deterministic tests cover schema and metrics behaviour, error handling, baseline
 - Numeric-table flakiness currently compares verdicts only rather than extracting and clustering each table cell.
 - The smoke suite's only scalar numeric case currently falls back to verdict consistency because its answer restates the same count; `largest_complete_link_cluster` is covered deterministically but has not yet been exercised by a live CI repeat run.
 - Current trajectory depth is limited to the adapter's shallow `route → agent` sequence (typically two events); instrumenting deeper orchestrator events is a candidate for future enrichment.
+- LangGraph currently uses the public adapter contract rather than a dedicated first-party adapter module.
+- Provider-reported cost availability varies by framework and model; explicit per-million token rates can be configured for AutoGen and OpenAI Agents SDK runs.
+- The reusable action requires a stable repository tag such as `v1` before external workflows can pin a major release.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for environment setup, focused and full test commands, adapter requirements, documentation guidance, and the pull-request checklist.
 
 ## License
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from agenteval.core.trajectory import TrajectoryEvaluation
 
@@ -112,6 +112,10 @@ class Expects:
 @dataclass
 class TestCase:
     """One evaluation case as loaded from YAML."""
+
+    # The domain model is imported into test modules; do not let pytest mistake
+    # it for a test container merely because its public name starts with Test.
+    __test__: ClassVar[bool] = False
 
     id: str
     prompt: str

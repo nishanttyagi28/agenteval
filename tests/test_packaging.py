@@ -45,3 +45,15 @@ def test_crewai_is_an_optional_framework_dependency():
     extras = load_pyproject()["project"]["optional-dependencies"]
 
     assert extras["crewai"] == ["crewai>=1,<2"]
+
+
+def test_autogen_is_an_optional_framework_dependency():
+    extras = load_pyproject()["project"]["optional-dependencies"]
+
+    assert extras["autogen"] == ["autogen-agentchat>=0.7,<1"]
+
+
+def test_openai_agents_is_an_optional_framework_dependency():
+    extras = load_pyproject()["project"]["optional-dependencies"]
+
+    assert extras["openai-agents"] == ["openai-agents>=0.18,<1"]
