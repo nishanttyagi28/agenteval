@@ -94,6 +94,23 @@ Scalar numeric cases use `largest_complete_link_cluster`. Values cluster when th
 
 Flakiness is observability-only in this phase. It does not affect the regression gate or baseline comparison. Evidence is stored separately under `runs/<agent>/flakiness/<run_id>.json`, keeping repeated latency, cost, answers, and verdicts isolated from the primary run report.
 
+## Trajectory scoring
+
+Trajectory scoring adds step-level evidence about how an agent reached its answer. A golden case can optionally declare the expected ordered events alongside its existing output expectations:
+
+```yaml
+- id: total_customers
+  prompt: "How many customers are in the dataset?"
+  expects:
+    correctness_type: numeric
+    ground_truth: 7043
+    expected_trajectory: ["route:sql", "agent:sql"]
+```
+
+AgentEval compares `expected_trajectory` with the adapter's actual `nodes_fired` sequence using a longest common subsequence (LCS). The matched subsequence produces precision (matched steps divided by actual steps), recall (matched steps divided by expected steps), and their F1 score, while preserving evidence about exact match, ordering, missing steps, and extra steps. Duplicate steps retain their multiplicity.
+
+The field is optional and backward compatible: cases without it are scored and serialized exactly as before. Trajectory scoring is observability-only in v1 and does not affect correctness, existing metrics, baseline comparison, or CI gates.
+
 ## Golden case example
 
 ```yaml
@@ -196,6 +213,7 @@ agenteval/
 │   ├── schema.py         # Test-case and run-report models
 │   ├── runner.py         # Suite execution
 │   ├── flakiness.py      # Repeat consistency analysis and classification
+│   ├── trajectory.py     # Step-sequence evaluation and evidence
 │   ├── metrics.py        # Correctness, hallucination, tools, latency, cost
 │   ├── judge.py          # LLM judge for open-ended correctness
 │   ├── compare.py        # Baseline comparison and CI decision
@@ -231,6 +249,7 @@ Deterministic tests cover schema and metrics behaviour, error handling, baseline
 - Flakiness is not yet part of CI gating and has no cross-agent comparison view.
 - Numeric-table flakiness currently compares verdicts only rather than extracting and clustering each table cell.
 - The smoke suite's only scalar numeric case currently falls back to verdict consistency because its answer restates the same count; `largest_complete_link_cluster` is covered deterministically but has not yet been exercised by a live CI repeat run.
+- Current trajectory depth is limited to the adapter's shallow `route → agent` sequence (typically two events); instrumenting deeper orchestrator events is a candidate for future enrichment.
 
 ## License
 

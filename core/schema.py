@@ -7,6 +7,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from agenteval.core.trajectory import TrajectoryEvaluation
+
 
 @dataclass(frozen=True)
 class RepositoryConfig:
@@ -73,18 +75,37 @@ class Expects:
     must_not_hallucinate: bool = False
     ground_truth: Any = None
     numeric_tolerance: float = 0.01
+    expected_trajectory: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Expects:
         ct = data.get("correctness_type", "exact")
         if isinstance(ct, str):
             ct = CorrectnessType(ct)
+        trajectory_raw = data.get("expected_trajectory")
+        if trajectory_raw is None:
+            trajectory_raw = []
+        elif not isinstance(trajectory_raw, list):
+            raise ValueError("expected_trajectory must be a list")
+        expected_trajectory: list[str] = []
+        for index, step in enumerate(trajectory_raw):
+            if not isinstance(step, str):
+                raise ValueError(
+                    f"expected_trajectory[{index}] must be a string"
+                )
+            normalized = step.strip()
+            if not normalized:
+                raise ValueError(
+                    f"expected_trajectory[{index}] must not be blank"
+                )
+            expected_trajectory.append(normalized)
         return cls(
             correctness_type=ct,
             must_call_tools=list(data.get("must_call_tools") or []),
             must_not_hallucinate=bool(data.get("must_not_hallucinate", False)),
             ground_truth=data.get("ground_truth"),
             numeric_tolerance=float(data.get("numeric_tolerance", 0.01)),
+            expected_trajectory=expected_trajectory,
         )
 
 
@@ -132,6 +153,7 @@ class CaseResult:
     final_answer: str = ""
     tools_called: list[str] = field(default_factory=list)
     nodes_fired: list[str] = field(default_factory=list)
+    trajectory: TrajectoryEvaluation | None = None
     latency_ms: float = 0.0
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
@@ -145,7 +167,10 @@ class CaseResult:
     raw: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        if self.trajectory is None:
+            data.pop("trajectory")
+        return data
 
 
 @dataclass
@@ -170,7 +195,11 @@ class RunReport:
     provenance: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        for case in data["case_results"]:
+            if case.get("trajectory") is None:
+                case.pop("trajectory", None)
+        return data
 
 
 def load_test_cases(path: str | Path) -> list[TestCase]:

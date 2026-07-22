@@ -11,6 +11,7 @@ from agenteval.adapters.base import AgentAdapter, AgentRun
 from agenteval.core.metrics import aggregate_report, score_case
 from agenteval.core.schema import CaseResult, RunReport, TestCase, load_test_cases
 from agenteval.core.store import get_git_sha
+from agenteval.core.trajectory import evaluate_trajectory
 
 # Package paths
 _PACKAGE_DIR = Path(__file__).resolve().parents[1]
@@ -48,6 +49,11 @@ def run_case(
     result = agent_run_to_case_result(case, agent_run)
     if score:
         result = score_case(case, result, use_llm_judge=use_llm_judge)
+    if case.expects.expected_trajectory:
+        result.trajectory = evaluate_trajectory(
+            case.expects.expected_trajectory,
+            result.nodes_fired,
+        )
     return result
 
 
@@ -107,6 +113,11 @@ def run_suite(
             )
             if score:
                 result = score_case(case, result, use_llm_judge=False)
+            if case.expects.expected_trajectory:
+                result.trajectory = evaluate_trajectory(
+                    case.expects.expected_trajectory,
+                    result.nodes_fired,
+                )
         results.append(result)
         if on_case_done is not None:
             on_case_done(i, total, case, result)
