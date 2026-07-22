@@ -10,7 +10,7 @@ jobs:
   evaluate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # GitHub Actions resolve owner/repository@ref. This repository publishes
       # the root action as nishanttyagi28/agenteval@v1.

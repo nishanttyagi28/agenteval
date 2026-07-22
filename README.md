@@ -186,7 +186,7 @@ This repository contains a root composite action. After a stable `v1` tag is pub
 
 ```yaml
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@v5
   - name: Run AgentEval
     id: agenteval
     uses: nishanttyagi28/agenteval@v1
