@@ -11,7 +11,28 @@
 
 AgentEval runs an agent against YAML golden suites, scores five reliability metrics, compares results with a versioned baseline, and turns regressions into a reviewable CI decision.
 
+**Catch broken answers, wrong tool choices, flaky behavior, and regressions before your AI agent reaches production.**
+
 **[Open the live dashboard](https://agenteval-6honbe24hradazngswxkrq.streamlit.app/)**
+
+## Table of contents
+
+- [Why AgentEval](#why-agenteval)
+- [Evaluation flow](#evaluation-flow)
+- [Five metrics](#five-metrics)
+- [Failure taxonomy and gate integrity](#failure-taxonomy-and-gate-integrity)
+- [Flakiness detection](#flakiness-detection)
+- [Trajectory scoring](#trajectory-scoring)
+- [Golden case example](#golden-case-example)
+- [Dashboard evidence](#dashboard-evidence)
+- [Installation](#installation)
+- [Quickstart with Agentic Data Analyst](#quickstart-with-agentic-data-analyst)
+- [GitHub Actions](#github-actions)
+- [Adversarial robustness](#adversarial-robustness)
+- [Project structure](#project-structure)
+- [Testing](#testing)
+- [Current limitations](#current-limitations)
+- [License](#license)
 
 ## Why AgentEval
 
