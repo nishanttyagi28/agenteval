@@ -74,7 +74,15 @@ def _number(report: dict[str, Any], key: str) -> float | None:
         return None
 
 
-def _case_status(case: dict[str, Any] | None) -> str:
+def case_status(case: dict[str, Any] | None) -> str:
+    """Derive a case's status, tolerating run JSON written before ``status`` existed.
+
+    Older run artifacts (and any hand-built report dict) may not carry an
+    explicit ``status`` field; this reconstructs one from ``correctness_pass``
+    / ``judge_reason`` / ``raw`` the same way the regression gate always has,
+    so every consumer of a persisted report — the gate, ``agenteval report``,
+    dashboards — agrees on one case's outcome.
+    """
     if case is None:
         return "missing"
     explicit = case.get("status")
@@ -154,8 +162,8 @@ def compare_runs(
     transitions = [
         CaseTransition(
             case_id=case_id,
-            baseline_status=_case_status(base_cases.get(case_id)),
-            current_status=_case_status(current_cases.get(case_id)),
+            baseline_status=case_status(base_cases.get(case_id)),
+            current_status=case_status(current_cases.get(case_id)),
         )
         for case_id in all_case_ids
     ]
