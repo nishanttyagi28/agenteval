@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="AgentEval is an open-source CI evaluation harness for testing LLM agents across correctness, tools, trajectories, latency, cost, and flakiness."
+    >
+    <meta name="theme-color" content="#07080d">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="AgentEval — CI for AI agents">
+    <meta
+      property="og:description"
+      content="Catch broken answers, wrong tool choices, flaky behavior, and regressions before production."
+    >
+    <title>AgentEval — CI for AI agents</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="container nav-shell">
+        <a class="brand" href="#top" aria-label="AgentEval home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 28 28" focusable="false">
+              <path d="M7 20.5 14 6l7 14.5M9.4 16h9.2" />
+              <path d="m18.5 8.5 2 2 4-4" />
+            </svg>
+          </span>
+          <span>AgentEval</span>
+        </a>
+
+        <button
+          class="nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-navigation"
+          aria-label="Open navigation"
+        >
+          <span></span><span></span><span></span>
+        </button>
+
+        <nav id="primary-navigation" class="primary-nav" aria-label="Primary navigation">
+          <a href="#workflow">Why AgentEval</a>
+          <a href="#features">Features</a>
+          <a href="#usage">Usage</a>
+          <a href="#stats">Project</a>
+          <a
+            class="nav-github"
+            href="https://github.com/nishanttyagi28/agenteval"
+            target="_blank"
+            rel="noreferrer"
+          >
+            GitHub
+            <span aria-hidden="true">↗</span>
+          </a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section id="top" class="hero" aria-labelledby="hero-title">
+        <div class="hero-glow hero-glow-one" aria-hidden="true"></div>
+        <div class="hero-glow hero-glow-two" aria-hidden="true"></div>
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <div class="eyebrow"><span></span> Open source · MIT licensed</div>
+            <h1 id="hero-title">Ship agents with<br><span>evidence, not hope.</span></h1>
+            <p class="hero-lede">
+              AgentEval is a CI evaluation harness for LLM agents. Test answers,
+              tool choices, trajectories, latency, cost, and flakiness before a
+              regression reaches production.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#usage">Start evaluating</a>
+              <a
+                class="button button-secondary"
+                href="https://github.com/nishanttyagi28/agenteval"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.87c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.35 1.09 2.92.83.09-.65.35-1.09.64-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 6.82a9.6 9.6 0 0 1 2.5.34c1.92-1.29 2.76-1.02 2.76-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.86v2.76c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
+                </svg>
+                View on GitHub
+              </a>
+            </div>
+
+            <div class="install-bar" aria-label="Installation command">
+              <span class="terminal-prompt" aria-hidden="true">$</span>
+              <code>pip install nishanttyagi-agenteval</code>
+              <button
+                class="copy-button"
+                type="button"
+                data-copy="pip install nishanttyagi-agenteval"
+                aria-label="Copy installation command"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M9 9h10v10H9z" />
+                  <path d="M5 15H4V5h10v1" />
+                </svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="hero-console" aria-label="Example AgentEval run summary">
+            <div class="console-header">
+              <div class="window-controls" aria-hidden="true"><span></span><span></span><span></span></div>
+              <span>agent-eval.yml · run #184</span>
+              <span class="run-status"><i></i> passed</span>
+            </div>
+            <div class="console-body">
+              <div class="command-line"><span>$</span> agenteval run --agent research_crew</div>
+              <div class="run-line"><span class="muted">→</span> Loading <strong>21 golden cases</strong></div>
+              <div class="run-line"><span class="success">✓</span> CrewAI adapter connected</div>
+              <div class="run-line"><span class="success">✓</span> Evaluation complete <span class="muted">8.42s</span></div>
+
+              <div class="metrics-panel">
+                <div class="metric-row">
+                  <span>Correctness</span><strong>95.2%</strong>
+                  <div class="metric-track"><i style="--value: 95.2%"></i></div>
+                </div>
+                <div class="metric-row">
+                  <span>Tool accuracy</span><strong>100%</strong>
+                  <div class="metric-track"><i style="--value: 100%"></i></div>
+                </div>
+                <div class="metric-row">
+                  <span>Trajectory match</span><strong>92.8%</strong>
+                  <div class="metric-track"><i style="--value: 92.8%"></i></div>
+                </div>
+              </div>
+
+              <div class="gate-result">
+                <div><span class="check-ring">✓</span><span>Regression gate</span></div>
+                <strong>PASS</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="container framework-strip" aria-label="Framework compatibility">
+          <span>Built for modern agent stacks</span>
+          <div><b>CrewAI</b><b>LangGraph-ready</b><b>Custom agents</b><b>Any LLM</b></div>
+        </div>
+      </section>
+
+      <section id="workflow" class="section workflow-section" aria-labelledby="workflow-title">
+        <div class="container">
+          <div class="section-heading split-heading">
+            <div>
+              <p class="section-kicker">The problem</p>
+              <h2 id="workflow-title">Agents fail differently<br>from regular software.</h2>
+            </div>
+            <p>
+              A prompt, model, or tool change can silently improve one answer while
+              breaking another. Traditional unit tests cannot see quality drift,
+              fabricated claims, or the wrong execution path.
+            </p>
+          </div>
+
+          <div class="before-after-grid">
+            <article class="comparison-card risk-card">
+              <div class="comparison-label"><span>Without AgentEval</span><i>Unverified</i></div>
+              <ul>
+                <li><span aria-hidden="true">×</span> Spot-check outputs by hand</li>
+                <li><span aria-hidden="true">×</span> Miss flaky tool routing</li>
+                <li><span aria-hidden="true">×</span> Discover regressions in production</li>
+                <li><span aria-hidden="true">×</span> Guess at latency and spend</li>
+              </ul>
+            </article>
+            <article class="comparison-card safe-card">
+              <div class="comparison-label"><span>With AgentEval</span><i>CI protected</i></div>
+              <ul>
+                <li><span aria-hidden="true">✓</span> Versioned YAML golden cases</li>
+                <li><span aria-hidden="true">✓</span> Deterministic-first scoring</li>
+                <li><span aria-hidden="true">✓</span> Reviewable regression gates</li>
+                <li><span aria-hidden="true">✓</span> Reproducible run evidence</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="pipeline" aria-label="AgentEval evaluation pipeline">
+            <div><span>01</span><strong>Define</strong><small>Golden cases</small></div>
+            <i aria-hidden="true">→</i>
+            <div><span>02</span><strong>Run</strong><small>Your agent</small></div>
+            <i aria-hidden="true">→</i>
+            <div><span>03</span><strong>Score</strong><small>Five metrics</small></div>
+            <i aria-hidden="true">→</i>
+            <div><span>04</span><strong>Gate</strong><small>Ship or block</small></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="section features-section" aria-labelledby="features-title">
+        <div class="container">
+          <div class="section-heading centered-heading">
+            <p class="section-kicker">Evaluation primitives</p>
+            <h2 id="features-title">Everything an agent CI gate needs.</h2>
+            <p>Focused evidence for every layer between a user prompt and an agent’s final answer.</p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature-card feature-card-wide adapter-feature">
+              <div class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M8 7h8M8 12h8M8 17h5"/><rect x="3" y="3" width="18" height="18" rx="4"/></svg>
+              </div>
+              <div>
+                <p class="feature-tag">Framework adapters</p>
+                <h3>CrewAI built in. LangGraph-ready.</h3>
+                <p>
+                  Normalize CrewAI crews today, or connect LangGraph and custom
+                  orchestrators through one compact <code>AgentAdapter</code> contract.
+                </p>
+              </div>
+              <div class="adapter-stack" aria-label="Supported adapter patterns">
+                <span><i class="crew-dot"></i>CrewAI</span>
+                <span><i class="graph-dot"></i>LangGraph</span>
+                <span><i class="custom-dot">+</i>Your agent</span>
+              </div>
+            </article>
+
+            <article class="feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="5" cy="5" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><path d="M7 5h4a4 4 0 0 1 4 4v0M7 19h4a4 4 0 0 0 4-4v-1"/></svg>
+              </div>
+              <p class="feature-tag">Execution evidence</p>
+              <h3>Trajectory scoring</h3>
+              <p>Compare expected and actual node sequences with order-aware LCS scoring and exact-match evidence.</p>
+            </article>
+
+            <article class="feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 16c2-6 4 2 6-4s4 2 6-4 3 0 4-2"/><path d="M4 20h16"/></svg>
+              </div>
+              <p class="feature-tag">Repeatability</p>
+              <h3>Flakiness detection</h3>
+              <p>Repeat selected cases, separate consistently wrong behavior from unstable outputs, and retain every observation.</p>
+            </article>
+
+            <article class="feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg>
+              </div>
+              <p class="feature-tag">Performance</p>
+              <h3>Cost + latency tracking</h3>
+              <p>See p50 and p95 response time, provider-reported token usage, and estimated cost for every run.</p>
+            </article>
+
+            <article class="feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/><path d="M19 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h8"/></svg>
+              </div>
+              <p class="feature-tag">Quality</p>
+              <h3>Deterministic-first metrics</h3>
+              <p>Score exact, contains, numeric, table, hallucination, and tool-call expectations before using an LLM judge.</p>
+            </article>
+
+            <article class="feature-card feature-card-wide gate-feature">
+              <div class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 3 4 7v5c0 5 3.4 8 8 9 4.6-1 8-4 8-9V7l-8-4Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+              </div>
+              <div>
+                <p class="feature-tag">Regression control</p>
+                <h3>CI gates that fail loudly.</h3>
+                <p>
+                  Catch correctness drops, hallucination spikes, missing cases,
+                  evaluator failures, and agent errors without hiding outages inside quality rates.
+                </p>
+              </div>
+              <div class="mini-gate" aria-label="Example quality gate results">
+                <span><i>correctness_drop</i><b>−0.01</b><em>pass</em></span>
+                <span><i>tool_accuracy</i><b>1.00</b><em>pass</em></span>
+                <span><i>agent_errors</i><b>0</b><em>pass</em></span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="usage" class="section usage-section" aria-labelledby="usage-title">
+        <div class="container usage-grid">
+          <div class="usage-copy">
+            <p class="section-kicker">Small interface, real evidence</p>
+            <h2 id="usage-title">From crew to CI report<br>in a few lines.</h2>
+            <p>
+              Wrap your crew, point AgentEval at a YAML suite, and get a normalized
+              report that can be stored, compared, and gated in CI.
+            </p>
+            <ul class="usage-list">
+              <li><span>1</span> Install from PyPI</li>
+              <li><span>2</span> Connect an adapter</li>
+              <li><span>3</span> Run your golden suite</li>
+            </ul>
+            <a
+              class="text-link"
+              href="https://github.com/nishanttyagi28/agenteval#quickstart-with-agentic-data-analyst"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Read the quickstart <span aria-hidden="true">→</span>
+            </a>
+          </div>
+
+          <div class="code-window">
+            <div class="code-tabs">
+              <span class="active-tab">evaluate.py</span>
+              <button
+                class="copy-button code-copy"
+                type="button"
+                data-copy-target="usage-code"
+                aria-label="Copy Python example"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 9h10v10H9z"/><path d="M5 15H4V5h10v1"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <pre id="usage-code" tabindex="0" aria-label="CrewAI adapter usage example"><code><span class="syntax-muted">from</span> my_crew.crew <span class="syntax-muted">import</span> MyCrew
+<span class="syntax-muted">from</span> agenteval.adapters <span class="syntax-muted">import</span> CrewAIAdapter
+<span class="syntax-muted">from</span> agenteval.core.runner <span class="syntax-muted">import</span> run_golden_suite
+
+adapter = <span class="syntax-accent">CrewAIAdapter</span>(
+    crew_factory=<span class="syntax-muted">lambda</span>: MyCrew().crew(),
+    input_key=<span class="syntax-string">"topic"</span>,
+)
+
+report = <span class="syntax-accent">run_golden_suite</span>(
+    adapter,
+    cases_path=<span class="syntax-string">"tests/golden/cases.yaml"</span>,
+    adapter_name=<span class="syntax-string">"research_crew"</span>,
+)
+
+<span class="syntax-muted">print</span>(report.correctness_rate)  <span class="syntax-comment"># 0.952</span></code></pre>
+            <div class="code-result"><span class="success">✓</span> 21 cases evaluated · report saved</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="stats" class="section stats-section" aria-labelledby="stats-title">
+        <div class="container">
+          <h2 id="stats-title" class="sr-only">Project status</h2>
+          <div class="stats-grid">
+            <div class="stat"><strong>162</strong><span>tests passing</span><small>Deterministic suite</small></div>
+            <div class="stat"><strong>5</strong><span>quality metrics</span><small>One CI decision</small></div>
+            <a class="stat stat-link" href="https://pypi.org/project/nishanttyagi-agenteval/" target="_blank" rel="noreferrer">
+              <strong>PyPI</strong><span>published package</span><small>nishanttyagi-agenteval ↗</small>
+            </a>
+            <a class="stat stat-link" href="https://github.com/nishanttyagi28/agenteval" target="_blank" rel="noreferrer">
+              <strong>MIT</strong><span>open source</span>
+              <img
+                src="https://img.shields.io/github/stars/nishanttyagi28/agenteval?style=flat&amp;label=GitHub%20stars&amp;color=7c3aed"
+                alt="GitHub stars for nishanttyagi28/agenteval"
+                width="108"
+                height="20"
+                loading="lazy"
+              >
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section cta-section" aria-labelledby="cta-title">
+        <div class="container cta-shell">
+          <div class="cta-glow" aria-hidden="true"></div>
+          <p class="section-kicker">Make regressions reviewable</p>
+          <h2 id="cta-title">Give your agents a quality gate.</h2>
+          <p>Start with a golden case. Add the rest when the evidence earns it.</p>
+          <div class="cta-actions">
+            <div class="install-bar compact-install" aria-label="Installation command">
+              <span class="terminal-prompt" aria-hidden="true">$</span>
+              <code>pip install nishanttyagi-agenteval</code>
+              <button
+                class="copy-button"
+                type="button"
+                data-copy="pip install nishanttyagi-agenteval"
+                aria-label="Copy installation command"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 9h10v10H9z"/><path d="M5 15H4V5h10v1"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <a
+              class="button button-secondary"
+              href="https://github.com/nishanttyagi28/agenteval"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Explore the repository <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-shell">
+        <a class="brand" href="#top" aria-label="AgentEval home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 28 28" focusable="false"><path d="M7 20.5 14 6l7 14.5M9.4 16h9.2"/><path d="m18.5 8.5 2 2 4-4"/></svg>
+          </span>
+          <span>AgentEval</span>
+        </a>
+        <p>CI evaluation for agents that have to work.</p>
+        <nav aria-label="Footer navigation">
+          <a href="https://pypi.org/project/nishanttyagi-agenteval/" target="_blank" rel="noreferrer">PyPI</a>
+          <a href="https://github.com/nishanttyagi28/agenteval" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://github.com/nishanttyagi28/agenteval/blob/main/LICENSE" target="_blank" rel="noreferrer">License</a>
+        </nav>
+        <small>© <span id="current-year">2026</span> Nishant Tyagi</small>
+      </div>
+    </footer>
+
+    <div id="copy-status" class="sr-only" role="status" aria-live="polite"></div>
+  </body>
+</html>

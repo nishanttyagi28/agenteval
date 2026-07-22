@@ -1,0 +1,21 @@
+{
+  "name": "agenteval-landing-page",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "npm run test:static && npm run test:browser",
+    "test:static": "npm run build && node scripts/validate.mjs",
+    "test:browser": "playwright test",
+    "capture": "npm run build && node scripts/capture.mjs",
+    "serve": "node scripts/serve.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "latest",
+    "@playwright/test": "latest"
+  }
+}
