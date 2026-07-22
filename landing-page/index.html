@@ -107,37 +107,66 @@
             </div>
           </div>
 
-          <div class="hero-console" aria-label="Example AgentEval run summary">
+          <!-- Static demonstration only: these example results are not a live AgentEval execution. -->
+          <div
+            class="hero-console"
+            data-terminal-demo
+            data-demo-state="idle"
+            role="region"
+            aria-label="Animated example AgentEval run summary"
+            aria-busy="false"
+          >
             <div class="console-header">
               <div class="window-controls" aria-hidden="true"><span></span><span></span><span></span></div>
-              <span>agent-eval.yml · run #184</span>
-              <span class="run-status"><i></i> passed</span>
+              <span class="console-title">agent-eval.yml · run #184</span>
+              <div class="console-tools">
+                <span class="run-status" data-demo-result><i></i> passed</span>
+                <button
+                  class="demo-replay"
+                  type="button"
+                  data-run-demo
+                  aria-label="Run terminal demo"
+                >
+                  <span aria-hidden="true">↻</span>
+                  <span data-demo-button-label>Run demo</span>
+                </button>
+              </div>
             </div>
             <div class="console-body">
-              <div class="command-line"><span>$</span> agenteval run --agent research_crew</div>
-              <div class="run-line"><span class="muted">→</span> Loading <strong>21 golden cases</strong></div>
-              <div class="run-line"><span class="success">✓</span> CrewAI adapter connected</div>
-              <div class="run-line"><span class="success">✓</span> Evaluation complete <span class="muted">8.42s</span></div>
+              <div class="command-line demo-line">
+                <span>$</span><span data-demo-text="agenteval run --agent research_crew"></span>
+              </div>
+              <div class="run-line demo-line">
+                <span class="muted">→</span><span data-demo-text="Loading 21 golden cases"></span>
+              </div>
+              <div class="run-line demo-line">
+                <span class="success">✓</span><span data-demo-text="CrewAI adapter connected"></span>
+              </div>
+              <div class="run-line demo-line">
+                <span class="success">✓</span><span data-demo-text="Evaluation complete"></span>
+                <span class="muted demo-timing" data-demo-timing>8.42s</span>
+              </div>
 
               <div class="metrics-panel">
                 <div class="metric-row">
-                  <span>Correctness</span><strong>95.2%</strong>
-                  <div class="metric-track"><i style="--value: 95.2%"></i></div>
+                  <span>Correctness</span><strong data-metric-value>0%</strong>
+                  <div class="metric-track" role="progressbar" aria-label="Correctness" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-metric="95.2"><i></i></div>
                 </div>
                 <div class="metric-row">
-                  <span>Tool accuracy</span><strong>100%</strong>
-                  <div class="metric-track"><i style="--value: 100%"></i></div>
+                  <span>Tool accuracy</span><strong data-metric-value>0%</strong>
+                  <div class="metric-track" role="progressbar" aria-label="Tool accuracy" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-metric="100"><i></i></div>
                 </div>
                 <div class="metric-row">
-                  <span>Trajectory match</span><strong>92.8%</strong>
-                  <div class="metric-track"><i style="--value: 92.8%"></i></div>
+                  <span>Trajectory match</span><strong data-metric-value>0%</strong>
+                  <div class="metric-track" role="progressbar" aria-label="Trajectory match" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-metric="92.8"><i></i></div>
                 </div>
               </div>
 
-              <div class="gate-result">
+              <div class="gate-result" data-demo-gate>
                 <div><span class="check-ring">✓</span><span>Regression gate</span></div>
                 <strong>PASS</strong>
               </div>
+              <span class="sr-only" role="status" aria-live="polite" data-demo-status></span>
             </div>
           </div>
         </div>

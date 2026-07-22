@@ -37,6 +37,45 @@ test("renders without console errors or horizontal overflow", async ({ page }) =
   expect(pageErrors).toEqual([]);
 });
 
+test("terminal demo animates to completion and can be replayed", async ({ page }) => {
+  const consoleErrors = [];
+  const pageErrors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  const demo = page.locator("[data-terminal-demo]");
+  const replay = page.getByRole("button", { name: "Run terminal demo" });
+  const initialBox = await demo.boundingBox();
+  await expect(demo).toHaveAttribute("data-demo-state", "complete", { timeout: 10_000 });
+  const completedBox = await demo.boundingBox();
+  expect(initialBox).not.toBeNull();
+  expect(completedBox).not.toBeNull();
+  expect(Math.abs(completedBox.height - initialBox.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(completedBox.width - initialBox.width)).toBeLessThanOrEqual(1);
+  await expect(demo.locator('[data-demo-text="agenteval run --agent research_crew"]')).toHaveText(
+    "agenteval run --agent research_crew",
+  );
+  await expect(demo.locator("[data-demo-timing]")).toHaveText("8.42s");
+  await expect(demo.locator('[aria-label="Correctness"]')).toHaveAttribute("aria-valuenow", "95.2");
+  await expect(demo.locator('[aria-label="Tool accuracy"]')).toHaveAttribute("aria-valuenow", "100");
+  await expect(demo.locator('[aria-label="Trajectory match"]')).toHaveAttribute("aria-valuenow", "92.8");
+  await expect(demo.locator("[data-demo-gate]")).toHaveClass(/is-visible/);
+
+  await replay.click();
+  await expect(demo).toHaveAttribute("data-demo-state", "running");
+  await expect(demo.locator('[aria-label="Correctness"]')).toHaveAttribute("aria-valuenow", "0");
+  await expect(demo.locator("[data-demo-gate]")).not.toHaveClass(/is-visible/);
+  await expect(demo).toHaveAttribute("data-demo-state", "complete", { timeout: 10_000 });
+  await expect(demo.getByText("PASS", { exact: true })).toBeVisible();
+  expect(consoleErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
 test("all internal navigation targets exist and copy actions work", async ({ page }) => {
   const hrefs = await page.locator('a[href^="#"]').evaluateAll((links) =>
     [...new Set(links.map((link) => link.getAttribute("href")))],
@@ -50,7 +89,7 @@ test("all internal navigation targets exist and copy actions work", async ({ pag
   }
 
   await page.getByRole("button", { name: "Copy installation command" }).first().click();
-  await expect(page.getByRole("status")).toHaveText("Copied to clipboard");
+  await expect(page.locator("#copy-status")).toHaveText("Copied to clipboard");
 });
 
 test("has semantic landmarks and no detectable accessibility violations", async ({ page }) => {
