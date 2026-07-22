@@ -1,0 +1,62 @@
+{
+  "name": "agenteval-vscode",
+  "displayName": "AgentEval",
+  "description": "Run AgentEval evaluation suites from the VS Code command palette.",
+  "version": "0.0.1",
+  "publisher": "nishanttyagi28",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Testing"
+  ],
+  "activationEvents": [
+    "onCommand:agenteval.runSuite"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agenteval.runSuite",
+        "title": "AgentEval: Run Suite",
+        "category": "AgentEval"
+      }
+    ],
+    "configuration": {
+      "title": "AgentEval",
+      "properties": {
+        "agenteval.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Python executable used to run `python -m agenteval run`. Use an absolute path if agenteval is installed in a specific virtual environment."
+        },
+        "agenteval.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra arguments appended to `agenteval run`, e.g. [\"--agent\", \"my_agent\"] or [\"--all\"]."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nishanttyagi28/agenteval.git",
+    "directory": "vscode-extension"
+  }
+}

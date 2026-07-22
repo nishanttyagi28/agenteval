@@ -40,6 +40,17 @@ runs/*
 .DS_Store
 Thumbs.db
 
+# The VS Code extension in vscode-extension/ needs its own launch/build
+# config committed (F5 to run the Extension Development Host) — this isn't a
+# contributor's personal editor config like the repo-root .vscode/ above.
+!vscode-extension/.vscode/
+!vscode-extension/.vscode/**
+
+# VS Code extension build output / packages
+vscode-extension/out/
+vscode-extension/node_modules/
+vscode-extension/*.vsix
+
 # Logs / local
 *.log
 terminals/

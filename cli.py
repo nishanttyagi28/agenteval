@@ -86,6 +86,20 @@ def _gate_thresholds(config: AgentConfig):
     )
 
 
+def _history_root(runs_dir_arg: str | None, registry_path: Path) -> Path:
+    """Root directory for per-agent history ledgers.
+
+    Mirrors the flakiness sidecar convention: always rooted at the top-level
+    ``runs/`` directory (or an explicit ``--runs-dir`` override), independent
+    of a registered agent's own configured ``runs_dir``.
+    """
+    return Path(runs_dir_arg) if runs_dir_arg else _configured_path(registry_path, Path("runs"))
+
+
+def _history_path_for(config: AgentConfig, root: Path) -> Path:
+    return root / config.name / "history.json"
+
+
 def validate_repeat_request(
     repeat_count: int,
     repeat_case_ids: list[str] | None,
@@ -244,6 +258,22 @@ def _run_registered_agent(
         gate = compare_runs(
             load_report(baseline_path), report.to_dict(), _gate_thresholds(config)
         ).passed
+
+    if not args.no_score and not args.no_history:
+        from agenteval.core.history import append_history_entry, entry_from_report
+
+        history_path = _history_path_for(config, _history_root(args.runs_dir, registry_path))
+        try:
+            append_history_entry(
+                entry_from_report(report.to_dict(), gate_passed=gate),
+                history_path,
+                limit=args.history_limit,
+            )
+        except OSError as exc:
+            print(f"warning: failed to record trend history: {exc}", file=sys.stderr)
+        else:
+            print(f"history_saved {history_path}")
+
     return {
         "agent": config.name,
         "passed": statuses.count("passed"),
@@ -269,6 +299,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         )
         if args.repeat > 1 and args.no_score:
             raise ValueError("--repeat > 1 cannot be combined with --no-score")
+        if args.history_limit < 1:
+            raise ValueError("--history-limit must be at least 1")
         if args.repeat != 1 or args.repeat_case:
             # Validate every selected suite before constructing any adapter or
             # making any live call, including later entries in a --all run.
@@ -371,6 +403,64 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     return 0 if result.passed else 1
 
 
+def _cmd_report(args: argparse.Namespace) -> int:
+    from agenteval.core.compare import compare_runs, latest_run_file, load_report
+    from agenteval.core.history import load_history
+    from agenteval.core.registry import load_agent_registry
+    from agenteval.core.report import generate_html_report
+
+    registry_path = _registry_path(args.registry)
+
+    try:
+        if args.history_limit < 1:
+            raise ValueError("--history-limit must be at least 1")
+        registry = load_agent_registry(registry_path)
+        config = resolve_agent_selection(registry, requested=args.agent)[0]
+        runs_dir = Path(args.runs_dir) if args.runs_dir else _configured_path(
+            registry_path, config.runs_dir
+        )
+        run_path = Path(args.run) if args.run else latest_run_file(runs_dir)
+        report_data = load_report(run_path)
+
+        baseline_data = None
+        comparison = None
+        if not args.no_baseline:
+            baseline_path = Path(args.baseline) if args.baseline else _configured_path(
+                registry_path, config.baseline
+            )
+            if args.baseline and not baseline_path.is_file():
+                raise ValueError(f"baseline file not found: {baseline_path}")
+            if baseline_path.is_file():
+                baseline_data = load_report(baseline_path)
+                comparison = compare_runs(baseline_data, report_data, _gate_thresholds(config))
+
+        history_path = (
+            Path(args.history_file)
+            if args.history_file
+            else _history_path_for(config, _history_root(args.runs_dir, registry_path))
+        )
+        history = load_history(history_path)[-args.history_limit :]
+
+        output_path = Path(args.output) if args.output else runs_dir / "report.html"
+        written = generate_html_report(
+            report_data,
+            output_path=output_path,
+            baseline=baseline_data,
+            comparison=comparison,
+            history=history,
+            agent_display_name=config.display_name,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"agent={config.name}")
+    print(f"run={run_path}")
+    print(f"history_entries={len(history)}")
+    print(f"report={written}")
+    return 0
+
+
 def _cmd_generate(args: argparse.Namespace) -> int:
     from agenteval.core.generator import generate_suite, write_candidate_yaml
     from agenteval.core.runner import DEFAULT_GOLDEN_PATH
@@ -439,6 +529,17 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--stop-on-error", action="store_true", help="Abort on adapter error")
     run_p.add_argument("--no-score", action="store_true", help="Collect raw outputs only")
     run_p.add_argument("--no-llm-judge", action="store_true", help="Skip LLM judged cases")
+    run_p.add_argument(
+        "--history-limit",
+        type=int,
+        default=20,
+        help="Number of recent scored runs to retain for trend tracking (default: 20)",
+    )
+    run_p.add_argument(
+        "--no-history",
+        action="store_true",
+        help="Do not record this run in the trend-history ledger",
+    )
     run_p.set_defaults(func=_cmd_run)
 
     cmp_p = sub.add_parser("compare", help="Compare a current run with a baseline")
@@ -464,6 +565,39 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_p.add_argument("--markdown-out", default=None, help="Write Markdown comparison")
     cmp_p.set_defaults(func=_cmd_compare)
 
+    report_p = sub.add_parser("report", help="Generate a static HTML report for a run")
+    report_p.add_argument("--agent", default=None, help="Registered agent name")
+    report_p.add_argument("--registry", default=None, help=argparse.SUPPRESS)
+    report_p.add_argument(
+        "--run", default=None, help="Run JSON to report on (default: latest run in runs dir)"
+    )
+    report_p.add_argument(
+        "--runs-dir", default=None, help="Directory used to find the latest run and history"
+    )
+    report_p.add_argument(
+        "--baseline",
+        default=None,
+        help="Baseline JSON for gate comparison (default: agent's configured baseline)",
+    )
+    report_p.add_argument(
+        "--no-baseline",
+        action="store_true",
+        help="Skip baseline/gate comparison even if one is configured",
+    )
+    report_p.add_argument(
+        "--history-file",
+        default=None,
+        help="Trend-history JSON (default: <runs-root>/<agent>/history.json)",
+    )
+    report_p.add_argument(
+        "--history-limit",
+        type=int,
+        default=20,
+        help="Number of recent history entries to show in the trend section (default: 20)",
+    )
+    report_p.add_argument("--output", default=None, help="Output HTML path (default: <runs-dir>/report.html)")
+    report_p.set_defaults(func=_cmd_report)
+
     gen_p = sub.add_parser("generate", help="Generate reviewable adversarial candidates")
     gen_p.add_argument("--cases", default=None, help="Source golden YAML")
     gen_p.add_argument("--output", default=None, help="Candidate YAML output")
@@ -475,7 +609,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _harden_console_encoding() -> None:
+    """Never let a non-ASCII character (``≈``, ``→``, ...) crash CLI output.
+
+    Judge notes and case-transition summaries can contain characters that
+    don't exist in a legacy console codepage (e.g. Windows' default cp1252).
+    Without this, a plain ``print()`` of that text raises UnicodeEncodeError
+    and aborts the command — including, for ``run``, after the report JSON
+    was already written but before the history ledger got a chance to
+    record it. Replacing unencodable characters is strictly better than
+    crashing; UTF-8 targets (JSON/HTML files) are unaffected since they set
+    their own encoding explicitly.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="backslashreplace")
+        except (ValueError, OSError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> None:
+    _harden_console_encoding()
     args = build_parser().parse_args(argv)
     raise SystemExit(args.func(args))
 

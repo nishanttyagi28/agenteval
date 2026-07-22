@@ -4,6 +4,7 @@ import pytest
 
 from agenteval.core.compare import (
     GateThresholds,
+    case_status,
     compare_runs,
     format_markdown,
     latest_run_file,
@@ -150,6 +151,15 @@ def test_non_object_report_rejected(tmp_path):
     path.write_text("[]", encoding="utf-8")
     with pytest.raises(ValueError):
         load_report(path)
+
+
+def test_case_status_is_public_and_handles_missing_case():
+    assert case_status(None) == "missing"
+    assert case_status({"status": "passed"}) == "passed"
+    assert case_status({"correctness_pass": True}) == "passed"
+    assert case_status({"correctness_pass": False}) == "failed"
+    assert case_status({"raw": {"route": "harness_error"}}) == "agent_error"
+    assert case_status({}) == "skipped"
 
 
 def test_thresholds_are_configurable():
