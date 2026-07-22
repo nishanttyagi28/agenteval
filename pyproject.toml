@@ -39,6 +39,9 @@ crewai = [
 autogen = [
   "autogen-agentchat>=0.7,<1",
 ]
+openai-agents = [
+  "openai-agents>=0.18,<1",
+]
 
 [project.scripts]
 agenteval = "agenteval.cli:main"

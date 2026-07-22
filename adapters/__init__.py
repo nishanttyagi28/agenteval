@@ -7,6 +7,7 @@ from agenteval.adapters.agentic_data_analyst import (
 )
 from agenteval.adapters.crewai import CrewAIAdapter
 from agenteval.adapters.autogen import AutoGenAdapter
+from agenteval.adapters.openai_agents import OpenAIAgentsAdapter
 
 __all__ = [
     "AgentAdapter",
@@ -16,4 +17,5 @@ __all__ = [
     "DataAnalystAdapter",
     "CrewAIAdapter",
     "AutoGenAdapter",
+    "OpenAIAgentsAdapter",
 ]
