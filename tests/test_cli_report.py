@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from agenteval.cli import _cmd_report, build_parser
 from agenteval.core.schema import AgentConfig, GateConfig, RepositoryConfig
 
