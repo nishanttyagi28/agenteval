@@ -15,6 +15,7 @@
     must_not_hallucinate: true
     ground_truth: 30
     numeric_tolerance: 0
+    expected_trajectory: ["route:sql", "agent:sql"]
   tags: [sql, count, churn]
 
 - id: churned_customers_count

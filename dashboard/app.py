@@ -355,6 +355,62 @@ def case_status(case: dict[str, Any]) -> str:
     return "unscored"
 
 
+def trajectory_table_rows(trajectory: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build a position-preserving expected-versus-actual trace table."""
+    expected = list(trajectory.get("expected") or [])
+    actual = list(trajectory.get("actual") or [])
+    return [
+        {
+            "Position": index + 1,
+            "Expected": expected[index] if index < len(expected) else "—",
+            "Actual": actual[index] if index < len(actual) else "—",
+        }
+        for index in range(max(len(expected), len(actual)))
+    ]
+
+
+def render_trajectory(trajectory: Any) -> None:
+    """Render optional trajectory evidence without changing legacy case views."""
+    if not isinstance(trajectory, dict):
+        return
+
+    st.markdown("#### Trajectory")
+    score = trajectory.get("score")
+    precision = trajectory.get("precision")
+    recall = trajectory.get("recall")
+    exact_match = trajectory.get("exact_match")
+    cols = st.columns(4)
+    cols[0].metric(
+        "Trajectory score",
+        f"{100.0 * float(score):.1f}%" if score is not None else "n/a",
+    )
+    cols[1].metric(
+        "Trajectory precision",
+        f"{100.0 * float(precision):.1f}%" if precision is not None else "n/a",
+    )
+    cols[2].metric(
+        "Trajectory recall",
+        f"{100.0 * float(recall):.1f}%" if recall is not None else "n/a",
+    )
+    cols[3].metric(
+        "Exact match",
+        "Yes" if exact_match is True else ("No" if exact_match is False else "n/a"),
+    )
+
+    rows = trajectory_table_rows(trajectory)
+    if rows:
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+    st.caption(
+        "Order preserved: "
+        + ("yes" if trajectory.get("order_preserved") is True else "no")
+    )
+    missing = list(trajectory.get("missing") or [])
+    extra = list(trajectory.get("extra") or [])
+    if missing or extra:
+        st.write({"missing": missing, "extra": extra})
+
+
 # ── views ────────────────────────────────────────────────────────────────────
 
 
@@ -638,6 +694,8 @@ def render_drilldown(
     with ncol:
         st.write("**nodes_fired**")
         st.write(c.get("nodes_fired") or [])
+
+    render_trajectory(c.get("trajectory"))
 
     with st.expander("Raw case JSON (truncated)"):
         raw = dict(c)
