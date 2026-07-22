@@ -39,3 +39,9 @@ def test_default_runtime_configuration_is_included_as_package_data():
     assert "agents.yaml" in package_data
     assert "baselines/*.json" in package_data
     assert "tests/golden/*.yaml" in package_data
+
+
+def test_crewai_is_an_optional_framework_dependency():
+    extras = load_pyproject()["project"]["optional-dependencies"]
+
+    assert extras["crewai"] == ["crewai>=1,<2"]

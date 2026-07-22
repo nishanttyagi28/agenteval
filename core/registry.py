@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import yaml
@@ -55,7 +55,12 @@ def _safe_artifact_path(value: Any, label: str) -> Path:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label} must be a non-empty relative path")
     path = Path(value)
-    if path.is_absolute() or ".." in path.parts:
+    is_absolute = (
+        path.is_absolute()
+        or PurePosixPath(value).is_absolute()
+        or PureWindowsPath(value).is_absolute()
+    )
+    if is_absolute or ".." in path.parts:
         raise ValueError(f"{label} must not be absolute or contain '..': {value!r}")
     return path
 

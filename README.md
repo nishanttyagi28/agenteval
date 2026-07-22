@@ -27,6 +27,7 @@ AgentEval runs an agent against YAML golden suites, scores five reliability metr
 - [Dashboard evidence](#dashboard-evidence)
 - [Installation](#installation)
 - [Quickstart with Agentic Data Analyst](#quickstart-with-agentic-data-analyst)
+- [CrewAI adapter](#crewai-adapter)
 - [GitHub Actions](#github-actions)
 - [Adversarial robustness](#adversarial-robustness)
 - [Project structure](#project-structure)
@@ -226,6 +227,49 @@ python -m streamlit run agenteval/dashboard/app.py
 ```
 
 The repositories may live anywhere when `AGENTIC_ANALYST_PATH` points to the Agentic Data Analyst checkout. Keeping them as siblings also supports the default local discovery path.
+
+## CrewAI adapter
+
+Install the optional CrewAI integration and wrap either an existing crew or a
+factory that creates fresh crew state for each evaluation case:
+
+```bash
+python -m pip install -e ".[crewai,dev]"
+```
+
+```python
+from agenteval.adapters import CrewAIAdapter
+
+adapter = CrewAIAdapter(
+    crew_factory=lambda: LatestAiDevelopmentCrew().crew(),
+    input_key="topic",
+    inputs={"audience": "engineering leaders"},
+)
+response = adapter.run("AI agent reliability")
+```
+
+To use a standard CrewAI `CrewBase` project through `agenteval run`, point a
+registry entry at the adapter and name the importable crew class. AgentEval
+adds both the configured repository root and its conventional `src/` directory
+to the import path:
+
+```yaml
+adapter: agenteval.adapters.crewai:CrewAIAdapter
+repository:
+  env_var: MY_CREW_PATH
+  default_path: ../my-crew
+  required_paths: [src/my_crew/crew.py]
+adapter_options:
+  crew_import: my_crew.crew:MyCrew
+  input_key: topic
+```
+
+The adapter calls `crew.kickoff(inputs=...)` and normalizes the final raw
+output, task and agent trajectory, observed tool calls, token usage, latency,
+and JSON-safe execution evidence into the standard `AgentResponse`. Existing
+crew-level step callbacks are chained and restored. CrewAI remains optional at
+AgentEval import time; pass `crew_factory` when independent state per case is
+important, or `crew` when the same instance should be reused.
 
 ## GitHub Actions
 

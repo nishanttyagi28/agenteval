@@ -33,6 +33,9 @@ dependencies = [
 dev = [
   "pytest>=8,<9",
 ]
+crewai = [
+  "crewai>=1,<2",
+]
 
 [project.scripts]
 agenteval = "agenteval.cli:main"
