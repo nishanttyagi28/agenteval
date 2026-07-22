@@ -124,3 +124,55 @@ def test_missing_repository_raises_typed_actionable_error(tmp_path, monkeypatch)
     monkeypatch.delenv("EXAMPLE_AGENT_PATH", raising=False)
     with pytest.raises(AgentDependencyNotFound, match="EXAMPLE_AGENT_PATH"):
         resolve_agent_repository(config, registry_path=registry_path)
+
+
+def _registry_yaml_with_field(tmp_path: Path, yaml_fragment: str) -> Path:
+    """Write a registry where ``enabled``/gate booleans are overridden inline."""
+    base = registry_yaml().replace("    enabled: true\n", f"    {yaml_fragment}\n")
+    return write_registry(tmp_path, base)
+
+
+@pytest.mark.parametrize(
+    ("yaml_line", "message"),
+    [
+        ('enabled: "false"', "agents.example_agent.enabled must be a boolean"),
+        ('enabled: "true"', "agents.example_agent.enabled must be a boolean"),
+        ('enabled: 1', "agents.example_agent.enabled must be a boolean"),
+        ('enabled: 0', "agents.example_agent.enabled must be a boolean"),
+    ],
+)
+def test_registry_rejects_non_boolean_enabled(tmp_path, yaml_line, message):
+    with pytest.raises(ValueError, match=message):
+        load_agent_registry(_registry_yaml_with_field(tmp_path, yaml_line))
+
+
+def test_registry_accepts_unquoted_boolean_enabled(tmp_path):
+    registry = load_agent_registry(_registry_yaml_with_field(tmp_path, "enabled: false"))
+    assert registry["example_agent"].enabled is False
+
+
+def _registry_yaml_with_gate_field(tmp_path: Path, gate_line: str) -> Path:
+    base = registry_yaml() + f"      {gate_line}\n"
+    return write_registry(tmp_path, base)
+
+
+@pytest.mark.parametrize(
+    ("gate_line", "message"),
+    [
+        ('fail_on_evaluator_error: "false"', "fail_on_evaluator_error must be a boolean"),
+        ('fail_on_evaluator_error: "true"', "fail_on_evaluator_error must be a boolean"),
+        ('fail_on_agent_error: "false"', "fail_on_agent_error must be a boolean"),
+        ('fail_on_agent_error: 0', "fail_on_agent_error must be a boolean"),
+    ],
+)
+def test_registry_rejects_non_boolean_gate_flags(tmp_path, gate_line, message):
+    with pytest.raises(ValueError, match=message):
+        load_agent_registry(_registry_yaml_with_gate_field(tmp_path, gate_line))
+
+
+def test_registry_accepts_unquoted_boolean_gate_flags(tmp_path):
+    registry = load_agent_registry(
+        _registry_yaml_with_gate_field(tmp_path, "fail_on_evaluator_error: false")
+    )
+    assert registry["example_agent"].gates.fail_on_evaluator_error is False
+    assert registry["example_agent"].gates.fail_on_agent_error is True

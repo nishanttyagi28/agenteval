@@ -10,6 +10,21 @@ from typing import Any, ClassVar
 from agenteval.core.trajectory import TrajectoryEvaluation
 
 
+def parse_yaml_bool(value: Any, *, default: bool, label: str) -> bool:
+    """Validate a YAML boolean field and return it, or the default when absent.
+
+    Rejects strings, numbers, lists, and mappings so that a quoted value such
+    as ``"false"`` is no longer silently coerced to ``True`` by ``bool(...)``.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    raise ValueError(
+        f"{label} must be a boolean (true/false), got {type(value).__name__}: {value!r}"
+    )
+
+
 @dataclass(frozen=True)
 class RepositoryConfig:
     """How to locate and identify an agent's repository."""
@@ -102,7 +117,11 @@ class Expects:
         return cls(
             correctness_type=ct,
             must_call_tools=list(data.get("must_call_tools") or []),
-            must_not_hallucinate=bool(data.get("must_not_hallucinate", False)),
+            must_not_hallucinate=parse_yaml_bool(
+                data.get("must_not_hallucinate"),
+                default=False,
+                label="must_not_hallucinate",
+            ),
             ground_truth=data.get("ground_truth"),
             numeric_tolerance=float(data.get("numeric_tolerance", 0.01)),
             expected_trajectory=expected_trajectory,
