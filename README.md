@@ -38,6 +38,8 @@ The static demo explains the workflow without executing an agent or making API c
 - [OpenAI Agents SDK adapter](#openai-agents-sdk-adapter)
 - [GitHub Actions](#github-actions)
 - [Adversarial robustness](#adversarial-robustness)
+- [HTML reports and regression trend tracking](#html-reports-and-regression-trend-tracking)
+- [VS Code extension](#vs-code-extension)
 - [Project structure](#project-structure)
 - [Testing](#testing)
 - [Current limitations](#current-limitations)
@@ -587,6 +589,8 @@ The composite action has both static contract tests and a hosted deterministic s
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for environment setup, focused and full test commands, adapter requirements, documentation guidance, and the pull-request checklist.
+
+New to the codebase? Issues labeled [`good first issue`](https://github.com/nishanttyagi28/agenteval/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are scoped for a first contribution.
 
 ## License
 
