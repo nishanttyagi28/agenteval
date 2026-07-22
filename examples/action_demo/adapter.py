@@ -24,4 +24,3 @@ class ActionDemoAdapter(AgentAdapter):
             cost_usd=0.0,
             raw={"fixture": True},
         )
-

@@ -34,4 +34,3 @@ jobs:
           path: |
             ${{ steps.agenteval.outputs.report-path }}
             ${{ steps.agenteval.outputs.comparison-path }}
-

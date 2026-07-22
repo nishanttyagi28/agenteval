@@ -7,4 +7,3 @@
     must_not_hallucinate: true
     expected_trajectory: ["agent:action_demo"]
   tags: [action, smoke]
-

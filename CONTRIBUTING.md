@@ -155,4 +155,3 @@ Include:
 - the full exception and traceback when applicable
 
 For security-sensitive reports, do not publish credentials or private agent data in a public issue.
-

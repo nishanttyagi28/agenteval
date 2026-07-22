@@ -46,4 +46,3 @@ jobs:
           test -f "$REPORT_PATH"
           test -f "$COMPARISON_PATH"
           python -c 'import json, os; assert json.load(open(os.environ["COMPARISON_PATH"], encoding="utf-8"))["passed"] is True'
-

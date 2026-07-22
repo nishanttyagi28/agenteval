@@ -117,7 +117,6 @@ runs:
           echo "::error::AgentEval config file not found: $AGENTEVAL_CONFIG"
           exit 2
         fi
-
         mkdir -p "$AGENTEVAL_RUNS_DIR"
         run_command=(
           python -m agenteval run
@@ -216,4 +215,3 @@ runs:
           echo "::error::fail-on-regression must be true or false"
           exit 2
         fi
-

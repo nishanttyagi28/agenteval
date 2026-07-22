@@ -22,4 +22,3 @@ agents:
       fail_on_agent_error: true
     smoke_case_ids:
       - action_smoke
-
