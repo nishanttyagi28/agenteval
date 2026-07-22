@@ -26,6 +26,10 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        # Pages is provisioned once at the repository level with build_type=workflow.
+        # GITHUB_TOKEN cannot create a Pages site, so keep runtime enablement disabled.
+        with:
+          enablement: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
