@@ -1,0 +1,25 @@
+version: 1
+
+agents:
+  action_demo:
+    display_name: Action smoke-test agent
+    enabled: true
+    adapter: examples.action_demo.adapter:ActionDemoAdapter
+    repository:
+      env_var: AGENTEVAL_ACTION_DEMO_PATH
+      default_path: .
+      required_paths:
+        - adapter.py
+    golden_suite: cases.yaml
+    baseline: baseline.json
+    runs_dir: runs
+    adapter_options: {}
+    gates:
+      max_correctness_drop: 0
+      max_hallucination_rate: 0
+      min_tool_accuracy: 1
+      fail_on_evaluator_error: true
+      fail_on_agent_error: true
+    smoke_case_ids:
+      - action_smoke
+

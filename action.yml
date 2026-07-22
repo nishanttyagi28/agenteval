@@ -1,0 +1,219 @@
+name: AgentEval regression gate
+description: Run AgentEval against an agent and expose the regression decision and reports.
+author: Nishant Tyagi
+
+branding:
+  icon: check-circle
+  color: purple
+
+inputs:
+  agent:
+    description: Registered agent name from the AgentEval registry.
+    required: true
+  config-file:
+    description: Path to the AgentEval agents YAML registry.
+    required: false
+    default: agents.yaml
+  agent-path:
+    description: Optional path to the agent repository under test.
+    required: false
+    default: ""
+  cases-file:
+    description: Optional golden-case YAML path overriding the registry.
+    required: false
+    default: ""
+  baseline-file:
+    description: Optional baseline JSON path overriding the registry.
+    required: false
+    default: ""
+  runs-dir:
+    description: Directory for the current run and comparison reports.
+    required: false
+    default: .agenteval/runs
+  case-ids:
+    description: Optional comma-separated golden case IDs to run.
+    required: false
+    default: ""
+  tags:
+    description: Optional comma-separated golden case tags to run.
+    required: false
+    default: ""
+  install-extras:
+    description: Optional comma-separated AgentEval extras, such as crewai or autogen.
+    required: false
+    default: ""
+  python-version:
+    description: Python version used to run AgentEval.
+    required: false
+    default: "3.12"
+  no-llm-judge:
+    description: Disable LLM-judged cases and use deterministic scoring only.
+    required: false
+    default: "false"
+  fail-on-regression:
+    description: Fail the action when the comparison gate does not pass.
+    required: false
+    default: "true"
+
+outputs:
+  passed:
+    description: Whether the AgentEval regression gate passed (true or false).
+    value: ${{ steps.evaluate.outputs.passed }}
+  report-path:
+    description: Absolute path to the generated AgentEval run report.
+    value: ${{ steps.evaluate.outputs.report-path }}
+  comparison-path:
+    description: Absolute path to the machine-readable comparison report.
+    value: ${{ steps.evaluate.outputs.comparison-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: ${{ github.action_path }}/requirements.txt
+
+    - name: Install AgentEval
+      shell: bash
+      env:
+        AGENTEVAL_EXTRAS: ${{ inputs.install-extras }}
+      run: |
+        set -euo pipefail
+        if [[ -n "$AGENTEVAL_EXTRAS" && ! "$AGENTEVAL_EXTRAS" =~ ^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$ ]]; then
+          echo "::error::install-extras must be a comma-separated list of package extra names"
+          exit 2
+        fi
+        package_spec="$GITHUB_ACTION_PATH"
+        if [[ -n "$AGENTEVAL_EXTRAS" ]]; then
+          package_spec="${package_spec}[${AGENTEVAL_EXTRAS}]"
+        fi
+        python -m pip install --disable-pip-version-check "$package_spec"
+
+    - name: Run AgentEval regression gate
+      id: evaluate
+      shell: bash
+      env:
+        AGENTEVAL_AGENT: ${{ inputs.agent }}
+        AGENTEVAL_CONFIG: ${{ inputs.config-file }}
+        AGENTEVAL_AGENT_PATH: ${{ inputs.agent-path }}
+        AGENTEVAL_CASES: ${{ inputs.cases-file }}
+        AGENTEVAL_BASELINE: ${{ inputs.baseline-file }}
+        AGENTEVAL_RUNS_DIR: ${{ inputs.runs-dir }}
+        AGENTEVAL_CASE_IDS: ${{ inputs.case-ids }}
+        AGENTEVAL_TAGS: ${{ inputs.tags }}
+        AGENTEVAL_NO_LLM_JUDGE: ${{ inputs.no-llm-judge }}
+        AGENTEVAL_FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
+      run: |
+        set -euo pipefail
+
+        if [[ -z "$AGENTEVAL_AGENT" ]]; then
+          echo "::error::agent is required"
+          exit 2
+        fi
+        if [[ ! -f "$AGENTEVAL_CONFIG" ]]; then
+          echo "::error::AgentEval config file not found: $AGENTEVAL_CONFIG"
+          exit 2
+        fi
+
+        mkdir -p "$AGENTEVAL_RUNS_DIR"
+        run_command=(
+          python -m agenteval run
+          --agent "$AGENTEVAL_AGENT"
+          --registry "$AGENTEVAL_CONFIG"
+          --runs-dir "$AGENTEVAL_RUNS_DIR"
+          --quiet
+        )
+        if [[ -n "$AGENTEVAL_AGENT_PATH" ]]; then
+          run_command+=(--agent-repo "$AGENTEVAL_AGENT_PATH")
+        fi
+        if [[ -n "$AGENTEVAL_CASES" ]]; then
+          run_command+=(--cases "$AGENTEVAL_CASES")
+        fi
+        if [[ "$AGENTEVAL_NO_LLM_JUDGE" == "true" ]]; then
+          run_command+=(--no-llm-judge)
+        elif [[ "$AGENTEVAL_NO_LLM_JUDGE" != "false" ]]; then
+          echo "::error::no-llm-judge must be true or false"
+          exit 2
+        fi
+
+        IFS=',' read -r -a case_ids <<< "$AGENTEVAL_CASE_IDS"
+        for case_id in "${case_ids[@]}"; do
+          if [[ -n "$case_id" ]]; then
+            run_command+=(--case-id "$case_id")
+          fi
+        done
+        IFS=',' read -r -a tags <<< "$AGENTEVAL_TAGS"
+        for tag in "${tags[@]}"; do
+          if [[ -n "$tag" ]]; then
+            run_command+=(--tag "$tag")
+          fi
+        done
+
+        set +e
+        "${run_command[@]}"
+        run_exit=$?
+        set -e
+        if (( run_exit != 0 )); then
+          echo "passed=false" >> "$GITHUB_OUTPUT"
+          echo "report-path=" >> "$GITHUB_OUTPUT"
+          echo "comparison-path=" >> "$GITHUB_OUTPUT"
+          exit "$run_exit"
+        fi
+
+        report_path=$(AGENTEVAL_REPORT_DIR="$AGENTEVAL_RUNS_DIR" python - <<'PY'
+        import os
+        from pathlib import Path
+
+        directory = Path(os.environ["AGENTEVAL_REPORT_DIR"])
+        candidates = [
+            path for path in directory.glob("*.json")
+            if path.name != "comparison.json"
+        ]
+        if not candidates:
+            raise SystemExit("AgentEval did not produce a run report")
+        print(max(candidates, key=lambda path: path.stat().st_mtime).resolve())
+        PY
+        )
+        comparison_path=$(python -c 'from pathlib import Path; import sys; print((Path(sys.argv[1]) / "comparison.json").resolve())' "$AGENTEVAL_RUNS_DIR")
+        comparison_markdown=$(python -c 'from pathlib import Path; import sys; print((Path(sys.argv[1]) / "comparison.md").resolve())' "$AGENTEVAL_RUNS_DIR")
+
+        compare_command=(
+          python -m agenteval compare
+          --agent "$AGENTEVAL_AGENT"
+          --registry "$AGENTEVAL_CONFIG"
+          --current "$report_path"
+          --json-out "$comparison_path"
+          --markdown-out "$comparison_markdown"
+        )
+        if [[ -n "$AGENTEVAL_BASELINE" ]]; then
+          compare_command+=(--baseline "$AGENTEVAL_BASELINE")
+        fi
+
+        set +e
+        "${compare_command[@]}"
+        compare_exit=$?
+        set -e
+
+        passed=false
+        if (( compare_exit == 0 )); then
+          passed=true
+        fi
+        echo "passed=$passed" >> "$GITHUB_OUTPUT"
+        echo "report-path=$report_path" >> "$GITHUB_OUTPUT"
+        echo "comparison-path=$comparison_path" >> "$GITHUB_OUTPUT"
+        cat "$comparison_markdown" >> "$GITHUB_STEP_SUMMARY"
+
+        if (( compare_exit > 1 )); then
+          exit "$compare_exit"
+        fi
+        if (( compare_exit == 1 )) && [[ "$AGENTEVAL_FAIL_ON_REGRESSION" == "true" ]]; then
+          exit 1
+        fi
+        if [[ "$AGENTEVAL_FAIL_ON_REGRESSION" != "true" && "$AGENTEVAL_FAIL_ON_REGRESSION" != "false" ]]; then
+          echo "::error::fail-on-regression must be true or false"
+          exit 2
+        fi
+
