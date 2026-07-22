@@ -22,6 +22,9 @@ def registry_yaml(*, adapter="agenteval.adapters.scheme_saathi:SchemeSaathiAdapt
         "max_correctness_drop": "0.05",
         "max_hallucination_rate": "0.10",
         "min_tool_accuracy": "0.90",
+        "enabled": "true",
+        "fail_on_evaluator_error": "true",
+        "fail_on_agent_error": "true",
         **overrides,
     }
     return f"""\
@@ -29,7 +32,7 @@ version: 1
 agents:
   {values['name']}:
     display_name: Example Agent
-    enabled: true
+    enabled: {values['enabled']}
     adapter: {adapter}
     repository:
       env_var: {values['env_var']}
@@ -43,6 +46,8 @@ agents:
       max_correctness_drop: {values['max_correctness_drop']}
       max_hallucination_rate: {values['max_hallucination_rate']}
       min_tool_accuracy: {values['min_tool_accuracy']}
+      fail_on_evaluator_error: {values['fail_on_evaluator_error']}
+      fail_on_agent_error: {values['fail_on_agent_error']}
 """
 
 
@@ -88,6 +93,20 @@ def test_registry_rejects_duplicate_agent_names(tmp_path):
 )
 def test_registry_validation_rules(tmp_path, override, message):
     with pytest.raises(ValueError, match=message):
+        load_agent_registry(write_registry(tmp_path, registry_yaml(**override)))
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"enabled": '"false"'}, "enabled must be a boolean"),
+        ({"enabled": "1"}, "enabled must be a boolean"),
+        ({"fail_on_evaluator_error": '"true"'}, "fail_on_evaluator_error must be a boolean"),
+        ({"fail_on_agent_error": '"false"'}, "fail_on_agent_error must be a boolean"),
+    ],
+)
+def test_registry_strict_boolean_validation(tmp_path, override, message):
+    with pytest.raises(TypeError, match=message):
         load_agent_registry(write_registry(tmp_path, registry_yaml(**override)))
 
 

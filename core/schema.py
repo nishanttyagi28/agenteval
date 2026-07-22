@@ -82,11 +82,13 @@ class Expects:
         ct = data.get("correctness_type", "exact")
         if isinstance(ct, str):
             ct = CorrectnessType(ct)
+        
         trajectory_raw = data.get("expected_trajectory")
         if trajectory_raw is None:
             trajectory_raw = []
         elif not isinstance(trajectory_raw, list):
             raise ValueError("expected_trajectory must be a list")
+        
         expected_trajectory: list[str] = []
         for index, step in enumerate(trajectory_raw):
             if not isinstance(step, str):
@@ -99,10 +101,18 @@ class Expects:
                     f"expected_trajectory[{index}] must not be blank"
                 )
             expected_trajectory.append(normalized)
+
+        # Strict boolean validation for must_not_hallucinate
+        mnh = data.get("must_not_hallucinate", False)
+        if not isinstance(mnh, bool):
+            raise TypeError(
+                f"expects.must_not_hallucinate must be a boolean (True/False), got {type(mnh).__name__}: {mnh!r}"
+            )
+
         return cls(
             correctness_type=ct,
             must_call_tools=list(data.get("must_call_tools") or []),
-            must_not_hallucinate=bool(data.get("must_not_hallucinate", False)),
+            must_not_hallucinate=mnh,
             ground_truth=data.get("ground_truth"),
             numeric_tolerance=float(data.get("numeric_tolerance", 0.01)),
             expected_trajectory=expected_trajectory,
