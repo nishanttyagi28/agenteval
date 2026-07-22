@@ -1,6 +1,8 @@
 # AgentEval
 
 [![AgentEval regression gate](https://github.com/nishanttyagi28/agenteval/actions/workflows/eval.yml/badge.svg?branch=main)](https://github.com/nishanttyagi28/agenteval/actions/workflows/eval.yml)
+[![PyPI version](https://img.shields.io/pypi/v/nishanttyagi-agenteval.svg)](https://pypi.org/project/nishanttyagi-agenteval/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/nishanttyagi-agenteval.svg)](https://pypi.org/project/nishanttyagi-agenteval/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://agenteval-6honbe24hradazngswxkrq.streamlit.app/)
@@ -21,6 +23,8 @@ AgentEval adds the missing evaluation layer:
 - deterministic-first scoring with an LLM judge only for open-ended answers
 - baseline comparison and configurable regression gates
 - explicit agent, evaluator, missing-case, and skipped-case failures
+- opt-in repeat consistency evidence for flaky outputs
+- optional LCS-based trajectory evidence for expected agent steps
 - a Streamlit dashboard for summary, regression, and case-level inspection
 - GitHub Actions automation with a six-case smoke suite and optional 21-case full suite
 - reviewable adversarial variants that remain outside blocking CI until approved
@@ -76,7 +80,7 @@ LLM agents can produce different answers for the same prompt even when the code 
 Run the normal suite once and repeat only explicitly selected cases:
 
 ```bash
-python -m agenteval run \
+agenteval run \
   --agent agentic_data_analyst \
   --repeat 5 \
   --repeat-case total_customers \
@@ -151,25 +155,48 @@ The comparison view exposes trade-offs instead of collapsing health into one num
 
 A numeric answer of approximately 25 months failed against a ground truth of 25.23 with a tolerance of 0.05. The ground truth was intentionally preserved rather than loosened to produce a green result.
 
-## Quickstart
+## Installation
+
+Install the published package from PyPI:
+
+```bash
+python -m pip install nishanttyagi-agenteval
+agenteval --help
+```
+
+The PyPI distribution is named `nishanttyagi-agenteval`, while the Python package and console command remain `agenteval`:
+
+```python
+import agenteval
+```
+
+Both `agenteval ...` and `python -m agenteval ...` invoke the same CLI. For contributors working from a clone, use an editable install instead:
+
+```bash
+git clone https://github.com/nishanttyagi28/agenteval
+cd agenteval
+python -m pip install -e .
+python -m pip install -r requirements-dev.txt
+```
+
+## Quickstart with Agentic Data Analyst
 
 Python 3.12 is used by the CI workflow.
 
 ```bash
-# Keep both repositories as siblings
-git clone https://github.com/nishanttyagi28/agentic-data-analyst
+mkdir agenteval-demo && cd agenteval-demo
 git clone https://github.com/nishanttyagi28/agenteval
-
-python -m pip install -r agenteval/requirements.txt
+git clone https://github.com/nishanttyagi28/agentic-data-analyst
+python -m pip install -e ./agenteval
 python -m pip install -r agentic-data-analyst/requirements.txt
 
 export AGENTIC_ANALYST_PATH="$PWD/agentic-data-analyst"
 
 # Run all golden cases
-python -m agenteval run
+agenteval run
 
 # Compare a current report with the versioned baseline
-python -m agenteval compare \
+agenteval compare \
   --baseline agenteval/baselines/data_analyst.json \
   --current agenteval/runs/<run>.json
 
@@ -177,7 +204,7 @@ python -m agenteval compare \
 python -m streamlit run agenteval/dashboard/app.py
 ```
 
-The repositories must share the same parent directory so Python can resolve the `agenteval` package and the sibling agent dependency.
+The repositories may live anywhere when `AGENTIC_ANALYST_PATH` points to the Agentic Data Analyst checkout. Keeping them as siblings also supports the default local discovery path.
 
 ## GitHub Actions
 
@@ -198,10 +225,10 @@ The repositories must share the same parent directory so Python can resolve the 
 Generate reviewable, expectation-preserving candidates:
 
 ```bash
-python -m agenteval generate \
-  --cases agenteval/tests/golden/analyst_cases.yaml \
+agenteval generate \
+  --cases tests/golden/analyst_cases.yaml \
   --variants 3 \
-  --output agenteval/tests/adversarial/candidates.yaml
+  --output tests/adversarial/candidates.yaml
 ```
 
 Each candidate retains its parent case, ground truth, tool expectations, and mutation type. New variants start with `review_status: candidate` and are not added to the blocking golden gate until reviewed.
@@ -210,6 +237,7 @@ Each candidate retains its parent case, ground truth, tool expectations, and mut
 
 ```text
 agenteval/
+├── pyproject.toml        # Package metadata and agenteval console entry point
 ├── agents.yaml           # Registered agents, adapters, suites, and gate defaults
 ├── adapters/             # Agent interface and concrete adapter
 ├── core/
@@ -228,19 +256,21 @@ agenteval/
 ├── runs/                 # Standard single-pass run artifacts
 │   └── <agent>/
 │       └── flakiness/    # Isolated repeated-run evidence by run_id
-└── .github/workflows/    # CI regression workflow
+└── .github/workflows/    # CI regression and trusted PyPI publishing
 ```
 
 ## Testing
 
 ```bash
-python -m pip install -r requirements-dev.txt
+python -m pip install -e ".[dev]"
 python -m pytest -q
+agenteval --help
+agenteval compare --help
+# Module invocation remains supported:
 python -m agenteval --help
-python -m agenteval compare --help
 ```
 
-Deterministic tests cover schema and metrics behaviour, error handling, baseline comparison, missing/skipped-case gates, adversarial generation, provenance, and CLI paths without requiring a live provider call.
+Deterministic tests cover schema and metrics behaviour, error handling, baseline comparison, missing/skipped-case gates, adversarial generation, provenance, flakiness, trajectory scoring, adapter event boundaries, dashboard evidence, packaging, and CLI paths without requiring a live provider call.
 
 ## Current limitations
 
