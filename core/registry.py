@@ -12,7 +12,7 @@ import yaml
 
 from agenteval.adapters.base import AgentAdapter
 from agenteval.core.config import AgentDependencyNotFound
-from agenteval.core.schema import AgentConfig, GateConfig, RepositoryConfig
+from agenteval.core.schema import AgentConfig, GateConfig, RepositoryConfig, parse_yaml_bool
 
 REGISTRY_VERSION = 1
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "agents.yaml"
@@ -140,8 +140,16 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
             gates_raw.get("min_tool_accuracy", 0.90),
             f"agents.{name}.gates.min_tool_accuracy",
         ),
-        fail_on_evaluator_error=bool(gates_raw.get("fail_on_evaluator_error", True)),
-        fail_on_agent_error=bool(gates_raw.get("fail_on_agent_error", True)),
+        fail_on_evaluator_error=parse_yaml_bool(
+            gates_raw.get("fail_on_evaluator_error"),
+            default=True,
+            label=f"agents.{name}.gates.fail_on_evaluator_error",
+        ),
+        fail_on_agent_error=parse_yaml_bool(
+            gates_raw.get("fail_on_agent_error"),
+            default=True,
+            label=f"agents.{name}.gates.fail_on_agent_error",
+        ),
     )
     options = data.get("adapter_options") or {}
     if not isinstance(options, dict):
@@ -166,7 +174,11 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
         golden_suite=_safe_artifact_path(data.get("golden_suite"), f"agents.{name}.golden_suite"),
         baseline=_safe_artifact_path(data.get("baseline"), f"agents.{name}.baseline"),
         runs_dir=_safe_artifact_path(data.get("runs_dir"), f"agents.{name}.runs_dir"),
-        enabled=bool(data.get("enabled", True)),
+        enabled=parse_yaml_bool(
+            data.get("enabled"),
+            default=True,
+            label=f"agents.{name}.enabled",
+        ),
         adapter_options=dict(options),
         gates=gates,
         smoke_case_ids=tuple(smoke_raw),

@@ -74,3 +74,29 @@ def test_yaml_without_expected_trajectory_remains_backward_compatible(tmp_path):
 
     loaded = load_test_cases(path)
     assert loaded[0].expects.expected_trajectory == []
+
+
+@pytest.mark.parametrize(
+    ("yaml_value", "expected"),
+    [
+        ("true", True),
+        ("false", False),
+    ],
+)
+def test_must_not_hallucinate_accepts_unquoted_booleans(yaml_value, expected):
+    expects = Expects.from_dict(
+        {"correctness_type": "exact", "must_not_hallucinate": yaml_value == "true"}
+    )
+    assert expects.must_not_hallucinate is expected
+
+
+@pytest.mark.parametrize(
+    "yaml_value",
+    ['"false"', '"true"', "1", "0"],
+)
+def test_must_not_hallucinate_rejects_non_boolean_values(yaml_value):
+    import yaml
+
+    raw = yaml.safe_load(f"must_not_hallucinate: {yaml_value}")
+    with pytest.raises(ValueError, match="must_not_hallucinate must be a boolean"):
+        Expects.from_dict({"correctness_type": "exact", **raw})
