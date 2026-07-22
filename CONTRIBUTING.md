@@ -5,6 +5,7 @@ Thanks for helping make agent evaluation more dependable. Contributions are welc
 ## Before you start
 
 - Search [existing issues](https://github.com/nishanttyagi28/agenteval/issues) before opening a duplicate.
+- New to the codebase? Issues labeled [`good first issue`](https://github.com/nishanttyagi28/agenteval/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are scoped for a first contribution.
 - For a behavior change, describe the failure mode and expected result in an issue or pull request.
 - Never commit API keys, provider responses containing secrets, private datasets, or generated run artifacts.
 - Keep deterministic tests network-free. Mock framework and provider boundaries instead of making live model calls.
