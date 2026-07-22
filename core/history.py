@@ -140,8 +140,12 @@ def append_history_entry(
 
     Re-recording the same ``run_id`` (e.g. re-running ``agenteval report`` after
     ``agenteval run``) replaces the earlier entry instead of duplicating it. The
-    write is atomic (see :func:`core._fsutil.atomic_write_text`), so a reader
-    never observes a half-written ledger.
+    write itself is atomic (see :func:`core._fsutil.atomic_write_text`), so a
+    reader never observes a half-written ledger — but this is a plain
+    read-modify-write with no cross-process lock, so two ``agenteval run``
+    invocations for the *same* agent racing each other can still lose one
+    entry (last writer wins). That's an accepted trade-off for a lightweight,
+    database-free ledger; sequential CI runs and normal local use never hit it.
     """
     if limit < 1:
         raise ValueError("limit must be at least 1")

@@ -470,6 +470,41 @@ agenteval generate \
 
 Each candidate retains its parent case, ground truth, tool expectations, and mutation type. New variants start with `review_status: candidate` and are not added to the blocking golden gate until reviewed.
 
+## HTML reports and regression trend tracking
+
+Every scored `agenteval run` appends a lightweight entry (the five metrics,
+run id, timestamp, gate outcome) to `runs/<agent>/history.json`, capped at
+the last N runs (`--history-limit`, default 20; `--no-history` to opt out).
+No database — just a small JSON ledger, atomically written.
+
+Turn the latest run (plus that history and, if configured, the baseline)
+into a single self-contained HTML file:
+
+```bash
+agenteval report
+# or explicitly:
+agenteval report \
+  --agent agentic_data_analyst \
+  --run runs/<run>.json \
+  --output runs/report.html
+```
+
+The report shows per-case results, the five metrics with baseline delta
+badges, a gate PASS/FAIL banner with reasons, a case-outcome status bar, and
+a trend table (sparkline + improving/regressing/stable) for each metric
+across the recorded history. It has no external CSS/JS dependencies, so it's
+safe to open directly or publish as a CI artifact — see `agenteval report
+--help` for baseline/history overrides.
+
+## VS Code extension
+
+`vscode-extension/` is a minimal VS Code extension that adds **AgentEval: Run
+Suite** to the command palette — it shells out to `python -m agenteval run`
+in the current workspace and streams output into an "AgentEval" output
+channel. It's an unpublished local scaffold; see
+[`vscode-extension/README.md`](vscode-extension/README.md) for how to build
+and debug it (`npm install && npm run compile`, then `F5`).
+
 ## Project structure
 
 ```text
@@ -491,16 +526,21 @@ agenteval/
 │   ├── metrics.py        # Correctness, hallucination, tools, latency, cost
 │   ├── judge.py          # LLM judge for open-ended correctness
 │   ├── compare.py        # Baseline comparison and CI decision
+│   ├── history.py        # Regression trend ledger across the last N runs
+│   ├── report.py         # Static HTML report generator (`agenteval report`)
 │   ├── provenance.py     # Reproducibility metadata
+│   ├── _fsutil.py        # Atomic file writes shared by store/history/report
 │   └── store.py          # JSON run persistence
 ├── dashboard/app.py      # Streamlit dashboard
+├── vscode-extension/     # Minimal "AgentEval: Run Suite" VS Code extension
 ├── landing-page/         # Static demo and Playwright browser tests
 ├── examples/             # Composite-action fixtures and consumer workflow
 ├── tests/golden/         # Hand-written YAML suite
 ├── baselines/            # Versioned baseline reports
 ├── runs/                 # Standard single-pass run artifacts
 │   └── <agent>/
-│       └── flakiness/    # Isolated repeated-run evidence by run_id
+│       ├── flakiness/    # Isolated repeated-run evidence by run_id
+│       └── history.json  # Last-N-runs metric ledger for trend tracking
 └── .github/workflows/    # CI regression and trusted PyPI publishing
 ```
 
@@ -511,11 +551,12 @@ python -m pip install -e ".[dev]"
 python -m pytest -q
 agenteval --help
 agenteval compare --help
+agenteval report --help
 # Module invocation remains supported:
 python -m agenteval --help
 ```
 
-Deterministic tests cover schema and metrics behaviour, error handling, baseline comparison, missing/skipped-case gates, adversarial generation, provenance, flakiness, trajectory scoring, adapter event boundaries, dashboard evidence, packaging, and CLI paths without requiring a live provider call.
+Deterministic tests cover schema and metrics behaviour, error handling, baseline comparison, missing/skipped-case gates, adversarial generation, provenance, flakiness, trajectory scoring, adapter event boundaries, dashboard evidence, packaging, HTML report rendering (including HTML-escaping and legacy run files), regression trend history, and CLI paths without requiring a live provider call.
 
 Landing-page checks run separately:
 
