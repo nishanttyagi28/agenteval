@@ -83,6 +83,9 @@ def _gate_thresholds(config: AgentConfig):
         min_tool_accuracy=config.gates.min_tool_accuracy,
         fail_on_evaluator_error=config.gates.fail_on_evaluator_error,
         fail_on_agent_error=config.gates.fail_on_agent_error,
+        max_cost_increase_pct=config.gates.max_cost_increase_pct,
+        max_latency_p95_ms=config.gates.max_latency_p95_ms,
+        max_token_increase_pct=config.gates.max_token_increase_pct,
     )
 
 
@@ -386,6 +389,21 @@ def _cmd_compare(args: argparse.Namespace) -> int:
             fail_on_agent_error=(
                 False if args.allow_agent_errors else config.gates.fail_on_agent_error
             ),
+            max_cost_increase_pct=(
+                args.max_cost_increase_pct
+                if args.max_cost_increase_pct is not None
+                else config.gates.max_cost_increase_pct
+            ),
+            max_latency_p95_ms=(
+                args.max_latency_p95_ms
+                if args.max_latency_p95_ms is not None
+                else config.gates.max_latency_p95_ms
+            ),
+            max_token_increase_pct=(
+                args.max_token_increase_pct
+                if args.max_token_increase_pct is not None
+                else config.gates.max_token_increase_pct
+            ),
         )
         result = compare_runs(baseline, current, thresholds)
         write_outputs(
@@ -632,6 +650,24 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_p.add_argument("--max-correctness-drop", type=float, default=None)
     cmp_p.add_argument("--max-hallucination-rate", type=float, default=None)
     cmp_p.add_argument("--min-tool-accuracy", type=float, default=None)
+    cmp_p.add_argument(
+        "--max-cost-increase-pct",
+        type=float,
+        default=None,
+        help="Fail if total cost increases more than this percent over baseline (opt-in)",
+    )
+    cmp_p.add_argument(
+        "--max-latency-p95-ms",
+        type=float,
+        default=None,
+        help="Fail if p95 latency exceeds this many milliseconds (opt-in)",
+    )
+    cmp_p.add_argument(
+        "--max-token-increase-pct",
+        type=float,
+        default=None,
+        help="Fail if total token usage increases more than this percent over baseline (opt-in)",
+    )
     cmp_p.add_argument(
         "--allow-evaluator-errors",
         action="store_true",

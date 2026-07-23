@@ -26,6 +26,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Architecture](#architecture)
 - [Five metrics](#five-metrics)
 - [Failure taxonomy and gate integrity](#failure-taxonomy-and-gate-integrity)
+- [Budget and latency gates](#budget-and-latency-gates)
 - [Flakiness detection](#flakiness-detection)
 - [Trajectory scoring](#trajectory-scoring)
 - [Golden case example](#golden-case-example)
@@ -140,6 +141,8 @@ Every framework adapter returns the same `AgentResponse` fields: output, tool ca
 
 Correctness uses the exact tolerance configured in YAML. Hallucination detection applies a separate minimum absolute tolerance of 0.01 for harmless numeric formatting noise; that floor cannot convert an incorrect answer into a correctness pass.
 
+Every scored run also aggregates `total_tokens` (prompt + completion tokens summed across cases, `null` when no case reports token usage) alongside `total_cost_usd` — it feeds the opt-in token-spike gate below and appears as a metric delta anywhere the other five do.
+
 ## Failure taxonomy and gate integrity
 
 AgentEval distinguishes output quality from execution and evaluation failures:
@@ -153,6 +156,34 @@ AgentEval distinguishes output quality from execution and evaluation failures:
 | `missing` | A baseline case is absent from the current run | Not applicable | Fails loudly |
 
 Infrastructure failures are not counted as incorrect or hallucinated answers, so provider outages do not corrupt quality rates. They remain visible and fail the regression gate by default. Missing and skipped cases are also gated to prevent an incomplete run from appearing healthy.
+
+## Budget and latency gates
+
+Beyond the always-on correctness/hallucination/tool-accuracy gates, three additional safety
+gates extend the same baseline/compare system and are **opt-in** — each defaults to `null`
+(disabled), so existing `agents.yaml` files and `agenteval compare` invocations see no behavior
+change until configured:
+
+```yaml
+gates:
+  max_cost_increase_pct: 20      # fail if total_cost_usd rises more than 20% over baseline
+  max_latency_p95_ms: 3000       # fail if the current run's p95 latency exceeds 3000ms
+  max_token_increase_pct: 50     # fail if total_tokens rises more than 50% over baseline
+```
+
+Or per-invocation via `agenteval compare` flags, which override the registry's configured
+values exactly like the existing `--max-correctness-drop`/`--max-hallucination-rate`/
+`--min-tool-accuracy` overrides:
+
+```bash
+agenteval compare --max-cost-increase-pct 20 --max-latency-p95-ms 3000 --max-token-increase-pct 50
+```
+
+Once a gate is enabled, missing metric data (for example a baseline recorded before
+`total_tokens` was tracked) fails the gate loudly rather than silently passing — the same
+"fail loudly on missing data" principle the existing correctness/hallucination/tool-accuracy
+gates already follow. A zero-cost or zero-token baseline with any positive current value is
+treated as a real increase rather than skipped via division-by-zero avoidance.
 
 ## Flakiness detection
 

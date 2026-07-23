@@ -23,13 +23,21 @@ class RepositoryConfig:
 
 @dataclass(frozen=True)
 class GateConfig:
-    """Default regression thresholds for one registered agent."""
+    """Default regression thresholds for one registered agent.
+
+    The budget/latency/token fields are opt-in safety gates (§Phase 5):
+    ``None`` (the default) disables the check entirely, preserving prior
+    behavior for every existing config that doesn't set them.
+    """
 
     max_correctness_drop: float = 0.05
     max_hallucination_rate: float = 0.10
     min_tool_accuracy: float = 0.90
     fail_on_evaluator_error: bool = True
     fail_on_agent_error: bool = True
+    max_cost_increase_pct: float | None = None
+    max_latency_p95_ms: float | None = None
+    max_token_increase_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -193,6 +201,7 @@ class RunReport:
     latency_p50_ms: float | None = None
     latency_p95_ms: float | None = None
     total_cost_usd: float | None = None
+    total_tokens: int | None = None
     evaluator_error_count: int = 0
     agent_error_count: int = 0
     break_rate: float | None = None
