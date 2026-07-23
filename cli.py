@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from agenteval.core.calibration import DEFAULT_KAPPA_THRESHOLD
 from agenteval.core.schema import AgentConfig
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
@@ -510,6 +511,42 @@ def _cmd_trace(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_calibrate(args: argparse.Namespace) -> int:
+    import functools
+
+    from agenteval.core.calibration import load_calibration_set, run_calibration
+    from agenteval.core.config import AgentDependencyNotFound
+    from agenteval.core.judge import judge_correctness
+    from agenteval.core.registry import load_agent_registry, resolve_agent_repository
+
+    registry_path = _registry_path(args.registry)
+    try:
+        registry = load_agent_registry(registry_path)
+        config = resolve_agent_selection(registry, requested=args.judge)[0]
+        agent_repo = resolve_agent_repository(config, registry_path=registry_path)
+        cases = load_calibration_set(args.golden_set)
+        judge_fn = functools.partial(judge_correctness, agent_repo=agent_repo)
+        result = run_calibration(cases, judge_fn, kappa_threshold=args.kappa_threshold)
+    except (OSError, ValueError, AgentDependencyNotFound) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"judge={config.name}")
+    print(f"n_cases={result.n_cases}")
+    print(f"agreement_rate={result.agreement_rate:.3f}")
+    print(f"cohens_kappa={result.kappa:.3f} ({result.interpretation})")
+    if result.mismatches:
+        print(f"mismatches={','.join(result.mismatches)}")
+    if result.below_threshold:
+        print(
+            f"WARNING: kappa {result.kappa:.3f} is below the "
+            f"{result.kappa_threshold:.2f} threshold -- judge/human agreement is weak; "
+            "review mismatched cases before trusting llm_judge results.",
+            file=sys.stderr,
+        )
+    return 1 if result.below_threshold else 0
+
+
 def _cmd_generate(args: argparse.Namespace) -> int:
     from agenteval.core.generator import generate_suite, write_candidate_yaml
     from agenteval.core.runner import DEFAULT_GOLDEN_PATH
@@ -905,6 +942,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--html", default=None, metavar="PATH", help="Write a self-contained HTML replay to PATH"
     )
     trace_p.set_defaults(func=_cmd_trace)
+
+    calibrate_p = sub.add_parser(
+        "calibrate", help="Score LLM-judge/human agreement against a labeled calibration set"
+    )
+    calibrate_p.add_argument("--judge", required=True, help="Registered agent whose judge to calibrate")
+    calibrate_p.add_argument("--golden-set", required=True, help="Path to a calibration-set YAML")
+    calibrate_p.add_argument("--registry", default=None, help=argparse.SUPPRESS)
+    calibrate_p.add_argument(
+        "--kappa-threshold",
+        type=float,
+        default=DEFAULT_KAPPA_THRESHOLD,
+        help=f"Warn when Cohen's kappa falls below this (default: {DEFAULT_KAPPA_THRESHOLD})",
+    )
+    calibrate_p.set_defaults(func=_cmd_calibrate)
 
     return parser
 
