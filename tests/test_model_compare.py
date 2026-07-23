@@ -138,6 +138,35 @@ def test_run_model_comparison_isolates_a_broken_agent(tmp_path, monkeypatch):
     assert by_name["agent_broken"].report is None
 
 
+def test_run_model_comparison_preserves_results_when_persistence_fails(tmp_path, monkeypatch, capsys):
+    # Regression test: a disk-write failure must not discard an already
+    # completed (and already API-call-spent) evaluation's scored results.
+    cases_path = write_cases(tmp_path)
+    good = config("agent_good", "fake:GoodAdapter")
+    patch_registry(monkeypatch, {"fake:GoodAdapter": GOOD_ADAPTER})
+
+    def boom(report, runs_dir, filename=None):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("agenteval.core.store.save_run_report", boom)
+
+    rows = run_model_comparison(
+        [good],
+        cases_path=cases_path,
+        registry_path=tmp_path / "agents.yaml",
+        runs_dir_override=tmp_path / "runs",
+        quiet=True,
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.status == "ok"
+    assert row.report is not None
+    assert row.report.correctness_rate == pytest.approx(1.0)
+    assert row.run_path is None
+    assert "warning: failed to persist run report" in capsys.readouterr().out
+
+
 def test_run_model_comparison_rejects_missing_cases_file(tmp_path, monkeypatch):
     good = config("agent_good", "fake:GoodAdapter")
     patch_registry(monkeypatch, {"fake:GoodAdapter": GOOD_ADAPTER})

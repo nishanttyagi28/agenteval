@@ -73,6 +73,9 @@ def run_model_comparison(
     for config in configs:
         if not quiet:
             print(f"=== {config.name} ===")
+        # Resolving/constructing/running is one failure domain: any of these
+        # failing means there is nothing to show for this agent, so it
+        # becomes an error row.
         try:
             agent_repo = resolve_agent_repository(
                 config,
@@ -88,17 +91,6 @@ def run_model_comparison(
                 verbose=not quiet,
                 use_llm_judge=use_llm_judge,
             )
-            runs_dir = (
-                Path(runs_dir_override)
-                if runs_dir_override
-                else _configured_path(registry_file, config.runs_dir)
-            )
-            # save_run_report's default filename is <timestamp>_<git_sha>.json,
-            # which collides when multiple agents share one runs_dir (as
-            # compare-models allows) and finish within the same second —
-            # report.run_id also carries a per-run uuid suffix, so it stays
-            # unique even then.
-            run_path = save_run_report(report, runs_dir=runs_dir, filename=f"{report.run_id}.json")
         except AgentDependencyNotFound as exc:
             rows.append(
                 ModelComparisonRow(
@@ -116,6 +108,27 @@ def run_model_comparison(
                 )
             )
             continue
+
+        # Persistence is a separate failure domain: the evaluation already
+        # happened (real API calls were spent) by this point, so a disk
+        # write failure must not discard the scored results -- it's reported
+        # as a warning, not turned into an error row with an empty report.
+        run_path = None
+        try:
+            runs_dir = (
+                Path(runs_dir_override)
+                if runs_dir_override
+                else _configured_path(registry_file, config.runs_dir)
+            )
+            # save_run_report's default filename is <timestamp>_<git_sha>.json,
+            # which collides when multiple agents share one runs_dir (as
+            # compare-models allows) and finish within the same second —
+            # report.run_id also carries a per-run uuid suffix, so it stays
+            # unique even then.
+            run_path = save_run_report(report, runs_dir=runs_dir, filename=f"{report.run_id}.json")
+        except OSError as exc:
+            print(f"warning: failed to persist run report for {config.name}: {exc}")
+
         rows.append(
             ModelComparisonRow(
                 agent=config.name,
