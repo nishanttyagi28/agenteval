@@ -88,6 +88,20 @@ def _positive_or_none(value: Any, label: str) -> float | None:
     return result
 
 
+def _bool(value: Any, default: bool, label: str) -> bool:
+    """Parse a strict YAML boolean, applying `default` when the key is absent.
+
+    Unlike `bool(...)`, this does not coerce truthy/falsy values: a quoted
+    string such as ``"false"`` (or a number, list, or mapping) is rejected
+    instead of silently becoming ``True``.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{label} must be a boolean (true or false), got {value!r}")
+
+
 def load_adapter_class(import_path: str) -> type[AgentAdapter]:
     """Import an adapter class and verify the AgentAdapter contract."""
     match = _ADAPTER_RE.fullmatch(import_path or "")
@@ -153,8 +167,16 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
             gates_raw.get("min_tool_accuracy", 0.90),
             f"agents.{name}.gates.min_tool_accuracy",
         ),
-        fail_on_evaluator_error=bool(gates_raw.get("fail_on_evaluator_error", True)),
-        fail_on_agent_error=bool(gates_raw.get("fail_on_agent_error", True)),
+        fail_on_evaluator_error=_bool(
+            gates_raw.get("fail_on_evaluator_error"),
+            True,
+            f"agents.{name}.gates.fail_on_evaluator_error",
+        ),
+        fail_on_agent_error=_bool(
+            gates_raw.get("fail_on_agent_error"),
+            True,
+            f"agents.{name}.gates.fail_on_agent_error",
+        ),
         max_cost_increase_pct=_positive_or_none(
             gates_raw.get("max_cost_increase_pct"),
             f"agents.{name}.gates.max_cost_increase_pct",
@@ -191,7 +213,7 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
         golden_suite=_safe_artifact_path(data.get("golden_suite"), f"agents.{name}.golden_suite"),
         baseline=_safe_artifact_path(data.get("baseline"), f"agents.{name}.baseline"),
         runs_dir=_safe_artifact_path(data.get("runs_dir"), f"agents.{name}.runs_dir"),
-        enabled=bool(data.get("enabled", True)),
+        enabled=_bool(data.get("enabled"), True, f"agents.{name}.enabled"),
         adapter_options=dict(options),
         gates=gates,
         smoke_case_ids=tuple(smoke_raw),

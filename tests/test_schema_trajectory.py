@@ -74,3 +74,30 @@ def test_yaml_without_expected_trajectory_remains_backward_compatible(tmp_path):
 
     loaded = load_test_cases(path)
     assert loaded[0].expects.expected_trajectory == []
+
+
+# --- issue #13: strict boolean parsing (no more `bool("false") == True`) -----
+
+
+def test_must_not_hallucinate_defaults_to_false_when_absent():
+    expects = Expects.from_dict({"correctness_type": "exact"})
+
+    assert expects.must_not_hallucinate is False
+
+
+def test_must_not_hallucinate_accepts_valid_booleans():
+    expects = Expects.from_dict(
+        {"correctness_type": "exact", "must_not_hallucinate": True}
+    )
+
+    assert expects.must_not_hallucinate is True
+
+
+@pytest.mark.parametrize("bad_value", ["false", "true", 1, [], {}])
+def test_must_not_hallucinate_rejects_non_boolean_values(bad_value):
+    with pytest.raises(
+        ValueError, match="expects.must_not_hallucinate must be a boolean"
+    ):
+        Expects.from_dict(
+            {"correctness_type": "exact", "must_not_hallucinate": bad_value}
+        )
