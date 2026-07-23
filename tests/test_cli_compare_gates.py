@@ -130,3 +130,76 @@ def test_cli_compare_flags_override_registry_configured_gates(tmp_path, capsys):
         tmp_path, registry_path, baseline_path, current_path, "--max-cost-increase-pct", "50"
     )
     assert _cmd_compare(args) == 0
+
+
+# --- Tier 6 Phase 3: --require-statistical-significance / --significance-alpha ---
+
+
+def _paired_case(case_id, *, baseline_pass, current_pass):
+    return {"case_id": case_id, "correctness_pass": baseline_pass}, {
+        "case_id": case_id,
+        "correctness_pass": current_pass,
+    }
+
+
+def test_require_statistical_significance_flag_downgrades_insignificant_drop(tmp_path, capsys):
+    registry_path = write_registry(tmp_path)
+    baseline_path = tmp_path / "baseline.json"
+    current_path = tmp_path / "current.json"
+    # 1 regression out of 20 -- not statistically significant.
+    baseline_cases, current_cases = [], []
+    for i in range(20):
+        b, c = _paired_case(f"c{i}", baseline_pass=True, current_pass=(i != 0))
+        baseline_cases.append(b)
+        current_cases.append(c)
+    write_report(baseline_path, correctness_rate=1.0, case_results=baseline_cases)
+    write_report(current_path, correctness_rate=0.90, case_results=current_cases)
+
+    args = compare_args(
+        tmp_path, registry_path, baseline_path, current_path, "--require-statistical-significance"
+    )
+    assert _cmd_compare(args) == 0  # gate would otherwise fail on the 10pp drop
+
+
+def test_require_statistical_significance_flag_still_fails_on_real_regression(tmp_path, capsys):
+    registry_path = write_registry(tmp_path)
+    baseline_path = tmp_path / "baseline.json"
+    current_path = tmp_path / "current.json"
+    baseline_cases, current_cases = [], []
+    for i in range(20):
+        b, c = _paired_case(f"c{i}", baseline_pass=True, current_pass=(i >= 15))  # 15 regress
+        baseline_cases.append(b)
+        current_cases.append(c)
+    write_report(baseline_path, correctness_rate=1.0, case_results=baseline_cases)
+    write_report(current_path, correctness_rate=0.25, case_results=current_cases)
+
+    args = compare_args(
+        tmp_path, registry_path, baseline_path, current_path, "--require-statistical-significance"
+    )
+    assert _cmd_compare(args) == 1
+    assert "statistically significant" in capsys.readouterr().out
+
+
+def test_significance_alpha_flag_is_honored(tmp_path, capsys):
+    registry_path = write_registry(tmp_path)
+    baseline_path = tmp_path / "baseline.json"
+    current_path = tmp_path / "current.json"
+    # b=5, c=0 -> exact p=0.0625: not significant at 0.05, significant at 0.1.
+    baseline_cases, current_cases = [], []
+    for i in range(5):
+        b, c = _paired_case(f"c{i}", baseline_pass=True, current_pass=False)
+        baseline_cases.append(b)
+        current_cases.append(c)
+    write_report(baseline_path, correctness_rate=1.0, case_results=baseline_cases)
+    write_report(current_path, correctness_rate=0.0, case_results=current_cases)
+
+    args = compare_args(
+        tmp_path,
+        registry_path,
+        baseline_path,
+        current_path,
+        "--require-statistical-significance",
+        "--significance-alpha",
+        "0.1",
+    )
+    assert _cmd_compare(args) == 1  # 0.0625 < 0.1 -> significant at this alpha

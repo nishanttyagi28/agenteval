@@ -196,6 +196,30 @@ def _gate_section(comparison: ComparisonResult | None, *, has_baseline: bool) ->
     return banner + '<p class="empty">All configured gates passed.</p>'
 
 
+def _significance_section(comparison: ComparisonResult | None) -> str | None:
+    """Plain-language McNemar/bootstrap verdict, shown only when computed.
+
+    Returns ``None`` (not an empty-state string) when
+    ``GateThresholds.require_statistical_significance`` wasn't enabled for
+    this comparison, so the whole section can be omitted from the report
+    rather than clutter every run with an unused placeholder (§Tier 6).
+    """
+    if comparison is None or comparison.significance is None:
+        return None
+    mcnemar = comparison.significance.mcnemar
+    parts = [f'<p class="sig-verdict">{_esc(mcnemar.verdict)}</p>']
+    detail = f"McNemar's test ({_esc(mcnemar.method)}): {mcnemar.b} regressed / {mcnemar.c} improved out of {mcnemar.n_pairs} paired case(s)"
+    if mcnemar.p_value is not None:
+        detail += f", p={mcnemar.p_value:.4g}"
+    parts.append(f"<p>{detail}</p>")
+    if mcnemar.warnings:
+        items = "".join(f"<li>{_esc(warning)}</li>" for warning in mcnemar.warnings)
+        parts.append(f'<ul class="sig-warnings">{items}</ul>')
+    if comparison.significance.bootstrap is not None:
+        parts.append(f"<p>Bootstrap: {_esc(comparison.significance.bootstrap.verdict)}</p>")
+    return "".join(parts)
+
+
 def _status_counts(cases: Sequence[dict[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for case in cases:
@@ -377,6 +401,16 @@ def render_html_report(
 
     trends = build_trend_report(list(history or []))
     passed = sum(1 for c in cases if case_status(c) == "passed")
+    significance_html = _significance_section(comparison)
+    significance_section = (
+        f"""
+  <section>
+    <h2 style="margin-top:0">Statistical significance</h2>
+    {significance_html}
+  </section>"""
+        if significance_html is not None
+        else ""
+    )
 
     title = f"AgentEval report — {display_name} — {run_id}"
 
@@ -405,6 +439,7 @@ def render_html_report(
     <h2 style="margin-top:0">Regression trend (last {len(history or [])} recorded runs)</h2>
     {_trend_section(trends)}
   </section>
+{significance_section}
 
   <section>
     <h2 style="margin-top:0">Per-case results</h2>

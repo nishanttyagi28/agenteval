@@ -406,6 +406,16 @@ def _cmd_compare(args: argparse.Namespace) -> int:
                 if args.max_token_increase_pct is not None
                 else config.gates.max_token_increase_pct
             ),
+            require_statistical_significance=(
+                True
+                if args.require_statistical_significance
+                else config.gates.require_statistical_significance
+            ),
+            significance_alpha=(
+                args.significance_alpha
+                if args.significance_alpha is not None
+                else config.gates.significance_alpha
+            ),
         )
         result = compare_runs(baseline, current, thresholds)
         write_outputs(
@@ -828,6 +838,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-agent-errors",
         action="store_true",
         help="Report agent execution errors without failing the gate",
+    )
+    cmp_p.add_argument(
+        "--require-statistical-significance",
+        action="store_true",
+        help="Only fail on a correctness drop if McNemar's test finds it statistically "
+        "significant (opt-in; default is the plain threshold check)",
+    )
+    cmp_p.add_argument(
+        "--significance-alpha",
+        type=float,
+        default=None,
+        help="Significance threshold for --require-statistical-significance (default: 0.05)",
     )
     cmp_p.add_argument("--json-out", default=None, help="Write machine-readable comparison")
     cmp_p.add_argument("--markdown-out", default=None, help="Write Markdown comparison")

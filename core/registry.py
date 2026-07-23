@@ -167,6 +167,13 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
             gates_raw.get("max_token_increase_pct"),
             f"agents.{name}.gates.max_token_increase_pct",
         ),
+        require_statistical_significance=bool(
+            gates_raw.get("require_statistical_significance", False)
+        ),
+        significance_alpha=_rate(
+            gates_raw.get("significance_alpha", 0.05),
+            f"agents.{name}.gates.significance_alpha",
+        ),
     )
     alerting_raw = _mapping(data.get("alerting") or {}, f"agents.{name}.alerting")
     webhook_url_env = alerting_raw.get("webhook_url_env")

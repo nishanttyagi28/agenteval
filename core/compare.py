@@ -11,6 +11,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+from agenteval.core.significance import DEFAULT_ALPHA, SignificanceResult, evaluate_significance
+
 
 @dataclass(frozen=True)
 class GateThresholds:
@@ -30,6 +32,11 @@ class GateThresholds:
     max_cost_increase_pct: float | None = None
     max_latency_p95_ms: float | None = None
     max_token_increase_pct: float | None = None
+    # §Tier 6 Phase 3: opt-in McNemar significance check on a correctness-drop
+    # failure. False (the default) preserves the exact prior gate behavior --
+    # every existing caller that never sets this sees no change at all.
+    require_statistical_significance: bool = False
+    significance_alpha: float = DEFAULT_ALPHA
 
 
 @dataclass(frozen=True)
@@ -56,9 +63,17 @@ class ComparisonResult:
     case_transitions: list[CaseTransition] = field(default_factory=list)
     evaluator_error_count: int = 0
     agent_error_count: int = 0
+    # §Tier 6 Phase 3: populated only when GateThresholds.require_statistical_
+    # significance is True and a correctness drop is observed -- None means
+    # "not computed", not "no significant change" (see mcnemar.significant
+    # for that).
+    significance: SignificanceResult | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        if self.significance is None:
+            data.pop("significance", None)
+        return data
 
 
 _METRICS: tuple[tuple[str, bool], ...] = (
@@ -129,6 +144,7 @@ def compare_runs(
     limits = thresholds or GateThresholds()
     reasons: list[str] = []
     metrics: list[MetricDelta] = []
+    significance: SignificanceResult | None = None
 
     for key, higher_is_better in _METRICS:
         base = _number(baseline, key)
@@ -143,10 +159,33 @@ def compare_runs(
     else:
         drop = base_correctness - current_correctness
         if drop > limits.max_correctness_drop + 1e-12:
-            reasons.append(
+            base_reason = (
                 f"correctness dropped {drop * 100:.1f}pp "
                 f"(allowed {limits.max_correctness_drop * 100:.1f}pp)"
             )
+            if not limits.require_statistical_significance:
+                reasons.append(base_reason)
+            else:
+                significance = evaluate_significance(
+                    baseline, current, alpha=limits.significance_alpha
+                )
+                mcnemar = significance.mcnemar
+                if mcnemar.method == "insufficient_data":
+                    # Can't verify significance (e.g. no overlapping case ids
+                    # with a boolean verdict in both runs) -- fail safe rather
+                    # than silently letting an unverifiable drop through.
+                    reasons.append(
+                        f"{base_reason} (statistical significance could not be verified: "
+                        "no paired cases with a determinate verdict in both runs)"
+                    )
+                elif mcnemar.significant:
+                    reasons.append(
+                        f"{base_reason} -- statistically significant "
+                        f"(McNemar p={mcnemar.p_value:.4g} < alpha={limits.significance_alpha})"
+                    )
+                # else: the drop is not statistically significant at the
+                # configured alpha -- treated as noise, so no reason is
+                # appended and the gate does not fail on this metric alone.
 
     hallucination = _number(current, "hallucination_rate")
     if hallucination is None:
@@ -261,6 +300,7 @@ def compare_runs(
         case_transitions=transitions,
         evaluator_error_count=evaluator_errors,
         agent_error_count=agent_errors,
+        significance=significance,
     )
 
 
@@ -299,6 +339,20 @@ def format_markdown(result: ComparisonResult) -> str:
         lines.extend(f"- {reason}" for reason in result.reasons)
     else:
         lines.append("- All configured gates passed.")
+
+    if result.significance is not None:
+        mcnemar = result.significance.mcnemar
+        lines.extend(["", "## Statistical significance (correctness)", ""])
+        lines.append(f"- **Verdict:** {mcnemar.verdict}")
+        lines.append(
+            f"- McNemar's test: {mcnemar.method}, {mcnemar.b} regressed / {mcnemar.c} improved "
+            f"out of {mcnemar.n_pairs} paired case(s)"
+            + (f", p={mcnemar.p_value:.4g}" if mcnemar.p_value is not None else "")
+        )
+        for warning in mcnemar.warnings:
+            lines.append(f"- ⚠ {warning}")
+        if result.significance.bootstrap is not None:
+            lines.append(f"- Bootstrap: {result.significance.bootstrap.verdict}")
 
     changed = [
         transition

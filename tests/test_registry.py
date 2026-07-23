@@ -167,3 +167,31 @@ def test_safety_gate_keys_reject_non_positive_or_non_numeric(tmp_path, key, bad_
     content = registry_yaml(extra_gates=f"{key}: {bad_value}\n")
     with pytest.raises(ValueError, match="must be a positive number or null"):
         load_agent_registry(write_registry(tmp_path, content))
+
+
+# --- Tier 6 Phase 3: opt-in statistical significance gate keys ---------------
+
+
+def test_significance_gate_keys_default_to_disabled(tmp_path):
+    config = load_agent_registry(write_registry(tmp_path, registry_yaml()))["example_agent"]
+    assert config.gates.require_statistical_significance is False
+    assert config.gates.significance_alpha == 0.05
+
+
+def test_significance_gate_keys_parse_when_present(tmp_path):
+    content = registry_yaml(
+        extra_gates=(
+            "require_statistical_significance: true\n"
+            "significance_alpha: 0.01\n"
+        )
+    )
+    config = load_agent_registry(write_registry(tmp_path, content))["example_agent"]
+    assert config.gates.require_statistical_significance is True
+    assert config.gates.significance_alpha == 0.01
+
+
+@pytest.mark.parametrize("bad_alpha", ["-0.1", "1.5"])
+def test_significance_alpha_rejects_out_of_range_values(tmp_path, bad_alpha):
+    content = registry_yaml(extra_gates=f"significance_alpha: {bad_alpha}\n")
+    with pytest.raises(ValueError, match="must be between 0 and 1"):
+        load_agent_registry(write_registry(tmp_path, content))
