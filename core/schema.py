@@ -5,11 +5,15 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
+import re
 from typing import Any, ClassVar
 
 from agenteval.core.rag_metrics import RagEvaluation
 from agenteval.core.trace import TraceStep
 from agenteval.core.trajectory import TrajectoryEvaluation
+
+
+_EVALUATOR_NAME_RE = re.compile(r"^[a-z][a-z0-9_.-]*$")
 
 
 @dataclass(frozen=True)
@@ -156,12 +160,23 @@ class Expects:
     relevant_context_ids: list[str] = field(default_factory=list)
     expected_citations: list[str] = field(default_factory=list)
     reference_context: list[str] = field(default_factory=list)
+    # Optional third-party correctness evaluator. When omitted, the existing
+    # ``correctness_type`` dispatch remains unchanged.
+    evaluator: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Expects:
         ct = data.get("correctness_type", "exact")
         if isinstance(ct, str):
             ct = CorrectnessType(ct)
+        evaluator = data.get("evaluator")
+        if evaluator is not None and (
+            not isinstance(evaluator, str) or not _EVALUATOR_NAME_RE.fullmatch(evaluator)
+        ):
+            raise ValueError(
+                "evaluator must use lowercase letters, digits, '.', '_' or '-', "
+                "starting with a letter"
+            )
         return cls(
             correctness_type=ct,
             must_call_tools=list(data.get("must_call_tools") or []),
@@ -172,6 +187,7 @@ class Expects:
             relevant_context_ids=_parse_string_list(data, "relevant_context_ids"),
             expected_citations=_parse_string_list(data, "expected_citations"),
             reference_context=_parse_string_list(data, "reference_context"),
+            evaluator=evaluator,
         )
 
 

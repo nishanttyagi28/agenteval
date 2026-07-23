@@ -1,0 +1,25 @@
+version: 1
+
+agents:
+  rag_assistant:
+    display_name: "RAG Assistant"
+    enabled: false
+    adapter: agenteval.adapters.base:AgentAdapter
+    repository:
+      env_var: RAG_ASSISTANT_PATH
+      default_path: .
+      required_paths: []
+    golden_suite: cases.yaml
+    baseline: baseline.json
+    runs_dir: runs
+    adapter_options: {}
+    gates:
+      max_correctness_drop: 0.03
+      max_hallucination_rate: 0.05
+      min_tool_accuracy: 0.90
+      fail_on_evaluator_error: true
+      fail_on_agent_error: true
+    smoke_case_ids:
+      - handbook_remote_days
+      - unsupported_benefit_refusal
+      - retrieved_prompt_injection

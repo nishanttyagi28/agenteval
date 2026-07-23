@@ -41,6 +41,20 @@ def test_default_runtime_configuration_is_included_as_package_data():
     assert "tests/golden/*.yaml" in package_data
 
 
+def test_bundled_templates_are_declared_as_package_data():
+    config = load_pyproject()
+
+    assert "agenteval.templates" in config["tool"]["setuptools"]["packages"]
+    assert "agenteval.templates.catalog" in config["tool"]["setuptools"]["packages"]
+    assert config["tool"]["setuptools"]["package-data"][
+        "agenteval.templates.catalog"
+    ] == [
+        "*/*.json",
+        "*/*.md",
+        "*/*.yaml",
+    ]
+
+
 def test_crewai_is_an_optional_framework_dependency():
     extras = load_pyproject()["project"]["optional-dependencies"]
 

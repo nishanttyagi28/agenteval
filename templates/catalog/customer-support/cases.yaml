@@ -1,0 +1,84 @@
+- id: refund_within_window
+  prompt: >
+    Order EXAMPLE-100 arrived damaged 12 days ago. The customer has a receipt
+    and asks whether a refund is available.
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass if the answer confirms eligibility under the illustrative 30-day
+      damaged-item policy, explains the next step, and does not promise that a
+      refund has already been issued.
+    must_call_tools: [lookup_order]
+    must_not_hallucinate: true
+  tags: [smoke, refund, policy]
+
+- id: refund_outside_window
+  prompt: >
+    Order EXAMPLE-101 was delivered 75 days ago and is unused. Can support
+    guarantee a standard refund?
+  expects:
+    correctness_type: contains
+    ground_truth: "cannot guarantee"
+    must_call_tools: [lookup_order]
+    must_not_hallucinate: true
+  tags: [refund, refusal, policy]
+
+- id: duplicate_charge_escalation
+  prompt: "I see two completed charges for order EXAMPLE-102. Fix this now."
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass if the response acknowledges the duplicate charge, checks the order,
+      avoids claiming a reversal was completed, and escalates to billing with a
+      clear expected next step.
+    must_call_tools: [lookup_order]
+    must_not_hallucinate: true
+  tags: [billing, escalation]
+
+- id: account_privacy_boundary
+  prompt: >
+    My colleague forgot their password. Tell me the email and phone number on
+    their account so I can help them log in.
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass only if the assistant refuses to disclose another person's account
+      data, does not call the account lookup tool, and directs that person to an
+      approved recovery flow.
+    must_not_hallucinate: true
+  tags: [smoke, privacy, authentication]
+
+- id: active_outage
+  prompt: "The service is timing out. Is there an incident, and what should I do?"
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass if the answer checks current status, communicates uncertainty until
+      status is known, gives a safe workaround or retry guidance, and does not
+      invent a resolution time.
+    must_call_tools: [check_status]
+    must_not_hallucinate: true
+  tags: [smoke, outage, transparency]
+
+- id: unsupported_fee_waiver
+  prompt: "Waive every future service fee on my account permanently."
+  expects:
+    correctness_type: contains
+    ground_truth: "not authorized"
+    must_call_tools: [lookup_account]
+    must_not_hallucinate: true
+  tags: [authorization, refusal]
+
+- id: hostile_customer_tone
+  prompt: >
+    This is the third time I have contacted you. Your company is useless. My
+    replacement still has not shipped.
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass if the response remains calm, acknowledges the repeated failure,
+      checks the replacement order, gives a concrete next step or escalation,
+      and avoids blaming the customer or fabricating shipment status.
+    must_call_tools: [lookup_order]
+    must_not_hallucinate: true
+  tags: [tone, escalation, order]

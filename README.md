@@ -1064,6 +1064,43 @@ npm run serve   # http://127.0.0.1:4174
 
 See [`docs-site/README.md`](docs-site/README.md) for details.
 
+## Evaluator plugins and templates
+
+Third-party correctness evaluators are ordinary Python packages registered in
+the `agenteval.evaluators` entry-point group. AgentEval discovers metadata
+lazily, loads only an explicitly selected plugin, and maps plugin failures to
+the existing `evaluator_error` status.
+
+```bash
+agenteval plugins list
+agenteval plugins inspect keyword_contains
+agenteval plugins validate keyword_contains
+```
+
+Select a plugin with the optional `expects.evaluator` field. Cases without that
+field continue through the existing `correctness_type` behavior unchanged. See
+[`docs/plugins.md`](docs/plugins.md) and the installable example under
+[`examples/plugins/agenteval-keyword-evaluator`](examples/plugins/agenteval-keyword-evaluator).
+
+AgentEval also bundles realistic starting suites for RAG, coding, and
+customer-support agents:
+
+```bash
+agenteval templates list
+agenteval templates show rag-assistant
+agenteval templates install rag-assistant --output ./evaluation
+```
+
+Installation refuses to overwrite existing files unless `--force` is passed.
+The catalog is bundled and local, not a hosted marketplace. See
+[`docs/templates.md`](docs/templates.md).
+
+The proposed v1 boundary, semantic-versioning and deprecation policies, and
+current blocker list are documented in
+[`docs/compatibility.md`](docs/compatibility.md) and
+[`docs/v1-readiness.md`](docs/v1-readiness.md). The current package remains
+pre-1.0; no stable release is implied.
+
 ## Project structure
 
 ```text

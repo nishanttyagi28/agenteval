@@ -39,6 +39,8 @@ def _expects_dict(expects: Expects) -> dict[str, Any]:
     correctness_type = data.get("correctness_type")
     if isinstance(correctness_type, CorrectnessType):
         data["correctness_type"] = correctness_type.value
+    if data.get("evaluator") is None:
+        data.pop("evaluator", None)
     return data
 
 

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from agenteval import __version__
 from agenteval.core.calibration import DEFAULT_KAPPA_THRESHOLD
 from agenteval.core.schema import AgentConfig
 
@@ -932,8 +933,176 @@ def _cmd_compare_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_rows(headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> None:
+    """Print a deterministic, dependency-free text table."""
+    widths = [
+        max(len(headers[index]), *(len(row[index]) for row in rows))
+        for index in range(len(headers))
+    ]
+    print("  ".join(value.ljust(widths[index]) for index, value in enumerate(headers)))
+    print("  ".join("-" * width for width in widths))
+    for row in rows:
+        print("  ".join(value.ljust(widths[index]) for index, value in enumerate(row)))
+
+
+def _cmd_plugins_list(args: argparse.Namespace) -> int:
+    from agenteval.evaluators._registry import EvaluatorPluginError, discover_evaluators
+
+    try:
+        infos = discover_evaluators()
+    except EvaluatorPluginError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    rows = [
+        (
+            info.name,
+            info.source,
+            info.package,
+            info.version,
+            info.status,
+        )
+        for info in infos
+    ]
+    _print_rows(("NAME", "SOURCE", "PACKAGE", "VERSION", "STATUS"), rows)
+    diagnostics = [info for info in infos if info.diagnostic]
+    for info in diagnostics:
+        print(
+            f"error: {info.name or '(unnamed)'} from {info.package}: {info.diagnostic}",
+            file=sys.stderr,
+        )
+    return 1 if diagnostics else 0
+
+
+def _cmd_plugins_inspect(args: argparse.Namespace) -> int:
+    from agenteval.evaluators._registry import EvaluatorPluginError, evaluator_info
+
+    try:
+        infos = evaluator_info(args.name)
+    except EvaluatorPluginError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if not infos:
+        print(
+            f"error: unknown evaluator {args.name!r}; run 'agenteval plugins list'",
+            file=sys.stderr,
+        )
+        return 2
+    for index, info in enumerate(infos):
+        if index:
+            print()
+        print(f"Name: {info.name}")
+        print(f"Source: {info.source}")
+        print(f"Package: {info.package}")
+        print(f"Version: {info.version}")
+        if info.target is not None:
+            print(f"Target: {info.target}")
+        print(f"Status: {info.status}")
+        print("Loaded: no")
+        if info.diagnostic:
+            print(f"Diagnostic: {info.diagnostic}")
+    return 1 if any(info.diagnostic for info in infos) else 0
+
+
+def _cmd_plugins_validate(args: argparse.Namespace) -> int:
+    from agenteval.evaluators._registry import (
+        BUILTIN_EVALUATORS,
+        EvaluatorPluginError,
+        evaluator_info,
+        load_evaluator,
+    )
+
+    try:
+        infos = evaluator_info(args.name)
+    except EvaluatorPluginError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if args.name in BUILTIN_EVALUATORS:
+        conflicts = [info for info in infos if info.source == "third-party"]
+        if conflicts:
+            for info in conflicts:
+                print(
+                    f"{args.name}: invalid third-party registration from "
+                    f"{info.package}: {info.diagnostic}",
+                    file=sys.stderr,
+                )
+            return 1
+        print(f"{args.name}: valid built-in evaluator (no third-party code loaded)")
+        return 0
+    if not infos:
+        print(
+            f"error: unknown evaluator {args.name!r}; run 'agenteval plugins list'",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        load_evaluator(args.name)
+    except EvaluatorPluginError as exc:
+        print(f"{args.name}: invalid: {exc}", file=sys.stderr)
+        return 1
+    info = infos[0]
+    print(f"{args.name}: valid")
+    print(
+        f"Loaded {info.target} from {info.package} {info.version}. "
+        "The evaluator callable was not executed."
+    )
+    return 0
+
+
+def _cmd_templates_list(args: argparse.Namespace) -> int:
+    from agenteval.core.template_catalog import list_templates
+
+    templates = list_templates()
+    rows = [
+        (
+            template.name,
+            template.source,
+            str(template.case_count),
+            template.title,
+        )
+        for template in templates
+    ]
+    _print_rows(("NAME", "SOURCE", "CASES", "TITLE"), rows)
+    return 0
+
+
+def _cmd_templates_show(args: argparse.Namespace) -> int:
+    from agenteval.core.template_catalog import TemplateError, show_template
+
+    try:
+        rendered = show_template(args.name)
+    except TemplateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(rendered, end="")
+    return 0
+
+
+def _cmd_templates_install(args: argparse.Namespace) -> int:
+    from agenteval.core.template_catalog import TemplateError, install_template
+
+    output = (
+        Path(args.output)
+        if args.output is not None
+        else Path.cwd() / f"agenteval-{args.name}"
+    )
+    try:
+        written = install_template(args.name, output, force=args.force)
+    except TemplateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Installed template {args.name!r} to {output.resolve()}")
+    for path in written:
+        print(f"  {path.resolve()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agenteval", description="AI agent evaluation harness")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     run_p = sub.add_parser("run", help="Run golden suite and write runs/*.json")
@@ -1230,6 +1399,52 @@ def build_parser() -> argparse.ArgumentParser:
     serve_p.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
     serve_p.add_argument("--port", type=int, default=None, help="Bind port (default: 8765)")
     serve_p.set_defaults(func=_cmd_serve)
+
+    plugins_p = sub.add_parser(
+        "plugins", help="Discover and validate built-in and third-party evaluators"
+    )
+    plugins_sub = plugins_p.add_subparsers(dest="plugins_command", required=True)
+    plugins_list_p = plugins_sub.add_parser(
+        "list", help="List evaluator entry-point metadata without importing plugins"
+    )
+    plugins_list_p.set_defaults(func=_cmd_plugins_list)
+    plugins_inspect_p = plugins_sub.add_parser(
+        "inspect", help="Inspect one evaluator without importing it"
+    )
+    plugins_inspect_p.add_argument("name", help="Evaluator name")
+    plugins_inspect_p.set_defaults(func=_cmd_plugins_inspect)
+    plugins_validate_p = plugins_sub.add_parser(
+        "validate", help="Load and validate one evaluator without invoking it"
+    )
+    plugins_validate_p.add_argument("name", help="Evaluator name")
+    plugins_validate_p.set_defaults(func=_cmd_plugins_validate)
+
+    templates_p = sub.add_parser(
+        "templates", help="Browse and install bundled evaluation templates"
+    )
+    templates_sub = templates_p.add_subparsers(
+        dest="templates_command", required=True
+    )
+    templates_list_p = templates_sub.add_parser(
+        "list", help="List bundled, version-controlled templates"
+    )
+    templates_list_p.set_defaults(func=_cmd_templates_list)
+    templates_show_p = templates_sub.add_parser(
+        "show", help="Show template metadata and starter files"
+    )
+    templates_show_p.add_argument("name", help="Template name")
+    templates_show_p.set_defaults(func=_cmd_templates_show)
+    templates_install_p = templates_sub.add_parser(
+        "install", help="Install a template without overwriting files by default"
+    )
+    templates_install_p.add_argument("name", help="Template name")
+    templates_install_p.add_argument(
+        "--output", default=None, help="Destination directory (default: ./agenteval-<name>)"
+    )
+    templates_install_p.add_argument(
+        "--force", action="store_true", help="Overwrite template-managed files"
+    )
+    templates_install_p.set_defaults(func=_cmd_templates_install)
 
     return parser
 

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "name": "coding-agent",
+  "title": "Coding Agent",
+  "description": "Starter coverage for diagnosis, bounded edits, tests, compatibility, security, and dependency discipline.",
+  "config": "agents.yaml",
+  "cases": "cases.yaml",
+  "case_count": 7,
+  "files": [
+    "README.md",
+    "agents.yaml",
+    "cases.yaml"
+  ]
+}
