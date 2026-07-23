@@ -29,6 +29,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Budget and latency gates](#budget-and-latency-gates)
 - [Flakiness detection](#flakiness-detection)
 - [Trajectory scoring](#trajectory-scoring)
+- [RAG evaluation mode](#rag-evaluation-mode)
 - [Golden case example](#golden-case-example)
 - [Dashboard evidence](#dashboard-evidence)
 - [Installation](#installation)
@@ -128,7 +129,7 @@ flowchart LR
     Reports --> Dashboard["Dashboard and artifacts"]
 ```
 
-Every framework adapter returns the same `AgentResponse` fields: output, tool calls, fired nodes, token usage, cost, latency, and JSON-safe raw evidence. The runner, scoring, comparison, and reporting layers therefore remain framework-independent.
+Every framework adapter returns the same `AgentResponse` fields: output, tool calls, fired nodes, token usage, cost, latency, retrieved context/citations (for [RAG evaluation](#rag-evaluation-mode)), and JSON-safe raw evidence. The runner, scoring, comparison, and reporting layers therefore remain framework-independent.
 
 ## Five metrics
 
@@ -230,6 +231,51 @@ Trajectory scoring adds step-level evidence about how an agent reached its answe
 AgentEval compares `expected_trajectory` with the adapter's actual `nodes_fired` sequence using a longest common subsequence (LCS). The matched subsequence produces precision (matched steps divided by actual steps), recall (matched steps divided by expected steps), and their F1 score, while preserving evidence about exact match, ordering, missing steps, and extra steps. Duplicate steps retain their multiplicity.
 
 The field is optional and backward compatible: cases without it are scored and serialized exactly as before. Trajectory scoring is observability-only in v1 and does not affect correctness, existing metrics, baseline comparison, or CI gates.
+
+## RAG evaluation mode
+
+For retrieval-augmented agents, AgentEval scores five additional optional metrics whenever an
+adapter response carries retrieved context — **context relevance**, **faithfulness** (is the
+answer grounded in the retrieved context), **citation correctness**, **retrieval precision/
+recall**, and **unsupported-claim detection**. These integrate directly into the existing
+metric system rather than a parallel one: they reuse the same set-based precision/recall
+(`tool_call_precision_recall`) already used for tool-call accuracy, and the same numeric-claim
+extraction already used for hallucination detection — applied against retrieved context instead
+of ground truth. Like flakiness and trajectory scoring, this is **observability-only** and does
+not affect correctness, the five core metrics, or the baseline regression gate.
+
+An adapter opts in simply by populating `retrieved_context`/`citations` on its `AgentResponse`:
+
+```python
+return AgentResponse(
+    output=answer,
+    retrieved_context=[{"id": "doc1", "text": "Tokyo is the capital of Japan."}],
+    citations=["doc1"],
+)
+```
+
+A golden case can optionally declare RAG-specific ground truth alongside its existing
+expectations — all fields are optional and backward compatible; cases without them are scored
+exactly as before:
+
+```yaml
+- id: capital_of_japan
+  prompt: "What is the capital of Japan?"
+  expects:
+    correctness_type: contains
+    ground_truth: "Tokyo"
+    relevant_context_ids: [doc1]      # ground truth for retrieval precision/recall
+    expected_citations: [doc1]        # ground truth for citation correctness
+    reference_context:                # fallback context, used only if the adapter
+      - "Tokyo is the capital of Japan."   # itself returns no retrieved_context
+```
+
+`reference_context` lets a case test faithfulness/context-relevance in isolation from a live
+retriever (e.g. testing the generation step alone). Citation correctness falls back to a
+structural check — is every cited id actually present in retrieved context — when no
+`expected_citations` ground truth is given. Suite-level averages (`context_relevance_avg`,
+`faithfulness_avg`, `unsupported_claim_rate_avg`, `citation_f1_avg`, `retrieval_f1_avg`) appear
+on the run report whenever at least one case produced a RAG evaluation, `null` otherwise.
 
 ## Golden case example
 

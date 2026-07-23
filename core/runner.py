@@ -9,6 +9,7 @@ from typing import Callable, Iterable, Sequence
 
 from agenteval.adapters.base import AgentAdapter, AgentRun
 from agenteval.core.metrics import aggregate_report, score_case
+from agenteval.core.rag_metrics import evaluate_rag
 from agenteval.core.schema import CaseResult, RunReport, TestCase, load_test_cases
 from agenteval.core.store import get_git_sha
 from agenteval.core.trajectory import evaluate_trajectory
@@ -34,6 +35,8 @@ def agent_run_to_case_result(case: TestCase, agent_run: AgentRun) -> CaseResult:
         prompt_tokens=agent_run.prompt_tokens,
         completion_tokens=agent_run.completion_tokens,
         raw=dict(agent_run.raw) if agent_run.raw else {},
+        retrieved_context=[dict(chunk) for chunk in agent_run.retrieved_context],
+        citations=list(agent_run.citations),
     )
 
 
@@ -54,6 +57,15 @@ def run_case(
             case.expects.expected_trajectory,
             result.nodes_fired,
         )
+    rag = evaluate_rag(
+        prompt=case.prompt,
+        final_answer=result.final_answer,
+        retrieved_context=result.retrieved_context,
+        citations=result.citations,
+        expects=case.expects,
+    )
+    if rag is not None:
+        result.rag = rag
     return result
 
 
@@ -118,6 +130,15 @@ def run_suite(
                     case.expects.expected_trajectory,
                     result.nodes_fired,
                 )
+            rag = evaluate_rag(
+                prompt=case.prompt,
+                final_answer=result.final_answer,
+                retrieved_context=result.retrieved_context,
+                citations=result.citations,
+                expects=case.expects,
+            )
+            if rag is not None:
+                result.rag = rag
         results.append(result)
         if on_case_done is not None:
             on_case_done(i, total, case, result)

@@ -7,6 +7,22 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+def _normalize_context_chunk(item: Any) -> dict[str, Any]:
+    """Accept a plain string or a mapping for one retrieved-context chunk.
+
+    A bare string is common for adapters wrapping a simple retriever
+    (``["chunk one text", "chunk two text"]``); it becomes ``{"text": ...}``
+    with no ``id``. A mapping (``{"id": ..., "text": ...}``) passes through
+    unchanged so retrieval-precision/recall and citation checks (which key
+    off ``id``) keep working.
+    """
+    if isinstance(item, str):
+        return {"text": item}
+    if isinstance(item, dict):
+        return dict(item)
+    raise TypeError("retrieved_context items must be a string or a mapping")
+
+
 @dataclass(init=False)
 class AgentResponse:
     """Normalized, agent-agnostic result from a single invocation.
@@ -24,6 +40,8 @@ class AgentResponse:
     cost_usd: float | None = None
     latency_ms: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
+    retrieved_context: list[dict[str, Any]] = field(default_factory=list)
+    citations: list[str] = field(default_factory=list)
 
     def __init__(
         self,
@@ -39,6 +57,8 @@ class AgentResponse:
         *,
         final_answer: str | None = None,
         tools_called: list[str] | None = None,
+        retrieved_context: list[Any] | None = None,
+        citations: list[str] | None = None,
     ) -> None:
         if output is not None and final_answer is not None and output != final_answer:
             raise ValueError("output and final_answer disagree")
@@ -61,6 +81,8 @@ class AgentResponse:
         self.cost_usd = cost_usd
         self.latency_ms = float(latency_ms)
         self.raw = dict(raw or {})
+        self.retrieved_context = [_normalize_context_chunk(item) for item in (retrieved_context or [])]
+        self.citations = list(citations or [])
 
     @property
     def final_answer(self) -> str:
