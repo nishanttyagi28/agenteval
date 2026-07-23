@@ -525,6 +525,55 @@ def _cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_compare_models(args: argparse.Namespace) -> int:
+    from agenteval.core.model_compare import (
+        format_comparison_table,
+        run_model_comparison,
+        write_outputs,
+    )
+    from agenteval.core.registry import load_agent_registry
+
+    registry_path = _registry_path(args.registry)
+    try:
+        registry = load_agent_registry(registry_path)
+        requested = list(dict.fromkeys(args.agent or []))
+        if len(requested) < 2:
+            raise ValueError("compare-models requires at least 2 distinct --agent values")
+        unknown = [name for name in requested if name not in registry]
+        if unknown:
+            available = ", ".join(registry) or "(none)"
+            raise ValueError(
+                f"Unknown agent(s): {', '.join(unknown)}. Registered agents: {available}"
+            )
+        configs = [registry[name] for name in requested]
+
+        if args.cases:
+            cases_path = Path(args.cases)
+        else:
+            cases_path = _configured_path(registry_path, configs[0].golden_suite)
+            print(
+                f"note: --cases not given; using {configs[0].name}'s configured suite "
+                f"({cases_path}) for every agent"
+            )
+
+        rows = run_model_comparison(
+            configs,
+            cases_path=cases_path,
+            registry_path=registry_path,
+            runs_dir_override=args.runs_dir,
+            use_llm_judge=not args.no_llm_judge,
+            quiet=args.quiet,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    table = format_comparison_table(rows)
+    print(table, end="")
+    write_outputs(rows, json_path=args.json_out, markdown_path=args.markdown_out)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agenteval", description="AI agent evaluation harness")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -655,6 +704,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init_p.add_argument("--quiet", action="store_true", help="Less console output")
     init_p.set_defaults(func=_cmd_init)
+
+    cmp_models_p = sub.add_parser(
+        "compare-models",
+        help="Run the same golden suite against multiple registered agents",
+    )
+    cmp_models_p.add_argument(
+        "--agent",
+        action="append",
+        default=None,
+        required=True,
+        help="Registered agent name; pass at least twice",
+    )
+    cmp_models_p.add_argument("--registry", default=None, help=argparse.SUPPRESS)
+    cmp_models_p.add_argument(
+        "--cases", default=None, help="Golden YAML shared by every agent (default: first agent's suite)"
+    )
+    cmp_models_p.add_argument("--runs-dir", default=None, help="Override every agent's configured runs dir")
+    cmp_models_p.add_argument("--no-llm-judge", action="store_true", help="Skip LLM judged cases")
+    cmp_models_p.add_argument("--quiet", action="store_true", help="Less progress output")
+    cmp_models_p.add_argument("--json-out", default=None, help="Write machine-readable comparison")
+    cmp_models_p.add_argument("--markdown-out", default=None, help="Write Markdown comparison table")
+    cmp_models_p.set_defaults(func=_cmd_compare_models)
 
     return parser
 

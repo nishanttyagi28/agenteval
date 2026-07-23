@@ -41,6 +41,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [GitHub Actions](#github-actions)
 - [Adversarial robustness](#adversarial-robustness)
 - [HTML reports and regression trend tracking](#html-reports-and-regression-trend-tracking)
+- [Model/provider comparison](#modelprovider-comparison)
 - [VS Code extension](#vs-code-extension)
 - [Project structure](#project-structure)
 - [Testing](#testing)
@@ -592,6 +593,39 @@ a trend table (sparkline + improving/regressing/stable) for each metric
 across the recorded history. It has no external CSS/JS dependencies, so it's
 safe to open directly or publish as a CI artifact — see `agenteval report
 --help` for baseline/history overrides.
+
+## Model/provider comparison
+
+`agenteval compare-models` runs the *same* golden suite against several already-registered
+`agents.yaml` entries in one command and lays their metrics side by side. Each "model/provider"
+is just a normal registry entry pointed at a different model, prompt, or provider through its
+own adapter and `adapter_options` — the same way any two registered agents already differ — so
+comparing models reuses the existing adapter loader, runner, and scoring exactly as `agenteval
+run` does; it does not add new provider SDKs or new scoring logic, it's purely an orchestration
+layer over what's already there:
+
+```bash
+agenteval compare-models \
+  --agent agentic_data_analyst_groq \
+  --agent agentic_data_analyst_openai \
+  --cases tests/golden/analyst_cases.yaml
+```
+
+```text
+| Agent                       | Status | Correctness | Hallucination | Tool accuracy | Cost (USD) | Latency p95 (ms) |
+|---|---|---|---|---|---|---|
+| agentic_data_analyst_groq   | ok     | 90.0%       | 5.0%          | 100.0%        | $0.002000  | 850              |
+| agentic_data_analyst_openai | ok     | 95.0%       | 2.0%          | 100.0%        | $0.014000  | 1200             |
+```
+
+Every agent runs against the same `--cases` suite (defaults to the first `--agent`'s configured
+golden suite when omitted) and its scored run is still persisted exactly like `agenteval run`
+would, so `agenteval report`/history keep working unmodified on any of those runs. At least two
+`--agent` values are required; a single misconfigured agent (bad adapter path, missing
+dependency) is reported as an error row instead of aborting the whole comparison. `--json-out`
+and `--markdown-out` write the same data machine-readably. This command makes real calls to
+each configured agent, same as running `agenteval run` once per agent — it is not a gate and
+always exits `0`; gate individual agents separately with `agenteval compare`.
 
 ## VS Code extension
 
