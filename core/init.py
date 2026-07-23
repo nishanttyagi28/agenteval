@@ -99,12 +99,16 @@ def detect_framework(path: str | Path) -> str | None:
 
     scanned = 0
     for py_file in root.rglob("*.py"):
+        # Cap on files *visited*, not just files whose content gets read --
+        # otherwise a huge skipped tree (node_modules, .venv, ...) filled with
+        # .py-matching paths would never trip this cap and the scan would
+        # effectively be unbounded on large projects.
         if scanned >= _MAX_SCAN_FILES:
             break
+        scanned += 1
         parts = set(py_file.parts)
         if parts & {".venv", "venv", "node_modules", "site-packages", "__pycache__", ".git"}:
             continue
-        scanned += 1
         text = _read_text_best_effort(py_file)
         text_lower = text.lower()
         for framework, signatures in _FRAMEWORK_SIGNATURES:
@@ -381,10 +385,10 @@ def run_first_evaluation(
 
     from agenteval.cli import _run_registered_agent, build_parser
 
-    args = build_parser().parse_args(
-        ["run", "--agent", agent_name, "--registry", str(registry_path), "--quiet"]
-        + (["--no-llm-judge"] if quiet else [])
-    )
+    argv = ["run", "--agent", agent_name, "--registry", str(registry_path)]
+    if quiet:
+        argv.append("--quiet")
+    args = build_parser().parse_args(argv)
     try:
         result = _run_registered_agent(args, config, registry_path)
     except AgentDependencyNotFound as exc:

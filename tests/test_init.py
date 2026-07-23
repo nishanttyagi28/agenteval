@@ -62,6 +62,41 @@ def test_detect_framework_ignores_venv_and_site_packages(tmp_path):
     assert detect_framework(tmp_path) is None
 
 
+def test_detect_framework_scan_cap_bounds_total_files_visited_not_just_read(tmp_path, monkeypatch):
+    # A huge skipped tree (node_modules) must not let the scan bypass its
+    # cap: the cap must count every path rglob yields, not only the ones
+    # whose content actually gets read, otherwise a large skipped directory
+    # makes the scan effectively unbounded (regression test for that bug).
+    from agenteval.core import init as init_module
+
+    skipped = tmp_path / "node_modules"
+    skipped.mkdir()
+    for i in range(init_module._MAX_SCAN_FILES + 50):
+        (skipped / f"skip_{i}.py").write_text("", encoding="utf-8")
+    # Sorts after every skipped file, so it's only reached once the cap has
+    # already been exhausted by the skipped entries in front of it.
+    (tmp_path / "zzz_real.py").write_text("import crewai\n", encoding="utf-8")
+
+    original_rglob = Path.rglob
+    visited: list = []
+
+    def counting_rglob(self, pattern):
+        for item in original_rglob(self, pattern):
+            visited.append(item)
+            yield item
+
+    monkeypatch.setattr(Path, "rglob", counting_rglob)
+    detect_framework(tmp_path)
+
+    # This is the actual contract under test: the walk stops within the cap
+    # regardless of how many entries are skipped along the way. (Traversal
+    # order across directories isn't guaranteed, so whether the top-level
+    # real signal file happens to be seen before the cap trips isn't asserted
+    # here -- see test_detect_framework_ignores_venv_and_site_packages for
+    # skip-vs-detect correctness.)
+    assert len(visited) <= init_module._MAX_SCAN_FILES
+
+
 def test_detect_framework_unreadable_manifest_does_not_raise(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text("crewai\n", encoding="utf-8")
 
@@ -264,6 +299,26 @@ def test_run_first_evaluation_reports_success_via_mocked_run(tmp_path, monkeypat
 
     monkeypatch.setattr("agenteval.cli._run_registered_agent", fake_run)
     assert run_first_evaluation(tmp_path, "my_agent") == 0
+
+
+def test_run_first_evaluation_quiet_flag_only_controls_run_verbosity(tmp_path, monkeypatch):
+    # Regression test: `quiet` must not silently imply --no-llm-judge -- those
+    # are unrelated concerns and conflating them was a real bug caught here.
+    scaffold_project(tmp_path, "my_agent", framework="crewai")
+    captured = {}
+
+    def fake_run(args, config, registry_path):
+        captured["quiet"] = args.quiet
+        captured["no_llm_judge"] = args.no_llm_judge
+        return {"errors": 0}
+
+    monkeypatch.setattr("agenteval.cli._run_registered_agent", fake_run)
+
+    run_first_evaluation(tmp_path, "my_agent", quiet=False)
+    assert captured == {"quiet": False, "no_llm_judge": False}
+
+    run_first_evaluation(tmp_path, "my_agent", quiet=True)
+    assert captured == {"quiet": True, "no_llm_judge": False}
 
 
 def test_run_first_evaluation_reports_failure_via_mocked_run(tmp_path, monkeypatch):
