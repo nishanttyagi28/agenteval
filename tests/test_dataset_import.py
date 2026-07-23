@@ -218,6 +218,31 @@ def test_import_csv_handles_unicode_content(tmp_path):
     assert cases[1].expects.ground_truth == "東京"
 
 
+def test_import_csv_rejects_row_with_extra_field(tmp_path):
+    # Regression test: pandas' C parser silently treats a data row with one
+    # extra field as having an unlabeled leading index column, shifting every
+    # other value one column to the right with no error by default -- this
+    # must be caught explicitly instead of silently corrupting the row.
+    csv_path = write_csv(tmp_path, "id,question,answer\nq1,a,1,extra_field\n")
+    with pytest.raises(DatasetImportError, match=r"row 1: expected 3 column\(s\).*found 4"):
+        import_csv(csv_path, no_tools_mapping())
+
+
+def test_import_csv_rejects_row_with_missing_field(tmp_path):
+    csv_path = write_csv(tmp_path, "id,question,answer\nq1,a\n")
+    with pytest.raises(DatasetImportError, match=r"row 1: expected 3 column\(s\).*found 2"):
+        import_csv(csv_path, no_tools_mapping())
+
+
+def test_import_csv_ragged_row_does_not_silently_misalign_data(tmp_path):
+    # Even if a future change relaxed the row-length check, this asserts the
+    # actual failure mode being guarded against: a valid row must never be
+    # silently mis-mapped to another row's data.
+    csv_path = write_csv(tmp_path, "id,question,answer\nq1,a,1,extra_field\nq2,b,2\n")
+    with pytest.raises(DatasetImportError):
+        import_csv(csv_path, no_tools_mapping())
+
+
 def test_import_csv_missing_file_raises(tmp_path):
     with pytest.raises(DatasetImportError, match="CSV file not found"):
         import_csv(tmp_path / "nope.csv", basic_mapping())

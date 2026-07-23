@@ -11,6 +11,7 @@ still round-trips through the existing numeric-correctness machinery in
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -134,16 +135,53 @@ def emit_mapping_template(path: str | Path, *, force: bool = False) -> Path:
     return atomic_write_text(out_path, _MAPPING_TEMPLATE)
 
 
+def _validate_row_lengths(csv_path: Path, expected_columns: list[str]) -> None:
+    """Reject ragged CSV rows explicitly rather than trusting pandas' parser heuristics.
+
+    Pandas' C parser silently reinterprets a data row with one extra field as
+    having an unlabeled leading index column, shifting every other value one
+    column to the right with no error and no warning by default -- a single
+    malformed row would otherwise silently corrupt every subsequent field for
+    that row (prompt and ground truth swapped, wrong tools, ...) without ever
+    surfacing as an error. Checking field counts independently via the
+    standard library's csv module up front means a ragged row is always a
+    loud, specific, row-numbered failure instead.
+    """
+    expected = len(expected_columns)
+    with csv_path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.reader(handle)
+        next(reader, None)  # header, already captured by pandas
+        for index, row in enumerate(reader, start=1):
+            if len(row) != expected:
+                raise DatasetImportError(
+                    f"row {index}: expected {expected} column(s) {expected_columns}, "
+                    f"found {len(row)}"
+                )
+
+
 def _read_csv_rows(csv_path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    import warnings
+
     import pandas as pd
 
     try:
-        frame = pd.read_csv(csv_path, dtype=str, keep_default_na=False, na_filter=False)
+        # index_col=False stops pandas from treating a ragged row's extra
+        # field as an implicit index column (see _validate_row_lengths for
+        # why that matters) -- belt-and-suspenders alongside the explicit
+        # row-length check below, which always runs and gives the clearer,
+        # row-numbered error; pandas' own ParserWarning about the same ragged
+        # row would otherwise print confusing, redundant noise ahead of it.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=pd.errors.ParserWarning)
+            frame = pd.read_csv(
+                csv_path, dtype=str, keep_default_na=False, na_filter=False, index_col=False
+            )
     except FileNotFoundError as exc:
         raise DatasetImportError(f"CSV file not found: {csv_path}") from exc
     except pd.errors.EmptyDataError as exc:
         raise DatasetImportError(f"CSV file is empty: {csv_path}") from exc
     columns = [str(column) for column in frame.columns]
+    _validate_row_lengths(csv_path, columns)
     rows = frame.to_dict(orient="records")
     return columns, rows
 
