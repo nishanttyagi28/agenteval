@@ -615,7 +615,12 @@ def _cmd_import(args: argparse.Namespace) -> int:
 
 
 def _cmd_generate_cases(args: argparse.Namespace) -> int:
-    from agenteval.core.generator import generate_cases_from_logs, write_candidate_yaml
+    from agenteval.core.compare import load_report
+    from agenteval.core.generator import (
+        generate_cases_from_logs,
+        propose_regression_cases_from_failures,
+        write_candidate_yaml,
+    )
 
     output = (
         Path(args.output)
@@ -626,12 +631,27 @@ def _cmd_generate_cases(args: argparse.Namespace) -> int:
         print(f"error: output exists: {output} (use --overwrite)", file=sys.stderr)
         return 2
     try:
-        cases = generate_cases_from_logs(
-            args.logs,
-            log_format=args.log_format,
-            correctness_type=args.correctness_type,
-            limit=args.limit,
-        )
+        if args.from_failures:
+            if args.logs:
+                raise ValueError("--from-failures cannot be combined with --logs")
+            if not args.baseline or not args.current:
+                raise ValueError("--from-failures requires both --baseline and --current")
+            cases = propose_regression_cases_from_failures(
+                load_report(args.baseline),
+                load_report(args.current),
+                correctness_type=args.correctness_type,
+                similarity_threshold=args.similarity_threshold,
+                limit=args.limit,
+            )
+        else:
+            if not args.logs:
+                raise ValueError("--logs is required unless --from-failures is used")
+            cases = generate_cases_from_logs(
+                args.logs,
+                log_format=args.log_format,
+                correctness_type=args.correctness_type,
+                limit=args.limit,
+            )
         path = write_candidate_yaml(cases, output)
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -870,10 +890,11 @@ def build_parser() -> argparse.ArgumentParser:
     import_p.set_defaults(func=_cmd_import)
 
     gen_cases_p = sub.add_parser(
-        "generate-cases", help="Propose candidate golden cases from production run logs"
+        "generate-cases",
+        help="Propose candidate golden cases from production run logs, or from baseline->current regressions",
     )
     gen_cases_p.add_argument(
-        "--logs", required=True, help="Path to a run-report JSON or JSONL sample log file"
+        "--logs", default=None, help="Path to a run-report JSON or JSONL sample log file"
     )
     gen_cases_p.add_argument(
         "--format",
@@ -881,6 +902,20 @@ def build_parser() -> argparse.ArgumentParser:
         default="run-report",
         choices=["run-report", "jsonl"],
         help="Shape of --logs (default: run-report)",
+    )
+    gen_cases_p.add_argument(
+        "--from-failures",
+        action="store_true",
+        help="Mine candidates from cases that regressed baseline (passed) -> current (failed), "
+        "instead of --logs; requires --baseline and --current",
+    )
+    gen_cases_p.add_argument("--baseline", default=None, help="Baseline run JSON (--from-failures mode)")
+    gen_cases_p.add_argument("--current", default=None, help="Current run JSON (--from-failures mode)")
+    gen_cases_p.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.85,
+        help="Near-duplicate failure similarity ratio for clustering (--from-failures mode, default: 0.85)",
     )
     gen_cases_p.add_argument("--output", default=None, help="Candidate YAML output")
     gen_cases_p.add_argument(
