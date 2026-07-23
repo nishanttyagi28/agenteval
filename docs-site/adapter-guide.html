@@ -70,6 +70,7 @@ class MyAdapter(AgentAdapter):
             <tr><td><code>cost_usd</code></td><td>Provider-reported or computed cost in USD.</td></tr>
             <tr><td><code>latency_ms</code></td><td>Wall-clock time for the invocation.</td></tr>
             <tr><td><code>retrieved_context</code> / <code>citations</code></td><td>For RAG agents — see the <a href="./index.html#core-concepts">core concepts</a> and the README's RAG evaluation mode section.</td></tr>
+            <tr><td><code>trace_steps</code></td><td>Optional step-by-step execution trace (tool calls, reasoning, nodes) for <code>agenteval trace</code> replay — see the README's trace viewer section.</td></tr>
             <tr><td><code>raw</code></td><td>JSON-safe original payload, preserved for debugging/dashboards.</td></tr>
           </tbody>
         </table>

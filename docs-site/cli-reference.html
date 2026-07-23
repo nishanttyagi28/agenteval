@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       name="description"
-      content="AgentEval CLI reference: every subcommand -- run, compare, report, generate, init, import, generate-cases, compare-models."
+      content="AgentEval CLI reference: every subcommand -- run, compare, report, generate, init, import, generate-cases, compare-models, trace."
     >
     <title>CLI Reference — AgentEval Docs</title>
     <link rel="stylesheet" href="./styles.css">
@@ -83,6 +83,11 @@ agenteval generate-cases --logs sample_logs.jsonl --format jsonl</code></pre>
         <h2 id="compare-models">agenteval compare-models</h2>
         <p>Run the same golden suite against multiple registered agents and compare their metrics.</p>
         <pre><code>agenteval compare-models --agent my_agent_v1 --agent my_agent_v2</code></pre>
+
+        <h2 id="trace">agenteval trace</h2>
+        <p>Replay one case's step-by-step execution trace from a saved run, as text or a self-contained HTML page.</p>
+        <pre><code>agenteval trace runs/&lt;run&gt;.json --case-id total_customers
+agenteval trace runs/&lt;run&gt;.json --case-id total_customers --html trace.html</code></pre>
 
         <div class="callout">
           Flags and defaults change as AgentEval evolves — <code>agenteval &lt;command&gt;
