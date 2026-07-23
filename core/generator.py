@@ -11,6 +11,7 @@ generators reuse the same writer.
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
 import sys
@@ -311,6 +312,129 @@ def generate_cases_from_logs(
         )
     if not cases:
         raise ValueError("no usable cases found in the provided logs")
+    return cases
+
+
+# ── generate-cases --from-failures: targeted regression candidates ─────────
+#
+# Unlike propose_cases_from_run_report above (which trusts any surviving
+# final_answer as ground truth -- silently wrong for a case whose
+# correctness_pass was False), this mines a *baseline vs current* pair: only
+# cases where the baseline passed and the current run failed/errored
+# qualify, so the baseline's own final_answer is trustworthy ground truth
+# (it already passed correctness) rather than a guess.
+
+
+def _failure_signature(entry: dict[str, Any]) -> str:
+    """Normalized text used to detect near-duplicate failures for clustering."""
+    error = (entry.get("raw") or {}).get("error")
+    text = str(error or entry.get("final_answer") or entry.get("judge_reason") or "")
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def _cluster_failures(
+    entries: Sequence[dict[str, Any]], *, similarity_threshold: float
+) -> list[list[dict[str, Any]]]:
+    """Greedy, deterministic near-duplicate grouping by failure-signature similarity.
+
+    Each entry joins the first existing cluster whose representative (that
+    cluster's first member) has a ``difflib.SequenceMatcher`` ratio at or
+    above ``similarity_threshold`` against it; otherwise it starts a new
+    cluster. First-seen-wins as representative, so results are reproducible
+    given the same input order -- this is deliberately simple (no external
+    clustering/NLP dependency) and easy to verify: the similarity metric is
+    stdlib and its behavior on two strings is directly testable.
+    """
+    clusters: list[list[dict[str, Any]]] = []
+    representative_signatures: list[str] = []
+    for entry in entries:
+        signature = _failure_signature(entry)
+        placed = False
+        for cluster, representative_signature in zip(clusters, representative_signatures):
+            ratio = difflib.SequenceMatcher(None, signature, representative_signature).ratio()
+            if ratio >= similarity_threshold:
+                cluster.append(entry)
+                placed = True
+                break
+        if not placed:
+            clusters.append([entry])
+            representative_signatures.append(signature)
+    return clusters
+
+
+def propose_regression_cases_from_failures(
+    baseline: dict[str, Any],
+    current: dict[str, Any],
+    *,
+    correctness_type: str = "exact",
+    similarity_threshold: float = 0.85,
+    limit: int | None = None,
+) -> list[TestCase]:
+    """Propose regression-test candidates from cases that regressed baseline -> current.
+
+    Only a case where the baseline passed and the current run failed or
+    errored qualifies. Near-duplicate failures (by normalized error/answer
+    text) are clustered so one underlying regression doesn't produce many
+    redundant candidates -- only each cluster's first (lowest case_id, for
+    determinism) member becomes a candidate, tagged with its cluster size.
+    The baseline's own recorded tool calls are carried over as
+    ``must_call_tools`` so the generated case pins the tool route that used
+    to work, not just the final answer text.
+    """
+    if not 0.0 <= similarity_threshold <= 1.0:
+        raise ValueError("similarity_threshold must be between 0 and 1")
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be at least 1")
+
+    baseline_by_id = {
+        str(entry["case_id"]): entry
+        for entry in (baseline.get("case_results") or [])
+        if isinstance(entry, dict) and entry.get("case_id")
+    }
+    current_by_id = {
+        str(entry["case_id"]): entry
+        for entry in (current.get("case_results") or [])
+        if isinstance(entry, dict) and entry.get("case_id")
+    }
+
+    regressed_ids = sorted(
+        case_id
+        for case_id, current_entry in current_by_id.items()
+        if case_id in baseline_by_id
+        and case_status(baseline_by_id[case_id]) == "passed"
+        and case_status(current_entry) in ("failed", "agent_error")
+    )
+    regressed_entries = [current_by_id[case_id] for case_id in regressed_ids]
+    clusters = _cluster_failures(regressed_entries, similarity_threshold=similarity_threshold)
+
+    cases: list[TestCase] = []
+    for cluster in clusters:
+        representative = cluster[0]
+        case_id = str(representative["case_id"])
+        baseline_entry = baseline_by_id[case_id]
+        prompt = str(baseline_entry.get("prompt") or representative.get("prompt") or "").strip()
+        ground_truth = str(baseline_entry.get("final_answer") or "").strip()
+        if not prompt or not ground_truth:
+            continue
+        cases.append(
+            TestCase(
+                id=f"{case_id}__regression",
+                prompt=prompt,
+                expects=Expects(
+                    correctness_type=CorrectnessType(correctness_type),
+                    ground_truth=ground_truth,
+                    must_call_tools=list(baseline_entry.get("tools_called") or []),
+                ),
+                tags=["candidate", "regression_from_failure", f"cluster_size:{len(cluster)}"],
+                source="regression_from_failure",
+                parent_id=case_id,
+                review_status="candidate",
+            )
+        )
+        if limit is not None and len(cases) >= limit:
+            break
+    if not cases:
+        raise ValueError("no baseline-passed/current-failed regressions found between these two runs")
     return cases
 
 

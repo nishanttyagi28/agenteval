@@ -40,6 +40,11 @@ class GateConfig:
     max_cost_increase_pct: float | None = None
     max_latency_p95_ms: float | None = None
     max_token_increase_pct: float | None = None
+    # §Tier 6 Phase 3: opt-in McNemar significance check on a correctness-drop
+    # failure (see core.compare.GateThresholds, which mirrors these two
+    # fields). False/0.05 default preserves the exact prior gate behavior.
+    require_statistical_significance: bool = False
+    significance_alpha: float = 0.05
 
 
 @dataclass(frozen=True)

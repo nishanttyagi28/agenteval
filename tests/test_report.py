@@ -201,6 +201,44 @@ def test_failing_gate_shows_fail_banner_and_reasons():
     assert "correctness dropped" in html_text
 
 
+# ── statistical significance section (§Tier 6 Phase 3) ──────────────────────
+
+
+def test_significance_section_absent_when_not_opted_in():
+    baseline = run_report(correctness=0.95)
+    current = run_report(correctness=0.5)
+    comparison = compare_runs(baseline, current, GateThresholds())
+    html_text = render_html_report(current, baseline=baseline, comparison=comparison)
+    assert "Statistical significance" not in html_text
+
+
+def test_significance_section_shown_when_opted_in():
+    baseline_cases = [case(f"c{i}", status="passed") for i in range(20)]
+    current_cases = [case(f"c{i}", status="failed" if i < 15 else "passed") for i in range(20)]
+    baseline = run_report(correctness=1.0, cases=baseline_cases)
+    current = run_report(correctness=0.25, cases=current_cases)
+    thresholds = GateThresholds(require_statistical_significance=True)
+    comparison = compare_runs(baseline, current, thresholds)
+
+    html_text = render_html_report(current, baseline=baseline, comparison=comparison)
+    assert "Statistical significance" in html_text
+    assert "McNemar" in html_text
+    assert "statistically significant" in html_text
+
+
+def test_significance_section_shows_insignificant_verdict_and_bootstrap():
+    baseline_cases = [case(f"c{i}", status="passed") for i in range(20)]
+    current_cases = [case(f"c{i}", status="failed" if i == 0 else "passed") for i in range(20)]
+    baseline = run_report(correctness=1.0, cases=baseline_cases)
+    current = run_report(correctness=0.90, cases=current_cases)
+    thresholds = GateThresholds(require_statistical_significance=True)
+    comparison = compare_runs(baseline, current, thresholds)
+
+    html_text = render_html_report(current, baseline=baseline, comparison=comparison)
+    assert "not statistically significant" in html_text
+    assert "Bootstrap" in html_text
+
+
 def test_metric_card_shows_delta_badge_against_baseline():
     baseline = run_report(correctness=0.80)
     current = run_report(correctness=0.95)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Any
 
 from agenteval.core.config import resolve_agent_repo
@@ -41,8 +42,19 @@ def judge_correctness(
     *,
     temperature: float = 0.0,
     max_tokens: int = 256,
+    agent_repo: str | Path | None = None,
 ) -> tuple[bool, str]:
-    agent_repo = resolve_agent_repo()
+    """Judge one (prompt, answer) pair against ``ground_truth``.
+
+    ``agent_repo``, when given, is used instead of the default single-agent
+    discovery in ``core.config.resolve_agent_repo`` -- this lets callers that
+    already resolved a specific registered agent's sibling repository (e.g.
+    ``agenteval calibrate --judge <name>``, via ``core.registry.
+    resolve_agent_repository``) point the judge at that same repository's LLM
+    client. Omitting it (the default) preserves the original single-agent
+    behavior exactly.
+    """
+    agent_repo = resolve_agent_repo(explicit=agent_repo)
     if str(agent_repo) not in sys.path:
         sys.path.insert(0, str(agent_repo))
     from utils.env import load_project_env

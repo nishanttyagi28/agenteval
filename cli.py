@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from agenteval.core.calibration import DEFAULT_KAPPA_THRESHOLD
 from agenteval.core.schema import AgentConfig
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
@@ -405,6 +406,16 @@ def _cmd_compare(args: argparse.Namespace) -> int:
                 if args.max_token_increase_pct is not None
                 else config.gates.max_token_increase_pct
             ),
+            require_statistical_significance=(
+                True
+                if args.require_statistical_significance
+                else config.gates.require_statistical_significance
+            ),
+            significance_alpha=(
+                args.significance_alpha
+                if args.significance_alpha is not None
+                else config.gates.significance_alpha
+            ),
         )
         result = compare_runs(baseline, current, thresholds)
         write_outputs(
@@ -510,6 +521,42 @@ def _cmd_trace(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_calibrate(args: argparse.Namespace) -> int:
+    import functools
+
+    from agenteval.core.calibration import load_calibration_set, run_calibration
+    from agenteval.core.config import AgentDependencyNotFound
+    from agenteval.core.judge import judge_correctness
+    from agenteval.core.registry import load_agent_registry, resolve_agent_repository
+
+    registry_path = _registry_path(args.registry)
+    try:
+        registry = load_agent_registry(registry_path)
+        config = resolve_agent_selection(registry, requested=args.judge)[0]
+        agent_repo = resolve_agent_repository(config, registry_path=registry_path)
+        cases = load_calibration_set(args.golden_set)
+        judge_fn = functools.partial(judge_correctness, agent_repo=agent_repo)
+        result = run_calibration(cases, judge_fn, kappa_threshold=args.kappa_threshold)
+    except (OSError, ValueError, AgentDependencyNotFound) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"judge={config.name}")
+    print(f"n_cases={result.n_cases}")
+    print(f"agreement_rate={result.agreement_rate:.3f}")
+    print(f"cohens_kappa={result.kappa:.3f} ({result.interpretation})")
+    if result.mismatches:
+        print(f"mismatches={','.join(result.mismatches)}")
+    if result.below_threshold:
+        print(
+            f"WARNING: kappa {result.kappa:.3f} is below the "
+            f"{result.kappa_threshold:.2f} threshold -- judge/human agreement is weak; "
+            "review mismatched cases before trusting llm_judge results.",
+            file=sys.stderr,
+        )
+    return 1 if result.below_threshold else 0
+
+
 def _cmd_generate(args: argparse.Namespace) -> int:
     from agenteval.core.generator import generate_suite, write_candidate_yaml
     from agenteval.core.runner import DEFAULT_GOLDEN_PATH
@@ -578,7 +625,12 @@ def _cmd_import(args: argparse.Namespace) -> int:
 
 
 def _cmd_generate_cases(args: argparse.Namespace) -> int:
-    from agenteval.core.generator import generate_cases_from_logs, write_candidate_yaml
+    from agenteval.core.compare import load_report
+    from agenteval.core.generator import (
+        generate_cases_from_logs,
+        propose_regression_cases_from_failures,
+        write_candidate_yaml,
+    )
 
     output = (
         Path(args.output)
@@ -589,12 +641,27 @@ def _cmd_generate_cases(args: argparse.Namespace) -> int:
         print(f"error: output exists: {output} (use --overwrite)", file=sys.stderr)
         return 2
     try:
-        cases = generate_cases_from_logs(
-            args.logs,
-            log_format=args.log_format,
-            correctness_type=args.correctness_type,
-            limit=args.limit,
-        )
+        if args.from_failures:
+            if args.logs:
+                raise ValueError("--from-failures cannot be combined with --logs")
+            if not args.baseline or not args.current:
+                raise ValueError("--from-failures requires both --baseline and --current")
+            cases = propose_regression_cases_from_failures(
+                load_report(args.baseline),
+                load_report(args.current),
+                correctness_type=args.correctness_type,
+                similarity_threshold=args.similarity_threshold,
+                limit=args.limit,
+            )
+        else:
+            if not args.logs:
+                raise ValueError("--logs is required unless --from-failures is used")
+            cases = generate_cases_from_logs(
+                args.logs,
+                log_format=args.log_format,
+                correctness_type=args.correctness_type,
+                limit=args.limit,
+            )
         path = write_candidate_yaml(cases, output)
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -772,6 +839,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Report agent execution errors without failing the gate",
     )
+    cmp_p.add_argument(
+        "--require-statistical-significance",
+        action="store_true",
+        help="Only fail on a correctness drop if McNemar's test finds it statistically "
+        "significant (opt-in; default is the plain threshold check)",
+    )
+    cmp_p.add_argument(
+        "--significance-alpha",
+        type=float,
+        default=None,
+        help="Significance threshold for --require-statistical-significance (default: 0.05)",
+    )
     cmp_p.add_argument("--json-out", default=None, help="Write machine-readable comparison")
     cmp_p.add_argument("--markdown-out", default=None, help="Write Markdown comparison")
     cmp_p.set_defaults(func=_cmd_compare)
@@ -833,10 +912,11 @@ def build_parser() -> argparse.ArgumentParser:
     import_p.set_defaults(func=_cmd_import)
 
     gen_cases_p = sub.add_parser(
-        "generate-cases", help="Propose candidate golden cases from production run logs"
+        "generate-cases",
+        help="Propose candidate golden cases from production run logs, or from baseline->current regressions",
     )
     gen_cases_p.add_argument(
-        "--logs", required=True, help="Path to a run-report JSON or JSONL sample log file"
+        "--logs", default=None, help="Path to a run-report JSON or JSONL sample log file"
     )
     gen_cases_p.add_argument(
         "--format",
@@ -844,6 +924,20 @@ def build_parser() -> argparse.ArgumentParser:
         default="run-report",
         choices=["run-report", "jsonl"],
         help="Shape of --logs (default: run-report)",
+    )
+    gen_cases_p.add_argument(
+        "--from-failures",
+        action="store_true",
+        help="Mine candidates from cases that regressed baseline (passed) -> current (failed), "
+        "instead of --logs; requires --baseline and --current",
+    )
+    gen_cases_p.add_argument("--baseline", default=None, help="Baseline run JSON (--from-failures mode)")
+    gen_cases_p.add_argument("--current", default=None, help="Current run JSON (--from-failures mode)")
+    gen_cases_p.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.85,
+        help="Near-duplicate failure similarity ratio for clustering (--from-failures mode, default: 0.85)",
     )
     gen_cases_p.add_argument("--output", default=None, help="Candidate YAML output")
     gen_cases_p.add_argument(
@@ -905,6 +999,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--html", default=None, metavar="PATH", help="Write a self-contained HTML replay to PATH"
     )
     trace_p.set_defaults(func=_cmd_trace)
+
+    calibrate_p = sub.add_parser(
+        "calibrate", help="Score LLM-judge/human agreement against a labeled calibration set"
+    )
+    calibrate_p.add_argument("--judge", required=True, help="Registered agent whose judge to calibrate")
+    calibrate_p.add_argument("--golden-set", required=True, help="Path to a calibration-set YAML")
+    calibrate_p.add_argument("--registry", default=None, help=argparse.SUPPRESS)
+    calibrate_p.add_argument(
+        "--kappa-threshold",
+        type=float,
+        default=DEFAULT_KAPPA_THRESHOLD,
+        help=f"Warn when Cohen's kappa falls below this (default: {DEFAULT_KAPPA_THRESHOLD})",
+    )
+    calibrate_p.set_defaults(func=_cmd_calibrate)
 
     return parser
 

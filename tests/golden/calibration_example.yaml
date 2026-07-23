@@ -1,0 +1,47 @@
+# Example calibration set for `agenteval calibrate` (Tier 6, Phase 1).
+#
+# Each entry is a human-labeled verdict on one already-fixed candidate
+# answer -- no agent is invoked. `agenteval calibrate` replays the LLM judge
+# against `prompt`/`ground_truth`/`candidate_answer` and compares its
+# pass/fail verdict to `human_label`, then reports Cohen's kappa between the
+# two raters (judge vs. human).
+#
+# A useful calibration set deliberately includes both agreements and
+# disagreements -- an all-agree fixture cannot distinguish a well-calibrated
+# judge from one that just says "pass" unconditionally.
+
+- id: calib_correct_exact
+  prompt: "How many customers are in the dataset?"
+  ground_truth: 30
+  candidate_answer: "There are 30 customers in the dataset."
+  human_label: true
+
+- id: calib_correct_paraphrase
+  prompt: "What is the average monthly charge?"
+  ground_truth: "$64.76"
+  candidate_answer: "On average, customers are charged approximately $64.76 per month."
+  human_label: true
+
+- id: calib_wrong_number
+  prompt: "How many customers churned?"
+  ground_truth: 7
+  candidate_answer: "9 customers churned."
+  human_label: false
+
+- id: calib_hallucinated_extra_fact
+  prompt: "What is the capital of Japan?"
+  ground_truth: "Tokyo"
+  candidate_answer: "Tokyo, which has been the capital since 1950."
+  human_label: false # invents a false historical claim alongside the correct city
+
+- id: calib_correct_with_extra_context
+  prompt: "List the top reason for churn."
+  ground_truth: "Month-to-month contract"
+  candidate_answer: "Customers on month-to-month contracts churn the most, likely due to low switching cost."
+  human_label: true
+
+- id: calib_evasive_non_answer
+  prompt: "What is the total revenue from churned customers?"
+  ground_truth: "$139,130.85"
+  candidate_answer: "I would need to look that up, but churned customers likely contribute significant revenue loss."
+  human_label: false

@@ -33,6 +33,9 @@ The static demo explains the workflow without executing an agent or making API c
 - [Trace viewer](#trace-viewer)
 - [Cost attribution](#cost-attribution)
 - [Regression alerting](#regression-alerting)
+- [Calibrated LLM-as-judge](#calibrated-llm-as-judge)
+- [Regression suites from production failures](#regression-suites-from-production-failures)
+- [Cross-run statistical significance](#cross-run-statistical-significance)
 - [Golden case example](#golden-case-example)
 - [Dashboard evidence](#dashboard-evidence)
 - [Installation](#installation)
@@ -345,6 +348,109 @@ agents:
 
 An agent that doesn't set `alerting` behaves exactly as before — no output, no webhook calls. A
 failed send is reported (`alert=error: ...`) but never changes the gate's own exit code.
+
+## Calibrated LLM-as-judge
+
+`llm_judge` correctness cases are only as trustworthy as the judge's agreement with a human
+reviewer. `agenteval calibrate` measures that agreement directly, using **Cohen's kappa** — the
+standard statistic for inter-rater agreement, chosen over raw percent-agreement because it
+corrects for the agreement two raters would reach by chance alone (a judge that always says
+"pass" can look 90% accurate on a golden set that's 90% correct answers, with zero real
+agreement). Interpreted against the Landis & Koch (1977) scale (`poor` / `slight` / `fair` /
+`moderate` / `substantial` / `almost perfect`), the same reference most published inter-rater
+agreement studies use.
+
+A calibration set is a distinct, simpler shape than a golden `TestCase` — no agent is invoked.
+Each entry already fixes a candidate answer and a human verdict on it:
+
+```yaml
+- id: calib_wrong_number
+  prompt: "How many customers churned?"
+  ground_truth: 7
+  candidate_answer: "9 customers churned."
+  human_label: false
+```
+
+See `tests/golden/calibration_example.yaml` for a small worked example with a deliberate mix of
+agreements and disagreements — an all-agree fixture can't tell a well-calibrated judge apart from
+one that just says "pass" unconditionally.
+
+```bash
+agenteval calibrate --judge agentic_data_analyst --golden-set tests/golden/calibration_example.yaml
+```
+
+`--judge <name>` is a registered agent name (the same registry every other `--agent` flag uses),
+because the judge implementation is tied to whichever sibling repository's LLM client that agent
+resolves to — there's no separate pluggable judge abstraction. The command exits non-zero and
+prints a warning when kappa falls below `--kappa-threshold` (default 0.6, "substantial"
+agreement), and lists every case where the judge and the human disagreed.
+
+**Limitation:** kappa on a small calibration set is itself noisy — treat it as a directional
+signal, not a certified score, until the set has enough cases (and enough disagreement variety)
+to be representative of the judge's real failure modes.
+
+## Regression suites from production failures
+
+`agenteval generate-cases --from-failures` mines *targeted* regression cases from a baseline vs.
+current run pair, instead of trusting an arbitrary log line. Only a case where baseline **passed**
+and current **failed or errored** qualifies — for exactly that case, the baseline's own
+`final_answer` is trustworthy ground truth (it already passed correctness), which is what makes
+this safer than treating any surviving answer as ground truth regardless of whether it was ever
+verified correct.
+
+```bash
+agenteval generate-cases --from-failures \
+  --baseline runs/baseline.json --current runs/latest.json \
+  --output tests/adversarial/regressions.yaml
+```
+
+Near-duplicate failures are clustered by `difflib.SequenceMatcher` similarity over a normalized
+error/answer signature (`--similarity-threshold`, default `0.85`) so ten instances of the same
+underlying outage don't produce ten redundant candidates — one candidate per cluster, tagged with
+`cluster_size:N`. Every candidate carries `review_status: candidate` and is import-compatible with
+`agenteval import`/the existing `generate-cases --logs` output, same as Tier 4.
+
+## Cross-run statistical significance
+
+A correctness-rate drop between two runs can be a real regression or ordinary run-to-run noise —
+`core/significance.py` answers that question directly for paired binary outcomes (same case,
+baseline vs. current), rather than eyeballing a percentage delta.
+
+**McNemar's test** is the standard method for this exact shape of data: it looks only at
+*discordant* pairs (cases that flipped from pass to fail, or fail to pass) since agreement pairs
+carry no information about change. Below 25 discordant pairs (the standard rule of thumb) it uses
+the **exact binomial** variant; above that, the continuity-corrected **asymptotic chi-square**
+test. Both are exact closed-form math — no scipy/numpy dependency was needed:
+a chi-square distribution with 1 degree of freedom is *exactly* the distribution of a squared
+standard normal, so its survival function is `math.erfc(sqrt(x/2))`, not an approximation; the
+exact binomial tail uses `math.comb`. A **percentile bootstrap confidence interval** on the
+correctness-rate delta rounds this out for cases where a single p-value is less intuitive than a
+range.
+
+```bash
+agenteval compare --agent my_agent --require-statistical-significance --significance-alpha 0.05
+```
+
+This is fully **opt-in** — every existing `agenteval compare` invocation and `agents.yaml` behaves
+exactly as before. When enabled, a correctness drop that exceeds the normal threshold gate is only
+treated as a real regression if McNemar's test finds it significant; an insignificant drop is
+reported as noise and does not fail the gate. If significance can't be verified at all (e.g. no
+overlapping case IDs between the two runs), the gate **fails safe** — it keeps the original
+threshold-based reason rather than silently passing an unverifiable drop.
+
+`agenteval compare`'s output, `format_markdown`, and the HTML report all show a plain-language
+verdict (e.g. *"not statistically significant (p=0.32 ≥ alpha=0.05): within normal run-to-run
+variation"*), not just the raw statistic.
+
+**Limitations, stated explicitly:**
+- Both McNemar variants need paired cases with a determinate boolean verdict in *both* runs;
+  cases that errored, were skipped, or don't exist in one of the two runs are excluded, not
+  imputed.
+- Statistical power is genuinely low with few discordant pairs — the tool flags this (`< 10`
+  discordant pairs, or `< 10` paired cases for the bootstrap) rather than reporting an
+  overconfident p-value or a misleadingly narrow interval.
+- "Not statistically significant" is not proof of "no real change" — it means the evidence doesn't
+  clear the bar, which is a meaningfully different (and weaker) claim, especially on small suites.
 
 ## Golden case example
 
