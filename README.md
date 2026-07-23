@@ -488,8 +488,9 @@ LangGraph itself remains optional at AgentEval import time — the adapter only 
 - pull requests use six selected smoke cases
 - manual dispatch with `full_suite=true` runs all 21 golden cases
 - the current report is compared with the versioned baseline
-- evidence is uploaded as a workflow artifact
-- a generated Markdown report is created or updated on the pull request
+- a self-contained HTML report (`agenteval report`) is generated alongside the JSON/Markdown comparison
+- evidence — the run JSON, comparison JSON/Markdown, and HTML report — is uploaded as one workflow artifact
+- a PR bot comment (PASS/FAIL, metric deltas, regressed cases, and a link to the workflow run holding the HTML report artifact) is created or updated on the pull request — identified by a stable per-agent HTML marker, so reruns update the same comment instead of posting a new one
 - missing `GROQ_API_KEY` produces an explicit skipped-evaluation summary
 - concurrency cancellation and job timeouts prevent stale or runaway runs
 
@@ -528,7 +529,26 @@ jobs:
           no-llm-judge: "true"
 ```
 
-Supported inputs include the registered agent, registry path, agent repository path, golden-case and baseline overrides, run directory, case IDs, tags, framework extras, Python version, LLM-judge behavior, and regression-failure behavior. The action exposes `passed`, `report-path`, and `comparison-path` outputs. See [the complete consumer workflow](examples/github-actions/agenteval.yml).
+Supported inputs include the registered agent, registry path, agent repository path, golden-case and baseline overrides, run directory, case IDs, tags, framework extras, Python version, LLM-judge behavior, and regression-failure behavior. The action exposes `passed`, `report-path`, `comparison-path`, `comparison-markdown-path`, and `html-report-path` outputs. See [the complete consumer workflow](examples/github-actions/agenteval.yml).
+
+Two inputs are opt-in and default to `"false"` — enabling them changes nothing for existing consumers who don't set them:
+
+```yaml
+      - name: Run AgentEval
+        id: agenteval
+        uses: nishanttyagi28/agenteval@v1
+        with:
+          agent: research_crew
+          generate-html-report: "true"
+          post-pr-comment: "true"
+```
+
+- `generate-html-report: "true"` runs `agenteval report` after the gate and exposes its path as
+  the `html-report-path` output.
+- `post-pr-comment: "true"` posts or updates a single pull-request comment (per-agent HTML
+  marker, same update-in-place behavior as `eval.yml`'s own bot) with the Markdown comparison —
+  only on `pull_request` events. The consuming workflow must grant
+  `permissions: pull-requests: write`.
 
 GitHub resolves `uses` references as `owner/repository@ref`. Because the composite action is maintained in this repository, its coordinate is `nishanttyagi28/agenteval@v1`. The separate coordinate `nishanttyagi28/agenteval-action@v1` would require a repository named `agenteval-action`.
 
