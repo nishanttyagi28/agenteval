@@ -254,9 +254,24 @@ def _status_bar(cases: Sequence[dict[str, Any]]) -> str:
     return bar + f'<div class="legend">{"".join(legend)}</div>'
 
 
+def _turn_retention_rate(case: dict[str, Any]) -> float | None:
+    """Mean ``context_retention_pass`` across one case's ``turn_results`` (§Tier 9).
+
+    ``None`` when the case has no turns, or none of its turns declared
+    ``retained_facts`` -- rendered as "—", the same "not applicable" the
+    per-case row already uses for a missing correctness verdict.
+    """
+    values = [
+        turn.get("context_retention_pass")
+        for turn in (case.get("turn_results") or [])
+        if isinstance(turn, dict) and turn.get("context_retention_pass") is not None
+    ]
+    return (sum(1 for v in values if v) / len(values)) if values else None
+
+
 def _case_rows(cases: Sequence[dict[str, Any]]) -> str:
     if not cases:
-        return '<tr><td colspan="9" class="empty">No cases recorded for this run.</td></tr>'
+        return '<tr><td colspan="13" class="empty">No cases recorded for this run.</td></tr>'
     rows = []
     for case in cases:
         status = case_status(case)
@@ -267,6 +282,11 @@ def _case_rows(cases: Sequence[dict[str, Any]]) -> str:
         tools = ", ".join(str(t) for t in (case.get("tools_called") or [])) or "—"
         note = str(case.get("judge_reason") or "")
         note_short = note if len(note) <= 140 else note[:137] + "..."
+        turn_results = case.get("turn_results") or []
+        turns_text = str(len(turn_results)) if turn_results else "—"
+        retention = _turn_retention_rate(case)
+        retention_text = "—" if retention is None else _format_metric(retention, "pct")
+        efficiency_text = _format_metric(case.get("tool_efficiency_score"), "ratio")
         rows.append(
             "<tr>"
             f'<td class="mono">{_esc(case.get("case_id"))}</td>'
@@ -279,6 +299,9 @@ def _case_rows(cases: Sequence[dict[str, Any]]) -> str:
             f'<td>{_format_metric(case.get("cost_usd"), "usd")}</td>'
             f'<td class="mono">{_esc(tools)}</td>'
             f'<td class="note" title="{_esc(note)}">{_esc(note_short)}</td>'
+            f"<td>{_esc(turns_text)}</td>"
+            f"<td>{_esc(retention_text)}</td>"
+            f"<td>{_esc(efficiency_text)}</td>"
             "</tr>"
         )
     return "\n".join(rows)
@@ -450,6 +473,7 @@ def render_html_report(
           <th>Case</th><th>Status</th><th>Correctness</th><th>Hallucination</th>
           <th>Precision</th><th>Recall</th><th>Latency</th><th>Cost</th>
           <th>Tools called</th><th>Note</th>
+          <th>Turns</th><th>Retention</th><th>Tool efficiency</th>
         </tr>
       </thead>
       <tbody>

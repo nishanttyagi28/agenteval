@@ -163,6 +163,15 @@ class Expects:
     # Optional third-party correctness evaluator. When omitted, the existing
     # ``correctness_type`` dispatch remains unchanged.
     evaluator: str | None = None
+    # Optional context-retention checklist for one turn of a multi-turn case
+    # (§Tier 9). Facts introduced in earlier turns that this turn's answer
+    # must reference, checked as case/whitespace-insensitive substrings the
+    # same way ``check_hallucination`` matches numbers -- deterministic, no
+    # NLP dependency. Empty (the default) means "not evaluated," identical to
+    # every other optional Expects field; harmless and unused on a
+    # single-turn case's own top-level ``expects``, which represents the
+    # whole-conversation goal-completion criterion instead (see TestCase).
+    retained_facts: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Expects:
@@ -188,7 +197,34 @@ class Expects:
             expected_citations=_parse_string_list(data, "expected_citations"),
             reference_context=_parse_string_list(data, "reference_context"),
             evaluator=evaluator,
+            retained_facts=_parse_string_list(data, "retained_facts"),
         )
+
+
+@dataclass
+class Turn:
+    """One turn of a multi-turn conversation case (§Tier 9).
+
+    Reuses ``Expects`` in full so every existing per-case scoring mechanism
+    (correctness, hallucination, tool calls, RAG, trajectory, third-party
+    evaluators, context retention) works unmodified at turn granularity via
+    the same ``score_case``/``check_*`` functions a single-turn case uses.
+    """
+
+    prompt: str
+    expects: Expects
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Turn:
+        if not isinstance(data, dict):
+            raise ValueError("turn must be a mapping")
+        prompt = data.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("turn prompt must be a non-empty string")
+        expects_raw = data.get("expects") or {}
+        if not isinstance(expects_raw, dict):
+            raise ValueError("turn expects must be a mapping")
+        return cls(prompt=prompt, expects=Expects.from_dict(expects_raw))
 
 
 @dataclass
@@ -208,21 +244,44 @@ class TestCase:
     parent_id: str | None = None
     mutation_type: str | None = None
     review_status: str | None = None
+    # Optional multi-turn conversation (§Tier 9). Empty (the default) means
+    # "single-turn," scored exactly as before this field existed. When
+    # non-empty, top-level ``prompt``/``expects`` still exist but change
+    # meaning: ``prompt`` becomes an optional display label (defaulting to
+    # the first turn's prompt), and ``expects`` becomes the whole
+    # -conversation goal-completion criterion, judged against the full
+    # joined transcript rather than a single answer (see
+    # core.runner.run_conversation_case).
+    turns: list[Turn] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TestCase:
+        case_id = data.get("id")
+        turns_raw = data.get("turns")
+        turns: list[Turn] = []
+        if turns_raw is not None:
+            if not isinstance(turns_raw, list) or not turns_raw:
+                raise ValueError(f"Case {case_id!r}: turns must be a non-empty list")
+            turns = [Turn.from_dict(item) for item in turns_raw]
+        prompt = data.get("prompt")
+        if prompt is None:
+            if turns:
+                prompt = turns[0].prompt
+            else:
+                raise ValueError(f"Case {case_id!r}: prompt is required (or provide turns)")
         expects_raw = data.get("expects") or {}
         if not isinstance(expects_raw, dict):
-            raise ValueError(f"Case {data.get('id')!r}: expects must be a mapping")
+            raise ValueError(f"Case {case_id!r}: expects must be a mapping")
         return cls(
             id=str(data["id"]),
-            prompt=str(data["prompt"]),
+            prompt=str(prompt),
             expects=Expects.from_dict(expects_raw),
             tags=list(data.get("tags") or []),
             source=data.get("source"),
             parent_id=data.get("parent_id"),
             mutation_type=data.get("mutation_type"),
             review_status=data.get("review_status"),
+            turns=turns,
         )
 
 
@@ -260,14 +319,44 @@ class CaseResult:
     # response reports trace_steps. Empty by default — same "additive, no
     # back-compat break" convention as retrieved_context/citations above.
     trace_steps: list[TraceStep] = field(default_factory=list)
+    # Multi-turn conversation results (§Tier 9). Empty for every single-turn
+    # case (the default) -- populated only by
+    # core.runner.run_conversation_case, one fully-scored CaseResult per
+    # turn (case_id suffixed "::turnN"). The parent CaseResult's own
+    # correctness_pass/status/etc. represent the whole-conversation
+    # goal-completion verdict, scored the same way a single-turn case is.
+    turn_results: list["CaseResult"] = field(default_factory=list)
+    # Set only on entries inside turn_results, never on the parent result.
+    # None = context.retained_facts was empty for that turn ("not
+    # evaluated"), not "passed."
+    context_retention_pass: bool | None = None
+    # Tool-use efficiency (§Tier 9), derived from trace_steps. None means
+    # "not applicable" (no trace_steps recorded), not "zero redundancy" --
+    # same convention as the RAG fields below.
+    tool_call_redundancy_count: int | None = None
+    tool_efficiency_score: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        if self.trajectory is None:
-            data.pop("trajectory")
-        if self.rag is None:
-            data.pop("rag")
+        _strip_optional_case_fields(data)
         return data
+
+
+def _strip_optional_case_fields(case_dict: dict[str, Any]) -> dict[str, Any]:
+    """Drop ``None`` trajectory/rag in place, recursing into nested turn_results.
+
+    Shared by ``CaseResult.to_dict()`` and ``RunReport.to_dict()`` so a
+    multi-turn parent case's per-turn entries get the exact same
+    "None-valued optional dataclass fields are omitted, not null" treatment
+    the top level already had before turn_results existed.
+    """
+    if case_dict.get("trajectory") is None:
+        case_dict.pop("trajectory", None)
+    if case_dict.get("rag") is None:
+        case_dict.pop("rag", None)
+    for turn in case_dict.get("turn_results") or []:
+        _strip_optional_case_fields(turn)
+    return case_dict
 
 
 @dataclass
@@ -298,15 +387,16 @@ class RunReport:
     unsupported_claim_rate_avg: float | None = None
     citation_f1_avg: float | None = None
     retrieval_f1_avg: float | None = None
+    # §Tier 9 suite-level averages — None when nothing in the run qualified,
+    # same "nothing means nothing qualified" convention as the RAG averages.
+    context_retention_rate: float | None = None
+    tool_efficiency_avg: float | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         for case in data["case_results"]:
-            if case.get("trajectory") is None:
-                case.pop("trajectory", None)
-            if case.get("rag") is None:
-                case.pop("rag", None)
+            _strip_optional_case_fields(case)
         return data
 
 

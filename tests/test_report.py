@@ -97,6 +97,36 @@ def test_per_case_row_rendered():
 def test_zero_cases_shows_empty_state_not_a_crash():
     html_text = render_html_report(run_report(cases=[]))
     assert "No cases recorded for this run." in html_text
+    assert 'colspan="13"' in html_text  # matches the 13 <th> columns in the table header
+
+
+# ── multi-turn / tool-efficiency columns (§Tier 9) ──────────────────────────
+
+
+def test_single_turn_case_shows_not_applicable_for_new_columns():
+    from agenteval.core.report import _case_rows
+
+    # No turn_results and no tool_efficiency_score on an ordinary single-turn
+    # case -- both new columns must degrade to "not applicable", never crash
+    # or show a stray "0"/"None".
+    row = _case_rows([case("c1")])
+    assert row.count("<td>—</td>") >= 2  # Turns and Retention columns
+    assert "<td>n/a</td>" in row  # Tool efficiency column
+
+
+def test_multi_turn_case_renders_turn_count_retention_and_efficiency():
+    multi_turn_case = case(
+        "convo1",
+        turn_results=[
+            {"case_id": "convo1::turn0", "context_retention_pass": None},
+            {"case_id": "convo1::turn1", "context_retention_pass": True},
+        ],
+        tool_efficiency_score=0.75,
+    )
+    html_text = render_html_report(run_report(cases=[multi_turn_case]))
+    assert ">2<" in html_text  # turn count
+    assert "100.0%" in html_text  # retention rate: 1/1 qualifying turn passed
+    assert "0.75" in html_text  # tool_efficiency_score rendered as a ratio
 
 
 def test_non_dict_case_entries_are_dropped_not_a_crash():
