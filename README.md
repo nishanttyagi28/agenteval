@@ -46,6 +46,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [HTML reports and regression trend tracking](#html-reports-and-regression-trend-tracking)
 - [Model/provider comparison](#modelprovider-comparison)
 - [VS Code extension](#vs-code-extension)
+- [Documentation site (scaffold, not deployed)](#documentation-site-scaffold-not-deployed)
 - [Project structure](#project-structure)
 - [Testing](#testing)
 - [Current limitations](#current-limitations)
@@ -783,6 +784,22 @@ channel. It's an unpublished local scaffold; see
 [`vscode-extension/README.md`](vscode-extension/README.md) for how to build
 and debug it (`npm install && npm run compile`, then `F5`).
 
+## Documentation site (scaffold, not deployed)
+
+`docs-site/` is a minimal, framework-light static documentation site — Getting Started, CLI
+reference, an adapter-writing guide, and a factual comparison against Promptfoo/DeepEval/
+LangSmith — built the same way `landing-page/` is (plain HTML/CSS/JS, no framework, zero
+runtime dependencies). It's a local scaffold only: there is no deployment workflow for it yet.
+
+```bash
+cd docs-site
+npm run build   # writes docs-site/dist/
+npm test        # build + static structural/accessibility/link validation
+npm run serve   # http://127.0.0.1:4174
+```
+
+See [`docs-site/README.md`](docs-site/README.md) for details.
+
 ## Project structure
 
 ```text
@@ -790,7 +807,9 @@ agenteval/
 ├── pyproject.toml        # Package metadata and agenteval console entry point
 ├── agents.yaml           # Registered agents, adapters, suites, and gate defaults
 ├── action.yml            # Reusable composite GitHub Action
+├── Dockerfile            # Minimal container image for the CLI
 ├── CONTRIBUTING.md       # Development and pull-request guidance
+├── scripts/              # docker_smoke_test.sh and other repo-level scripts
 ├── adapters/             # Agent interface and concrete adapter
 │   ├── base.py           # Framework-neutral AgentAdapter contract
 │   ├── crewai.py         # CrewAI integration
@@ -812,6 +831,7 @@ agenteval/
 ├── dashboard/app.py      # Streamlit dashboard
 ├── vscode-extension/     # Minimal "AgentEval: Run Suite" VS Code extension
 ├── landing-page/         # Static demo and Playwright browser tests
+├── docs-site/            # Documentation site scaffold (not deployed)
 ├── examples/             # Composite-action fixtures and consumer workflow
 ├── tests/golden/         # Hand-written YAML suite
 ├── baselines/            # Versioned baseline reports

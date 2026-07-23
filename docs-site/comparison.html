@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="A factual comparison of AgentEval against Promptfoo, DeepEval, and LangSmith -- real differences and honest gaps, not marketing claims."
+    >
+    <title>Comparison — AgentEval Docs</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="container nav-shell">
+        <a class="brand" href="./index.html">AgentEval Docs</a>
+
+        <button
+          class="nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-navigation"
+          aria-label="Open navigation"
+        >
+          <span></span><span></span><span></span>
+        </button>
+
+        <nav id="primary-navigation" class="primary-nav" aria-label="Primary navigation">
+          <a href="./index.html">Getting Started</a>
+          <a href="./cli-reference.html">CLI Reference</a>
+          <a href="./adapter-guide.html">Adapter Guide</a>
+          <a href="./comparison.html" aria-current="page">Comparison</a>
+          <a href="https://github.com/nishanttyagi28/agenteval" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="container" aria-labelledby="page-title">
+        <h1 id="page-title">AgentEval vs. Promptfoo, DeepEval, and LangSmith</h1>
+        <p class="lede">
+          These are different tools with different centers of gravity, and this page tries to
+          describe the real, structural differences rather than make a case for one over the
+          others. If something here looks wrong or out of date, please open an issue — these
+          projects move quickly.
+        </p>
+
+        <div class="callout">
+          <strong>Where AgentEval focuses:</strong> a self-hosted, open-source CLI that treats
+          agent evaluation as a CI primitive — a versioned baseline, a diffable regression gate,
+          and first-party adapters that capture tool calls and execution trajectory from
+          specific agent frameworks (CrewAI, Microsoft AutoGen, the OpenAI Agents SDK,
+          LangGraph).
+        </div>
+
+        <h2 id="promptfoo">vs. Promptfoo</h2>
+        <p>
+          Promptfoo is a broad, config-driven LLM/prompt evaluation tool with a large provider
+          matrix and a built-in red-teaming/vulnerability-scanning feature set. It's more
+          general-purpose than AgentEval: it's built around evaluating prompts and model outputs
+          across many providers, not specifically around instrumenting a particular agent
+          framework's execution.
+        </p>
+        <table>
+          <thead><tr><th>Dimension</th><th>AgentEval</th><th>Promptfoo</th></tr></thead>
+          <tbody>
+            <tr><td>Primary unit under test</td><td>An agent's full run (tool calls, trajectory, answer)</td><td>A prompt/model response</td></tr>
+            <tr><td>Framework-native adapters</td><td>CrewAI, AutoGen, OpenAI Agents SDK, LangGraph</td><td>Not the focus — provider-agnostic prompt testing</td></tr>
+            <tr><td>Provider ecosystem breadth</td><td>Smaller — evaluates via your own adapter's provider calls</td><td>Larger — dozens of providers supported directly</td></tr>
+            <tr><td>Red-teaming / vulnerability scanning</td><td>Not built in</td><td>First-class feature</td></tr>
+            <tr><td>Regression gate model</td><td>Versioned JSON baseline + configurable thresholds</td><td>Pass/fail assertions per test case</td></tr>
+          </tbody>
+        </table>
+        <p><strong>Honest gap:</strong> if you need to red-team prompts or evaluate across a wide
+          provider matrix without writing an adapter, Promptfoo's ecosystem is more mature there.</p>
+
+        <h2 id="deepeval">vs. DeepEval</h2>
+        <p>
+          DeepEval is a Python, pytest-style evaluation framework with a large built-in metric
+          library (answer relevancy, faithfulness, hallucination, several RAG-specific metrics,
+          G-Eval custom rubric scoring) and an optional hosted platform (Confident AI) for
+          tracking results over time.
+        </p>
+        <table>
+          <thead><tr><th>Dimension</th><th>AgentEval</th><th>DeepEval</th></tr></thead>
+          <tbody>
+            <tr><td>Built-in metric count</td><td>Five core metrics + optional RAG metrics + trajectory/flakiness evidence</td><td>Larger built-in library, including custom LLM-judge rubrics (G-Eval)</td></tr>
+            <tr><td>Correctness scoring</td><td>Deterministic-first (exact/numeric/contains), LLM judge only for open-ended cases</td><td>LLM-judge-centric across most metrics</td></tr>
+            <tr><td>CI regression gate</td><td>First-class: versioned baseline diff, configurable thresholds, PR bot</td><td>Pytest-integrated; CI gating is assembled from pytest, not a dedicated baseline-diff primitive</td></tr>
+            <tr><td>Synthetic test-data generation</td><td>Not from raw documents — only from production logs (<code>generate-cases</code>) or mutating existing cases (<code>generate</code>)</td><td>Can synthesize test cases from source documents</td></tr>
+            <tr><td>Hosted tracking platform</td><td>None — local HTML report + Streamlit dashboard only</td><td>Optional (Confident AI)</td></tr>
+          </tbody>
+        </table>
+        <p><strong>Honest gap:</strong> DeepEval's metric library is larger and its LLM-judge
+          rubrics are more flexible out of the box; AgentEval trades some of that flexibility for
+          deterministic, provider-independent scoring wherever possible.</p>
+
+        <h2 id="langsmith">vs. LangSmith</h2>
+        <p>
+          LangSmith is LangChain's hosted observability and evaluation platform: tracing, dataset
+          management, evaluators, human annotation queues, and production monitoring dashboards,
+          most deeply integrated with the LangChain/LangGraph ecosystem.
+        </p>
+        <table>
+          <thead><tr><th>Dimension</th><th>AgentEval</th><th>LangSmith</th></tr></thead>
+          <tbody>
+            <tr><td>Deployment model</td><td>Fully self-hosted, open source, no paid tier</td><td>Hosted SaaS (with a paid tier at scale)</td></tr>
+            <tr><td>Production tracing/observability</td><td>Not provided — evaluation only</td><td>First-class distributed tracing and monitoring</td></tr>
+            <tr><td>Human annotation workflows</td><td>Not built in</td><td>First-class annotation queues</td></tr>
+            <tr><td>Ecosystem integration</td><td>Framework-neutral adapter contract</td><td>Deepest with LangChain/LangGraph specifically</td></tr>
+            <tr><td>CI regression gate</td><td>First-class, git-diffable JSON baseline</td><td>Evaluations exist, but the primary use case is broader observability, not a PR-blocking gate</td></tr>
+          </tbody>
+        </table>
+        <p><strong>Honest gap:</strong> if you need production tracing, monitoring, and human
+          review queues in one platform, LangSmith covers materially more ground than AgentEval,
+          which is scoped to pre-merge evaluation.</p>
+
+        <h2 id="summary">Summary</h2>
+        <ul>
+          <li>Choose <strong>AgentEval</strong> if you want a free, self-hosted CI gate with
+            framework-native adapters and a git-diffable baseline.</li>
+          <li>Choose <strong>Promptfoo</strong> if you need broad provider coverage or
+            red-teaming/security testing.</li>
+          <li>Choose <strong>DeepEval</strong> if you want the largest built-in metric library and
+            flexible LLM-judge rubrics in a pytest-native workflow.</li>
+          <li>Choose <strong>LangSmith</strong> if you need hosted tracing, monitoring, and human
+            review alongside evaluation, especially in a LangChain-based stack.</li>
+        </ul>
+        <p>These are not mutually exclusive — some teams run AgentEval in CI for the regression
+          gate while also using LangSmith for production tracing.</p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>
+          This is a local documentation scaffold, not yet deployed. See
+          <a href="https://github.com/nishanttyagi28/agenteval">the AgentEval repository</a> for
+          the full README.
+        </p>
+        <small>&copy; <span id="current-year">2026</span> Nishant Tyagi</small>
+      </div>
+    </footer>
+  </body>
+</html>

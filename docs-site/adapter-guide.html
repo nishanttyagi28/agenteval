@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="How to write a new AgentEval adapter: the AgentAdapter contract, AgentResponse fields, and a worked example."
+    >
+    <title>Adapter Guide — AgentEval Docs</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="container nav-shell">
+        <a class="brand" href="./index.html">AgentEval Docs</a>
+
+        <button
+          class="nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-navigation"
+          aria-label="Open navigation"
+        >
+          <span></span><span></span><span></span>
+        </button>
+
+        <nav id="primary-navigation" class="primary-nav" aria-label="Primary navigation">
+          <a href="./index.html">Getting Started</a>
+          <a href="./cli-reference.html">CLI Reference</a>
+          <a href="./adapter-guide.html" aria-current="page">Adapter Guide</a>
+          <a href="./comparison.html">Comparison</a>
+          <a href="https://github.com/nishanttyagi28/agenteval" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="container" aria-labelledby="page-title">
+        <h1 id="page-title">Writing a new adapter</h1>
+        <p class="lede">
+          An adapter is a small class that runs your agent once and normalizes the result into
+          the stable <code>AgentResponse</code> contract. CrewAI, Microsoft AutoGen, the OpenAI
+          Agents SDK, and LangGraph already have first-party adapters — writing your own follows
+          the same shape.
+        </p>
+
+        <h2 id="contract">The contract</h2>
+        <p>Every adapter subclasses <code>AgentAdapter</code> and implements one method:</p>
+        <pre><code>from agenteval.adapters.base import AgentAdapter, AgentResponse
+
+class MyAdapter(AgentAdapter):
+    def run(self, prompt: str, **kwargs) -> AgentResponse:
+        # invoke your agent, measure latency, normalize the result
+        ...</code></pre>
+
+        <h2 id="response-fields">AgentResponse fields</h2>
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>output</code></td><td>The agent's final answer text (required).</td></tr>
+            <tr><td><code>tool_calls</code></td><td>Names of tools actually invoked.</td></tr>
+            <tr><td><code>nodes_fired</code></td><td>Ordered execution path (agents/nodes/routes) for trajectory scoring.</td></tr>
+            <tr><td><code>prompt_tokens</code> / <code>completion_tokens</code></td><td>Provider-reported token usage, when available.</td></tr>
+            <tr><td><code>cost_usd</code></td><td>Provider-reported or computed cost in USD.</td></tr>
+            <tr><td><code>latency_ms</code></td><td>Wall-clock time for the invocation.</td></tr>
+            <tr><td><code>retrieved_context</code> / <code>citations</code></td><td>For RAG agents — see the <a href="./index.html#core-concepts">core concepts</a> and the README's RAG evaluation mode section.</td></tr>
+            <tr><td><code>raw</code></td><td>JSON-safe original payload, preserved for debugging/dashboards.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="worked-example">Worked example: a minimal HTTP-based agent</h2>
+        <pre><code>import time
+import requests
+from agenteval.adapters.base import AgentAdapter, AgentResponse
+
+class HttpAgentAdapter(AgentAdapter):
+    def __init__(self, endpoint: str):
+        self.endpoint = endpoint
+
+    def run(self, prompt: str, **kwargs) -> AgentResponse:
+        started = time.perf_counter()
+        response = requests.post(self.endpoint, json={"prompt": prompt}, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        latency_ms = (time.perf_counter() - started) * 1000.0
+
+        return AgentResponse(
+            output=data["answer"],
+            tool_calls=data.get("tools_used", []),
+            prompt_tokens=data.get("usage", {}).get("prompt_tokens"),
+            completion_tokens=data.get("usage", {}).get("completion_tokens"),
+            latency_ms=latency_ms,
+            raw=data,
+        )</code></pre>
+        <p>
+          Let provider/network failures raise rather than returning a successful-looking
+          response — the runner records exceptions as <code>agent_error</code>, which is excluded
+          from correctness/hallucination denominators but still fails the regression gate loudly.
+        </p>
+
+        <h2 id="registering">Registering it</h2>
+        <p>Point a registry entry at your adapter's import path (either use <code>agenteval init</code> to scaffold this, or write it directly):</p>
+        <pre><code>agents:
+  my_agent:
+    adapter: my_project.adapters:HttpAgentAdapter
+    repository:
+      env_var: MY_AGENT_PATH
+    golden_suite: tests/golden/my_agent.yaml
+    baseline: baselines/my_agent.json
+    runs_dir: runs</code></pre>
+
+        <p>See <code>adapters/langgraph.py</code> in the repository for a fully worked example that
+          normalizes a more complex, multi-node execution into the same contract.</p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>
+          This is a local documentation scaffold, not yet deployed. See
+          <a href="https://github.com/nishanttyagi28/agenteval">the AgentEval repository</a> for
+          the full README.
+        </p>
+        <small>&copy; <span id="current-year">2026</span> Nishant Tyagi</small>
+      </div>
+    </footer>
+  </body>
+</html>

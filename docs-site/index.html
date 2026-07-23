@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Getting started with AgentEval: install the CLI, scaffold a project, and run your first agent evaluation."
+    >
+    <title>Getting Started — AgentEval Docs</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="container nav-shell">
+        <a class="brand" href="./index.html">AgentEval Docs</a>
+
+        <button
+          class="nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-navigation"
+          aria-label="Open navigation"
+        >
+          <span></span><span></span><span></span>
+        </button>
+
+        <nav id="primary-navigation" class="primary-nav" aria-label="Primary navigation">
+          <a href="./index.html" aria-current="page">Getting Started</a>
+          <a href="./cli-reference.html">CLI Reference</a>
+          <a href="./adapter-guide.html">Adapter Guide</a>
+          <a href="./comparison.html">Comparison</a>
+          <a href="https://github.com/nishanttyagi28/agenteval" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="container" aria-labelledby="page-title">
+        <h1 id="page-title">Getting Started</h1>
+        <p class="lede">
+          AgentEval is a CI-for-agents evaluation harness: run an agent against YAML golden
+          suites, score five reliability metrics (plus optional RAG metrics), compare against a
+          versioned baseline, and turn regressions into a reviewable CI decision.
+        </p>
+
+        <h2 id="install">Install</h2>
+        <pre><code>python -m pip install nishanttyagi-agenteval
+agenteval --help</code></pre>
+        <p>Install only the framework integration you need:</p>
+        <pre><code>python -m pip install "nishanttyagi-agenteval[crewai]"
+python -m pip install "nishanttyagi-agenteval[autogen]"
+python -m pip install "nishanttyagi-agenteval[openai-agents]"</code></pre>
+
+        <h2 id="scaffold">Scaffold a new project</h2>
+        <p>
+          <code>agenteval init</code> auto-detects your framework (CrewAI, LangGraph, AutoGen, or
+          the OpenAI Agents SDK) and generates a registry entry, a sample golden suite, and a
+          GitHub Actions workflow:
+        </p>
+        <pre><code>cd my-agent-project
+agenteval init --agent-name my_agent</code></pre>
+
+        <h2 id="first-run">Run your first evaluation</h2>
+        <pre><code>agenteval run --agent my_agent</code></pre>
+        <p>
+          Every scored run is compared against a versioned baseline (when one is configured) and
+          produces a JSON report, a Markdown comparison, and — via <code>agenteval report</code> —
+          a self-contained HTML report.
+        </p>
+
+        <div class="callout">
+          <strong>Next steps:</strong> see the <a href="./cli-reference.html">CLI reference</a>
+          for every command, or the <a href="./adapter-guide.html">adapter guide</a> to wire up
+          your own agent framework.
+        </div>
+
+        <h2 id="core-concepts">Core concepts</h2>
+        <ul>
+          <li><strong>Golden suite</strong> — a YAML file of test cases (prompt, ground truth, expected tools/trajectory).</li>
+          <li><strong>Adapter</strong> — a small class that runs your agent and normalizes its output into <code>AgentResponse</code>.</li>
+          <li><strong>Baseline</strong> — a versioned JSON snapshot of a previous run, used as the regression comparison point.</li>
+          <li><strong>Gate</strong> — the pass/fail decision from comparing a current run against the baseline, enforced in CI.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>
+          This is a local documentation scaffold, not yet deployed. See
+          <a href="https://github.com/nishanttyagi28/agenteval">the AgentEval repository</a> for
+          the full README.
+        </p>
+        <small>&copy; <span id="current-year">2026</span> Nishant Tyagi</small>
+      </div>
+    </footer>
+  </body>
+</html>
