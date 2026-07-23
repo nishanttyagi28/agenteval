@@ -51,7 +51,7 @@ def test_cli_version_uses_package_version(capsys):
     assert capsys.readouterr().out.strip() == f"agenteval {agenteval.__version__}"
 
 
-def test_existing_and_tier8_cli_commands_are_registered():
+def test_existing_and_tier9_cli_commands_are_registered():
     parser = build_parser()
     subparsers = next(
         action
@@ -63,6 +63,7 @@ def test_existing_and_tier8_cli_commands_are_registered():
         "compare",
         "report",
         "generate",
+        "generate-adversarial",
         "import",
         "generate-cases",
         "init",

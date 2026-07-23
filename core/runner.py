@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 from agenteval.adapters.base import AgentAdapter, AgentRun
-from agenteval.core.metrics import aggregate_report, score_case
+from agenteval.core.conversation import render_full_transcript, render_turn_prompt
+from agenteval.core.metrics import aggregate_report, check_context_retention, score_case
 from agenteval.core.rag_metrics import evaluate_rag
 from agenteval.core.schema import CaseResult, RunReport, TestCase, load_test_cases
 from agenteval.core.store import get_git_sha
@@ -48,7 +49,15 @@ def run_case(
     score: bool = True,
     use_llm_judge: bool = True,
 ) -> CaseResult:
-    """Invoke the adapter once; optionally score metrics for the case."""
+    """Invoke the adapter once; optionally score metrics for the case.
+
+    Dispatches to ``run_conversation_case`` when ``case.turns`` is non-empty
+    (§Tier 9); every existing case has ``turns == []`` by default, so this
+    check is always false for it and the single-shot body below runs
+    unmodified.
+    """
+    if case.turns:
+        return run_conversation_case(adapter, case, score=score, use_llm_judge=use_llm_judge)
     agent_run = adapter.run(case.prompt)
     result = agent_run_to_case_result(case, agent_run)
     if score:
@@ -68,6 +77,109 @@ def run_case(
     if rag is not None:
         result.rag = rag
     return result
+
+
+def run_conversation_case(
+    adapter: AgentAdapter,
+    case: TestCase,
+    *,
+    score: bool = True,
+    use_llm_judge: bool = True,
+) -> CaseResult:
+    """Run every turn of a multi-turn case, then score the whole conversation.
+
+    Called automatically by ``run_case`` when ``case.turns`` is non-empty;
+    prefer calling ``run_case`` directly rather than this function.
+
+    Each turn invokes the *unmodified* ``adapter.run(prompt: str)`` -- prior
+    turns are delivered as plain text prepended to the current turn's prompt
+    (``core.conversation.render_turn_prompt``), never through a new adapter
+    method or keyword argument (every existing adapter's ``run(prompt,
+    **kwargs)`` already repurposes unknown kwargs for its own framework, so
+    a new kwarg would be silently misused rather than ignored).
+
+    Each turn is scored via the existing ``score_case`` against a synthetic
+    single-turn ``TestCase`` built from that turn's own ``prompt``/
+    ``expects`` -- every existing per-case scoring mechanism (correctness,
+    hallucination, tool calls, RAG, trajectory, third-party evaluators)
+    therefore works unmodified at turn granularity. The conversation's
+    overall verdict is then scored the same way, against the full joined
+    transcript (``core.conversation.render_full_transcript``) rather than
+    only the last turn's answer -- so the returned top-level CaseResult's
+    ``correctness_pass``/``status``/``judge_reason`` mean exactly what they
+    already mean for a single-turn case, letting ``aggregate_report``
+    include multi-turn cases in every existing suite aggregate with no
+    special-casing.
+    """
+    history: list[tuple[str, str]] = []
+    turn_results: list[CaseResult] = []
+    for index, turn in enumerate(case.turns):
+        sent_prompt = render_turn_prompt(history, turn.prompt)
+        agent_run = adapter.run(sent_prompt)
+        turn_case = TestCase(
+            id=f"{case.id}::turn{index}",
+            prompt=turn.prompt,
+            expects=turn.expects,
+            parent_id=case.id,
+        )
+        turn_result = agent_run_to_case_result(turn_case, agent_run)
+        if score:
+            turn_result = score_case(turn_case, turn_result, use_llm_judge=use_llm_judge)
+        if turn.expects.expected_trajectory:
+            turn_result.trajectory = evaluate_trajectory(
+                turn.expects.expected_trajectory,
+                turn_result.nodes_fired,
+            )
+        rag = evaluate_rag(
+            prompt=turn.prompt,
+            final_answer=turn_result.final_answer,
+            retrieved_context=turn_result.retrieved_context,
+            citations=turn_result.citations,
+            expects=turn.expects,
+        )
+        if rag is not None:
+            turn_result.rag = rag
+        turn_result.context_retention_pass = check_context_retention(
+            turn.expects.retained_facts, turn_result.final_answer
+        )
+        turn_results.append(turn_result)
+        history.append((turn.prompt, turn_result.final_answer))
+
+    joined_prompts, joined_answers = render_full_transcript(
+        [(turn.prompt, result.final_answer) for turn, result in zip(case.turns, turn_results)]
+    )
+    all_tools = list(
+        dict.fromkeys(tool for result in turn_results for tool in result.tools_called)
+    )
+    total_latency_ms = sum(result.latency_ms for result in turn_results)
+    prompt_tokens = (
+        sum(result.prompt_tokens for result in turn_results)
+        if all(result.prompt_tokens is not None for result in turn_results)
+        else None
+    )
+    completion_tokens = (
+        sum(result.completion_tokens for result in turn_results)
+        if all(result.completion_tokens is not None for result in turn_results)
+        else None
+    )
+
+    overall_case = TestCase(id=case.id, prompt=joined_prompts, expects=case.expects)
+    overall_result = CaseResult(
+        case_id=case.id,
+        prompt=joined_prompts,
+        final_answer=joined_answers,
+        tools_called=all_tools,
+        latency_ms=total_latency_ms,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        raw={"conversation": True, "turn_count": len(case.turns)},
+    )
+    if score:
+        overall_result = score_case(overall_case, overall_result, use_llm_judge=use_llm_judge)
+
+    overall_result.prompt = case.prompt
+    overall_result.turn_results = turn_results
+    return overall_result
 
 
 def run_suite(

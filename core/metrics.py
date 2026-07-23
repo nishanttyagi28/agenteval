@@ -10,6 +10,7 @@ from typing import Any, Sequence
 from agenteval.core.judge import judge_correctness
 from agenteval.core.pricing import get_pricing
 from agenteval.core.schema import CaseResult, CorrectnessType, Expects, RunReport, TestCase
+from agenteval.core.tool_efficiency import compute_tool_efficiency
 
 # Groq list prices for llama-3.3-70b-versatile (USD per 1M tokens).
 # Update if Groq changes pricing; used only for cost estimates.
@@ -257,6 +258,27 @@ def check_hallucination(
     return not gt_present
 
 
+# ── context retention (§Tier 9) ─────────────────────────────────────────────
+
+
+def check_context_retention(
+    retained_facts: Sequence[str],
+    final_answer: str,
+) -> bool | None:
+    """Deterministic per-turn check: does this turn's answer reference every
+    fact declared in ``expects.retained_facts`` (case/whitespace-insensitive
+    substring match, mirroring ``check_hallucination``'s number matching)?
+
+    Returns ``None`` -- not applicable, not "passed" -- when
+    ``retained_facts`` is empty, exactly like ``check_hallucination`` returns
+    ``False`` (not evaluated) when ``must_not_hallucinate`` is unset.
+    """
+    if not retained_facts:
+        return None
+    hay = _norm_text(final_answer)
+    return all(_norm_text(fact) in hay for fact in retained_facts)
+
+
 # ── tool-call accuracy ───────────────────────────────────────────────────────
 
 
@@ -366,6 +388,23 @@ def _model_from_raw(raw: dict[str, Any] | None) -> str | None:
 # ── per-case + suite scoring ─────────────────────────────────────────────────
 
 
+def _is_evaluator_error_note(note: str | None) -> bool:
+    """Shared by ``score_case`` and multi-turn goal-completion scoring
+    (§Tier 9, ``core.runner.run_conversation_case``) so both paths classify
+    an ``llm_judge``/plugin failure note into ``evaluator_error`` status
+    identically -- pure extraction of the existing inline check, no
+    behavior change for ``score_case`` itself.
+    """
+    if not note:
+        return False
+    lowered = note.lower()
+    return (
+        lowered.startswith("judge error")
+        or lowered.startswith("unparseable judge output")
+        or lowered in {"empty judge response", "llm_judge skipped"}
+    )
+
+
 def score_case(
     case: TestCase,
     result: CaseResult,
@@ -378,6 +417,9 @@ def score_case(
     # Harness / empty failures
     if result.raw.get("route") == "harness_error":
         prec, rec = tool_call_precision_recall(expects.must_call_tools, result.tools_called)
+        redundancy_count, efficiency_score = compute_tool_efficiency(
+            result.trace_steps, tool_call_f1(prec, rec)
+        )
         cost, _, _, _ = compute_cost_usd(
             result.prompt_tokens,
             result.completion_tokens,
@@ -392,6 +434,8 @@ def score_case(
             hallucination_flag=False,
             tool_call_precision=prec,
             tool_call_recall=rec,
+            tool_call_redundancy_count=redundancy_count,
+            tool_efficiency_score=efficiency_score,
             cost_usd=cost,
             judge_reason=str(result.raw.get("error") or "harness_error"),
         )
@@ -400,6 +444,9 @@ def score_case(
     # Keep them out of correctness/hallucination denominators while failing loudly in CI.
     if result.raw.get("success") is False:
         prec, rec = tool_call_precision_recall(expects.must_call_tools, result.tools_called)
+        redundancy_count, efficiency_score = compute_tool_efficiency(
+            result.trace_steps, tool_call_f1(prec, rec)
+        )
         cost, prompt_used, completion_used, estimated = compute_cost_usd(
             result.prompt_tokens,
             result.completion_tokens,
@@ -422,6 +469,8 @@ def score_case(
             hallucination_flag=False,
             tool_call_precision=prec,
             tool_call_recall=rec,
+            tool_call_redundancy_count=redundancy_count,
+            tool_efficiency_score=efficiency_score,
             cost_usd=cost,
             judge_reason=error,
             raw=raw,
@@ -459,6 +508,9 @@ def score_case(
         correctness_pass=ok,
     )
     prec, rec = tool_call_precision_recall(expects.must_call_tools, result.tools_called)
+    redundancy_count, efficiency_score = compute_tool_efficiency(
+        result.trace_steps, tool_call_f1(prec, rec)
+    )
     cost, pt_used, ct_used, estimated = compute_cost_usd(
         result.prompt_tokens,
         result.completion_tokens,
@@ -476,14 +528,7 @@ def score_case(
         "correctness_note": note,
     }
 
-    evaluator_error = plugin_error or bool(
-        note
-        and (
-            note.lower().startswith("judge error")
-            or note.lower().startswith("unparseable judge output")
-            or note.lower() in {"empty judge response", "llm_judge skipped"}
-        )
-    )
+    evaluator_error = plugin_error or _is_evaluator_error_note(note)
     status = "evaluator_error" if evaluator_error else ("passed" if ok else "failed")
 
     return replace(
@@ -493,6 +538,8 @@ def score_case(
         hallucination_flag=False if evaluator_error else hall,
         tool_call_precision=prec,
         tool_call_recall=rec,
+        tool_call_redundancy_count=redundancy_count,
+        tool_efficiency_score=efficiency_score,
         cost_usd=cost,
         judge_reason=note,
         raw=raw,
@@ -524,10 +571,40 @@ def _rag_averages(scored: list[CaseResult]) -> dict[str, float | None]:
     }
 
 
+def _context_retention_rate(scored: list[CaseResult]) -> float | None:
+    """Mean of every turn's ``context_retention_pass`` across the run (§Tier 9).
+
+    Reaches into each case's ``turn_results`` (empty for every single-turn
+    case) rather than the parent case, since retention is a turn-level
+    concept -- mirrors ``_rag_averages``'s "None means nothing qualified"
+    convention.
+    """
+    values = [
+        turn.context_retention_pass
+        for case in scored
+        for turn in case.turn_results
+        if turn.context_retention_pass is not None
+    ]
+    return (sum(1 for v in values if v) / len(values)) if values else None
+
+
+def _tool_efficiency_average(scored: list[CaseResult]) -> float | None:
+    """Mean ``tool_efficiency_score`` across cases where it's not ``None`` (§Tier 9).
+
+    Mirrors ``_rag_averages``' "None means nothing qualified" convention --
+    every currently-bundled adapter leaves ``trace_steps`` empty, so this is
+    always ``None`` for every existing run today.
+    """
+    values = [c.tool_efficiency_score for c in scored if c.tool_efficiency_score is not None]
+    return sum(values) / len(values) if values else None
+
+
 def aggregate_report(report: RunReport) -> RunReport:
     """Compute suite-level aggregates from already-scored CaseResults."""
     scored = list(report.case_results)
     rag_averages = _rag_averages(scored)
+    context_retention_rate = _context_retention_rate(scored)
+    tool_efficiency_avg = _tool_efficiency_average(scored)
     eligible = [
         case
         for case in scored
@@ -549,6 +626,8 @@ def aggregate_report(report: RunReport) -> RunReport:
             evaluator_error_count=sum(1 for c in scored if c.status == "evaluator_error"),
             agent_error_count=sum(1 for c in scored if c.status == "agent_error"),
             break_rate=None,
+            context_retention_rate=context_retention_rate,
+            tool_efficiency_avg=tool_efficiency_avg,
             **rag_averages,
         )
 
@@ -589,6 +668,8 @@ def aggregate_report(report: RunReport) -> RunReport:
         latency_p95_ms=percentile(latencies, 95),
         total_cost_usd=total_cost,
         total_tokens=total_tokens,
+        context_retention_rate=context_retention_rate,
+        tool_efficiency_avg=tool_efficiency_avg,
         evaluator_error_count=evaluator_errors,
         agent_error_count=agent_errors,
         break_rate=break_rate,

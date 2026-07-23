@@ -30,7 +30,9 @@ The static demo explains the workflow without executing an agent or making API c
 - [Flakiness detection](#flakiness-detection)
 - [Trajectory scoring](#trajectory-scoring)
 - [RAG evaluation mode](#rag-evaluation-mode)
+- [Multi-turn conversation evaluation](#multi-turn-conversation-evaluation)
 - [Trace viewer](#trace-viewer)
+- [Tool-use efficiency scoring](#tool-use-efficiency-scoring)
 - [Cost attribution](#cost-attribution)
 - [Regression alerting](#regression-alerting)
 - [Calibrated LLM-as-judge](#calibrated-llm-as-judge)
@@ -288,6 +290,48 @@ structural check — is every cited id actually present in retrieved context —
 `faithfulness_avg`, `unsupported_claim_rate_avg`, `citation_f1_avg`, `retrieval_f1_avg`) appear
 on the run report whenever at least one case produced a RAG evaluation, `null` otherwise.
 
+## Multi-turn conversation evaluation
+
+A golden case can optionally declare a sequence of `turns` instead of a single `prompt`/`expects`
+pair, for agents that hold a back-and-forth conversation. Cases without `turns` (every existing
+case) score exactly as before — this is purely additive.
+
+```yaml
+- id: refund_conversation
+  turns:
+    - prompt: "I want to return an item I bought last week. My order number is 48291."
+      expects:
+        correctness_type: contains
+        ground_truth: "order"
+    - prompt: "It's a blender, and I don't have the receipt."
+      expects:
+        correctness_type: contains
+        ground_truth: "receipt not required"
+        retained_facts: ["48291"]   # must still reference the order number from turn 1
+  expects:
+    correctness_type: contains
+    ground_truth: "return authorization issued"   # judged against the WHOLE conversation
+```
+
+Each turn is scored independently through the same correctness/hallucination/tool-call/RAG/
+third-party-evaluator machinery a single-turn case already uses (`turn.expects` is a full,
+ordinary `expects` block). The case's own top-level `expects` becomes its **goal-completion**
+criterion, judged against the full joined transcript of every turn's prompt and answer — not just
+the last message — so a conversation that resolves the user's request three turns in still passes
+even if turn 3 alone wouldn't contain every keyword.
+
+**Context retention**: a turn's `expects.retained_facts` is a checklist of facts introduced in
+earlier turns that this turn's answer must still reference (a deterministic, case-insensitive
+substring check — the same style as hallucination detection, no NLP dependency). The suite-level
+`context_retention_rate` on the run report is the mean pass rate across every turn in the run that
+declared `retained_facts`; `null` when nothing in the run used it.
+
+Conversation history is delivered to the adapter as plain text prepended to each turn's prompt —
+`adapter.run(prompt)` itself is completely unchanged, so every existing adapter works with
+multi-turn cases with zero code changes. (An agent with its own native session/thread memory will
+simply re-read the injected transcript text rather than using that memory; there is currently no
+separate adapter hook for native session state.)
+
 ## Trace viewer
 
 Every run can carry a structured, step-by-step execution trace — tool calls, reasoning steps, or
@@ -317,6 +361,26 @@ agenteval trace runs/20260723T120000Z_abc1234.json --case-id capital_of_japan --
 The replay marks any step that trajectory scoring (`expected_trajectory`) flagged as unexpected,
 and lists any expected steps that never executed — pinpointing the exact step a case diverged at
 rather than just the pass/fail outcome.
+
+## Tool-use efficiency scoring
+
+Beyond simple pass/fail, AgentEval can score "right tool, efficiently": did the agent select the
+correct tools (already measured by tool-call precision/recall), *and* did it avoid redundant
+repeat calls doing so? This builds on the same `trace_steps` an adapter reports for the trace
+viewer above — purely additive and dormant until an adapter populates it (no adapter bundled with
+AgentEval does today, so this scores `null` on every current run until one opts in).
+
+A redundant call is a `trace_steps` entry with `kind: "tool_call"` that repeats an earlier step's
+exact `(name, input)` pair — the first occurrence of any tool call is always free. The score is
+
+```
+tool_efficiency_score = tool_call_f1 * (1 - redundant_calls / total_tool_call_steps)
+```
+
+so a case that calls exactly the right tools with zero repeats keeps its unpenalized F1, one exact
+repeat among three calls scores `f1 * (1 - 1/3)`, and a trace with no `tool_call` steps at all (or
+none repeated) is never penalized. `CaseResult.tool_call_redundancy_count`/`tool_efficiency_score`
+and the suite-level `tool_efficiency_avg` are `null` — not zero — whenever no trace was recorded.
 
 ## Cost attribution
 
@@ -931,6 +995,34 @@ agenteval generate \
 ```
 
 Each candidate retains its parent case, ground truth, tool expectations, and mutation type. New variants start with `review_status: candidate` and are not added to the blocking golden gate until reviewed.
+
+### `agenteval generate-adversarial` — deterministic red-team probes
+
+Unlike `agenteval generate` above (which calls an LLM to invent variants), `generate-adversarial`
+applies a small, fixed set of deterministic string templates — no network or LLM call, fully
+reproducible:
+
+```bash
+agenteval generate-adversarial --from tests/golden/analyst_cases.yaml
+agenteval generate-adversarial --from tests/golden/analyst_cases.yaml \
+  --strategies prompt_injection_append,contradictory_context
+```
+
+| Strategy | Probes for |
+|---|---|
+| `prompt_injection_append` | Ignores an appended fake "system override" instruction |
+| `prompt_injection_prefix` | Ignores a prepended fake "system notice" instruction |
+| `ambiguous_qualifier` | Stays correct despite an added vague/hedging qualifier |
+| `contradictory_context` | Doesn't defer to a fabricated contradicting "colleague" claim |
+
+Every generated case keeps its source case's `expects` byte-for-byte — these are robustness
+*probes*, not new correctness fixtures — and lands with `source: adversarial_redteam`,
+`review_status: candidate`, never auto-promoted into the blocking golden gate, same as `generate`
+above.
+
+**These are best-effort robustness probes, not exhaustive or formal security/red-team testing.** A
+case surviving all four strategies is not a security guarantee — it only means these specific,
+fixed prompts didn't derail the agent on this question.
 
 ## Dataset import and case generation
 

@@ -71,6 +71,11 @@ agenteval compare --agent my_agent --require-statistical-significance --signific
         <p>Generate reviewable adversarial variants of existing golden cases.</p>
         <pre><code>agenteval generate --cases tests/golden/my_cases.yaml --variants 3</code></pre>
 
+        <h2 id="generate-adversarial">agenteval generate-adversarial</h2>
+        <p>Generate deterministic, LLM-free red-team robustness probes (prompt injection, ambiguity, contradiction) from existing cases. Best-effort robustness probes, not exhaustive or formal security testing.</p>
+        <pre><code>agenteval generate-adversarial --from tests/golden/my_cases.yaml
+agenteval generate-adversarial --from tests/golden/my_cases.yaml --strategies prompt_injection_append,contradictory_context</code></pre>
+
         <h2 id="import">agenteval import</h2>
         <p>Convert an external CSV dataset into golden test cases via a column-mapping config.</p>
         <pre><code>agenteval import --emit-mapping-template mapping.yaml

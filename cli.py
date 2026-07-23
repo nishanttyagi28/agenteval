@@ -769,6 +769,44 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_generate_adversarial(args: argparse.Namespace) -> int:
+    from agenteval.core.generator import write_candidate_yaml
+    from agenteval.core.redteam import generate_redteam_suite
+    from agenteval.core.runner import DEFAULT_GOLDEN_PATH
+    from agenteval.core.schema import load_test_cases
+
+    cases_path = Path(args.from_path) if args.from_path else DEFAULT_GOLDEN_PATH
+    output = (
+        Path(args.output)
+        if args.output
+        else Path(__file__).resolve().parent
+        / "tests"
+        / "adversarial"
+        / "redteam_candidates.yaml"
+    )
+    if output.exists() and not args.overwrite:
+        print(f"error: output exists: {output} (use --overwrite)", file=sys.stderr)
+        return 2
+    try:
+        cases = load_test_cases(cases_path)
+        if args.case_id:
+            wanted = set(args.case_id)
+            cases = [case for case in cases if case.id in wanted]
+        if not cases:
+            raise ValueError("No source cases selected")
+        strategies = args.strategies.split(",") if args.strategies else None
+        generated = generate_redteam_suite(cases, strategies=strategies)
+        path = write_candidate_yaml(generated, output)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"generated={len(generated)} source_cases={len(cases)}")
+    print(f"candidates={path}")
+    print("review_status=candidate (not included in the CI gate)")
+    print("note: best-effort robustness probes, not exhaustive/formal security testing")
+    return 0
+
+
 def _cmd_import(args: argparse.Namespace) -> int:
     from agenteval.core.dataset_import import (
         DatasetImportError,
@@ -1243,6 +1281,33 @@ def build_parser() -> argparse.ArgumentParser:
     gen_p.add_argument("--case-id", action="append", default=None, help="Generate for one case")
     gen_p.add_argument("--overwrite", action="store_true", help="Replace an existing output")
     gen_p.set_defaults(func=_cmd_generate)
+
+    gen_redteam_p = sub.add_parser(
+        "generate-adversarial",
+        help="Generate deterministic red-team robustness probes "
+        "(prompt injection, ambiguity, contradiction) from existing cases",
+    )
+    gen_redteam_p.add_argument(
+        "--from", dest="from_path", default=None, help="Source golden YAML"
+    )
+    gen_redteam_p.add_argument(
+        "--strategies",
+        default=None,
+        help="Comma-separated strategies: prompt_injection_append, "
+        "prompt_injection_prefix, ambiguous_qualifier, contradictory_context "
+        "(default: all)",
+    )
+    gen_redteam_p.add_argument(
+        "--case-id",
+        action="append",
+        default=None,
+        help="Generate for one source case (repeatable)",
+    )
+    gen_redteam_p.add_argument("--output", default=None, help="Candidate YAML output")
+    gen_redteam_p.add_argument(
+        "--overwrite", action="store_true", help="Replace an existing output"
+    )
+    gen_redteam_p.set_defaults(func=_cmd_generate_adversarial)
 
     import_p = sub.add_parser(
         "import", help="Convert an external CSV dataset into golden test cases"
