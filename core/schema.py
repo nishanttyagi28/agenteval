@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from agenteval.core.rag_metrics import RagEvaluation
+from agenteval.core.trace import TraceStep
 from agenteval.core.trajectory import TrajectoryEvaluation
 
 
@@ -202,6 +203,10 @@ class CaseResult:
     retrieved_context: list[dict[str, Any]] = field(default_factory=list)
     citations: list[str] = field(default_factory=list)
     rag: RagEvaluation | None = None
+    # Step-by-step execution trace (§Tier 5), populated only when the adapter
+    # response reports trace_steps. Empty by default — same "additive, no
+    # back-compat break" convention as retrieved_context/citations above.
+    trace_steps: list[TraceStep] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

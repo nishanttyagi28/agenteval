@@ -479,6 +479,25 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_trace(args: argparse.Namespace) -> int:
+    from agenteval.core.compare import load_report
+    from agenteval.core.trace_view import TraceViewError, find_case, render_html, render_text
+
+    try:
+        report_data = load_report(args.run)
+        case = find_case(report_data, args.case_id)
+        if args.html:
+            output_path = Path(args.html)
+            output_path.write_text(render_html(case), encoding="utf-8")
+            print(f"html={output_path}")
+        else:
+            print(render_text(case))
+    except (OSError, ValueError, TraceViewError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def _cmd_generate(args: argparse.Namespace) -> int:
     from agenteval.core.generator import generate_suite, write_candidate_yaml
     from agenteval.core.runner import DEFAULT_GOLDEN_PATH
@@ -864,6 +883,16 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_models_p.add_argument("--json-out", default=None, help="Write machine-readable comparison")
     cmp_models_p.add_argument("--markdown-out", default=None, help="Write Markdown comparison table")
     cmp_models_p.set_defaults(func=_cmd_compare_models)
+
+    trace_p = sub.add_parser(
+        "trace", help="Replay one case's step-by-step execution trace from a saved run"
+    )
+    trace_p.add_argument("run", help="Path to a saved run JSON")
+    trace_p.add_argument("--case-id", required=True, help="Case id to replay")
+    trace_p.add_argument(
+        "--html", default=None, metavar="PATH", help="Write a self-contained HTML replay to PATH"
+    )
+    trace_p.set_defaults(func=_cmd_trace)
 
     return parser
 

@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from agenteval.core.trace import TraceStep, normalize_trace_steps
+
 
 def _normalize_context_chunk(item: Any) -> dict[str, Any]:
     """Accept a plain string or a mapping for one retrieved-context chunk.
@@ -42,6 +44,7 @@ class AgentResponse:
     raw: dict[str, Any] = field(default_factory=dict)
     retrieved_context: list[dict[str, Any]] = field(default_factory=list)
     citations: list[str] = field(default_factory=list)
+    trace_steps: list[TraceStep] = field(default_factory=list)
 
     def __init__(
         self,
@@ -59,6 +62,7 @@ class AgentResponse:
         tools_called: list[str] | None = None,
         retrieved_context: list[Any] | None = None,
         citations: list[str] | None = None,
+        trace_steps: list[Any] | None = None,
     ) -> None:
         if output is not None and final_answer is not None and output != final_answer:
             raise ValueError("output and final_answer disagree")
@@ -83,6 +87,7 @@ class AgentResponse:
         self.raw = dict(raw or {})
         self.retrieved_context = [_normalize_context_chunk(item) for item in (retrieved_context or [])]
         self.citations = list(citations or [])
+        self.trace_steps = normalize_trace_steps(trace_steps)
 
     @property
     def final_answer(self) -> str:
