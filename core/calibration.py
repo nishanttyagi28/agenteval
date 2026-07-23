@@ -9,9 +9,14 @@ that specific answer, so no agent invocation is involved at all.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
+
+from agenteval.core._fsutil import atomic_write_text
 
 JudgeFunction = Callable[[str, str, Any], tuple[bool, str]]
 
@@ -132,6 +137,9 @@ class CalibrationResult:
     interpretation: str
     mismatches: tuple[str, ...] = field(default_factory=tuple)
 
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
 
 def run_calibration(
     cases: Sequence[CalibrationCase],
@@ -170,3 +178,58 @@ def run_calibration(
         interpretation=kappa_interpretation(kappa),
         mismatches=tuple(mismatches),
     )
+
+
+# ── persistence: runs/<agent>/calibration/ sidecar (§Tier 7) ────────────────
+#
+# Mirrors the existing flakiness sidecar convention (runs/<agent>/flakiness/
+# <run_id>.json) exactly -- rooted at the sidecar root, not the agent's own
+# configured runs_dir, and never touching the primary run artifact. Written
+# unconditionally whenever `agenteval calibrate` runs, the same way a
+# flakiness observation is always persisted once computed; this is what
+# gives the Tier 7 dashboard API's calibration-history endpoint real data
+# without an extra opt-in flag.
+
+
+def save_calibration_result(
+    result: CalibrationResult,
+    agent_name: str,
+    runs_root: str | Path,
+    *,
+    judge_name: str | None = None,
+) -> Path:
+    """Persist one calibration run under ``<runs_root>/<agent_name>/calibration/``."""
+    if not agent_name.strip():
+        raise ValueError("agent_name must not be empty")
+    out_dir = Path(runs_root) / agent_name / "calibration"
+    ts = datetime.now(timezone.utc)
+    filename = f"{ts.strftime('%Y%m%dT%H%M%SZ')}_{uuid.uuid4().hex[:6]}.json"
+    payload = {
+        "timestamp": ts.isoformat(),
+        "judge": judge_name,
+        **result.to_dict(),
+    }
+    return atomic_write_text(
+        out_dir / filename, json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    )
+
+
+def load_calibration_history(calibration_dir: str | Path) -> list[dict[str, Any]]:
+    """Load every persisted calibration result under ``calibration_dir``, oldest first.
+
+    Missing directories return ``[]``; a corrupted individual file is
+    skipped rather than failing the whole read, matching ``core.history.
+    load_history``'s "best-effort trend aid, not a source of truth" stance.
+    """
+    directory = Path(calibration_dir)
+    if not directory.is_dir():
+        return []
+    entries: list[dict[str, Any]] = []
+    for path in sorted(directory.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            entries.append(data)
+    return entries

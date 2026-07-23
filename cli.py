@@ -104,6 +104,45 @@ def _history_path_for(config: AgentConfig, root: Path) -> Path:
     return root / config.name / "history.json"
 
 
+def _audit_log_path_for(config: AgentConfig, registry_path: Path, runs_dir_arg: str | None) -> Path:
+    """Resolve where ``config``'s audit log lives.
+
+    An explicit ``audit.log_path`` is relative to the registry file's
+    directory (like ``golden_suite``/``baseline``); omitting it falls back
+    to the sidecar-root convention (``runs/<agent>/audit.jsonl``).
+    """
+    if config.audit.log_path:
+        return _configured_path(registry_path, Path(config.audit.log_path))
+    return _history_root(runs_dir_arg, registry_path) / config.name / "audit.jsonl"
+
+
+def _record_audit_entry(
+    config: AgentConfig,
+    registry_path: Path,
+    runs_dir_arg: str | None,
+    *,
+    action: str,
+    details: dict[str, Any],
+    outcome: str = "ok",
+) -> None:
+    """Append an audit entry if ``config.audit.enabled``; silent no-op otherwise.
+
+    A logging failure (e.g. an unwritable path) is reported as a warning,
+    never raised -- audit logging must not turn a successful command into a
+    failed one, the same stance Tier 5's alerting takes toward a broken
+    webhook.
+    """
+    if not config.audit.enabled:
+        return
+    from agenteval.core.audit import append_audit_entry, build_entry
+
+    path = _audit_log_path_for(config, registry_path, runs_dir_arg)
+    try:
+        append_audit_entry(build_entry(action, details=details, outcome=outcome), path)
+    except OSError as exc:
+        print(f"warning: failed to record audit log entry: {exc}", file=sys.stderr)
+
+
 def validate_repeat_request(
     repeat_count: int,
     repeat_case_ids: list[str] | None,
@@ -278,6 +317,20 @@ def _run_registered_agent(
         else:
             print(f"history_saved {history_path}")
 
+    _record_audit_entry(
+        config,
+        registry_path,
+        args.runs_dir,
+        action="run",
+        details={
+            "run_id": report.run_id,
+            "passed": statuses.count("passed"),
+            "failed": statuses.count("failed"),
+            "errors": statuses.count("agent_error") + statuses.count("evaluator_error"),
+            "gate_passed": gate,
+        },
+    )
+
     return {
         "agent": config.name,
         "passed": statuses.count("passed"),
@@ -441,6 +494,15 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     if alert_status is not None:
         print(f"alert={alert_status}")
 
+    _record_audit_entry(
+        config,
+        registry_path,
+        args.runs_dir,
+        action="compare",
+        details={"baseline": str(baseline_path), "current": str(current_path), "reasons": result.reasons},
+        outcome="passed" if result.passed else "failed",
+    )
+
     return 0 if result.passed else 1
 
 
@@ -524,7 +586,11 @@ def _cmd_trace(args: argparse.Namespace) -> int:
 def _cmd_calibrate(args: argparse.Namespace) -> int:
     import functools
 
-    from agenteval.core.calibration import load_calibration_set, run_calibration
+    from agenteval.core.calibration import (
+        load_calibration_set,
+        run_calibration,
+        save_calibration_result,
+    )
     from agenteval.core.config import AgentDependencyNotFound
     from agenteval.core.judge import judge_correctness
     from agenteval.core.registry import load_agent_registry, resolve_agent_repository
@@ -537,6 +603,12 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         cases = load_calibration_set(args.golden_set)
         judge_fn = functools.partial(judge_correctness, agent_repo=agent_repo)
         result = run_calibration(cases, judge_fn, kappa_threshold=args.kappa_threshold)
+        saved_path = save_calibration_result(
+            result,
+            config.name,
+            _history_root(args.runs_dir, registry_path),
+            judge_name=config.name,
+        )
     except (OSError, ValueError, AgentDependencyNotFound) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -545,6 +617,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
     print(f"n_cases={result.n_cases}")
     print(f"agreement_rate={result.agreement_rate:.3f}")
     print(f"cohens_kappa={result.kappa:.3f} ({result.interpretation})")
+    print(f"saved={saved_path}")
     if result.mismatches:
         print(f"mismatches={','.join(result.mismatches)}")
     if result.below_threshold:
@@ -554,7 +627,113 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             "review mismatched cases before trusting llm_judge results.",
             file=sys.stderr,
         )
+
+    _record_audit_entry(
+        config,
+        registry_path,
+        args.runs_dir,
+        action="calibrate",
+        details={"n_cases": result.n_cases, "kappa": result.kappa, "golden_set": str(args.golden_set)},
+        outcome="below_threshold" if result.below_threshold else "ok",
+    )
+
     return 1 if result.below_threshold else 0
+
+
+def _cmd_audit_log(args: argparse.Namespace) -> int:
+    from datetime import datetime, timezone
+
+    from agenteval.core.audit import read_audit_log
+    from agenteval.core.registry import load_agent_registry
+
+    registry_path = _registry_path(args.registry)
+    try:
+        registry = load_agent_registry(registry_path)
+        config = resolve_agent_selection(registry, requested=args.agent)[0]
+        since = None
+        if args.since:
+            try:
+                since = datetime.fromisoformat(args.since)
+            except ValueError as exc:
+                raise ValueError(
+                    f"--since must be an ISO-8601 date/datetime, got {args.since!r}"
+                ) from exc
+            if since.tzinfo is None:
+                since = since.replace(tzinfo=timezone.utc)
+        log_path = _audit_log_path_for(config, registry_path, args.runs_dir)
+        entries = read_audit_log(log_path, since=since)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"agent={config.name}")
+    print(f"log_path={log_path}")
+    print(f"entries={len(entries)}")
+    for entry in entries:
+        print(
+            f"{entry.timestamp} actor={entry.actor} action={entry.action} "
+            f"outcome={entry.outcome} details={entry.details}"
+        )
+    return 0
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    from agenteval.core.registry import load_agent_registry
+    from agenteval.core.server import DEFAULT_PORT, AgentPaths, run_server
+
+    if not args.local:
+        print(
+            "error: --local is required -- this server has no authentication or TLS and "
+            "must only be run for local use (see README's Deployment section)",
+            file=sys.stderr,
+        )
+        return 2
+
+    registry_path = _registry_path(args.registry)
+    try:
+        registry = load_agent_registry(registry_path)
+        if args.agent:
+            requested = list(dict.fromkeys(args.agent))
+            unknown = [name for name in requested if name not in registry]
+            if unknown:
+                available = ", ".join(registry) or "(none)"
+                raise ValueError(
+                    f"Unknown agent(s): {', '.join(unknown)}. Registered agents: {available}"
+                )
+            configs = [registry[name] for name in requested]
+        else:
+            configs = list(registry.values())
+
+        sidecar_root = _history_root(args.runs_dir, registry_path)
+        agent_paths = {
+            config.name: AgentPaths(
+                runs_dir=_configured_path(registry_path, config.runs_dir),
+                history_path=_history_path_for(config, sidecar_root),
+                calibration_dir=sidecar_root / config.name / "calibration",
+            )
+            for config in configs
+        }
+        port = args.port if args.port is not None else DEFAULT_PORT
+        server = run_server(agent_paths, host=args.host, port=port)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    bound_port = server.server_address[1]
+    print(f"agents={','.join(agent_paths)}")
+    print(f"serving on http://{args.host}:{bound_port}")
+    print(
+        "endpoints: /api/health  /api/runs?agent=<name>  /api/trend?agent=<name>  "
+        "/api/calibration-history?agent=<name>"
+    )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+        server.server_close()
+    return 0
 
 
 def _cmd_generate(args: argparse.Namespace) -> int:
@@ -1012,7 +1191,45 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_KAPPA_THRESHOLD,
         help=f"Warn when Cohen's kappa falls below this (default: {DEFAULT_KAPPA_THRESHOLD})",
     )
+    calibrate_p.add_argument(
+        "--runs-dir",
+        default=None,
+        help="Sidecar root the calibration result is saved under (default: <registry-dir>/runs)",
+    )
     calibrate_p.set_defaults(func=_cmd_calibrate)
+
+    audit_log_p = sub.add_parser(
+        "audit-log", help="Query the opt-in structured audit log for one agent"
+    )
+    audit_log_p.add_argument("--agent", required=True, help="Registered agent name")
+    audit_log_p.add_argument("--registry", default=None, help=argparse.SUPPRESS)
+    audit_log_p.add_argument(
+        "--since", default=None, help="Only show entries at/after this ISO-8601 date/datetime"
+    )
+    audit_log_p.add_argument(
+        "--runs-dir", default=None, help="Sidecar root override (default: <registry-dir>/runs)"
+    )
+    audit_log_p.set_defaults(func=_cmd_audit_log)
+
+    serve_p = sub.add_parser(
+        "serve", help="Run a local, read-only dashboard-data API (no auth, localhost only)"
+    )
+    serve_p.add_argument(
+        "--local",
+        action="store_true",
+        help="Required flag acknowledging this is a local-only server (no TLS/auth)",
+    )
+    serve_p.add_argument(
+        "--agent",
+        action="append",
+        default=None,
+        help="Registered agent(s) to serve (default: every enabled agent)",
+    )
+    serve_p.add_argument("--registry", default=None, help=argparse.SUPPRESS)
+    serve_p.add_argument("--runs-dir", default=None, help="Sidecar root override (default: <registry-dir>/runs)")
+    serve_p.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    serve_p.add_argument("--port", type=int, default=None, help="Bind port (default: 8765)")
+    serve_p.set_defaults(func=_cmd_serve)
 
     return parser
 

@@ -1,0 +1,26 @@
+# Local-only Docker Compose for the AgentEval dashboard API.
+#
+# This is NOT a deployment config -- there is no TLS, no auth, and no
+# ingress here. It exists so `docker compose up` can exercise the same
+# container image CI already builds (see .github/workflows/docker.yml)
+# against a local runs/ directory, entirely on your own machine. Real
+# hosting activates once the dedicated server is provisioned (see the
+# README's "Deployment (Coming Soon)" section) and will need its own
+# auth-aware config, not this one.
+
+services:
+  agenteval-dashboard:
+    build: .
+    image: agenteval:local
+    command: ["serve", "--local", "--host", "0.0.0.0", "--port", "8765"]
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./runs:/app/runs
+      - ./agents.yaml:/app/agents.yaml:ro
+    # `serve --local` itself needs no secrets. Uncomment once you've copied
+    # .env.example to .env, only if a command you run needs one of those
+    # values (e.g. calibrate needs GROQ_API_KEY via the sibling agent repo).
+    # env_file:
+    #   - .env
+    restart: "no"

@@ -4,10 +4,13 @@ import pytest
 
 from agenteval.core.calibration import (
     CalibrationCase,
+    CalibrationResult,
     cohens_kappa,
     kappa_interpretation,
+    load_calibration_history,
     load_calibration_set,
     run_calibration,
+    save_calibration_result,
 )
 
 GOLDEN_EXAMPLE = Path(__file__).parent / "golden" / "calibration_example.yaml"
@@ -203,3 +206,72 @@ def test_run_calibration_custom_threshold_is_respected():
     result = run_calibration(cases, judge_fn, kappa_threshold=0.0)
     assert result.kappa_threshold == 0.0
     assert result.below_threshold is True
+
+
+# ── persistence: save_calibration_result / load_calibration_history ────────
+
+
+def sample_result(**overrides):
+    base = dict(
+        n_cases=4,
+        agreement_rate=0.75,
+        kappa=0.5,
+        kappa_threshold=0.6,
+        below_threshold=True,
+        interpretation="moderate",
+        mismatches=("b",),
+    )
+    base.update(overrides)
+    return CalibrationResult(**base)
+
+
+def test_save_calibration_result_writes_under_agent_calibration_subdir(tmp_path):
+    path = save_calibration_result(sample_result(), "my_agent", tmp_path)
+    assert path.parent == tmp_path / "my_agent" / "calibration"
+    assert path.is_file()
+
+
+def test_save_calibration_result_rejects_blank_agent_name(tmp_path):
+    with pytest.raises(ValueError, match="agent_name must not be empty"):
+        save_calibration_result(sample_result(), "  ", tmp_path)
+
+
+def test_save_calibration_result_payload_includes_judge_and_metrics(tmp_path):
+    import json
+
+    path = save_calibration_result(sample_result(), "my_agent", tmp_path, judge_name="my_agent")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["judge"] == "my_agent"
+    assert payload["kappa"] == 0.5
+    assert payload["n_cases"] == 4
+    assert "timestamp" in payload
+
+
+def test_load_calibration_history_returns_empty_list_for_missing_directory(tmp_path):
+    assert load_calibration_history(tmp_path / "does_not_exist") == []
+
+
+def test_load_calibration_history_reads_back_saved_results(tmp_path):
+    save_calibration_result(sample_result(kappa=0.5), "my_agent", tmp_path)
+    save_calibration_result(sample_result(kappa=0.9), "my_agent", tmp_path)
+
+    history = load_calibration_history(tmp_path / "my_agent" / "calibration")
+    assert len(history) == 2
+    assert {entry["kappa"] for entry in history} == {0.5, 0.9}
+
+
+def test_load_calibration_history_skips_corrupted_files(tmp_path):
+    calibration_dir = tmp_path / "my_agent" / "calibration"
+    calibration_dir.mkdir(parents=True)
+    (calibration_dir / "broken.json").write_text("{not json", encoding="utf-8")
+    save_calibration_result(sample_result(), "my_agent", tmp_path)
+
+    history = load_calibration_history(calibration_dir)
+    assert len(history) == 1
+
+
+def test_save_calibration_result_two_saves_do_not_collide(tmp_path):
+    first = save_calibration_result(sample_result(), "my_agent", tmp_path)
+    second = save_calibration_result(sample_result(), "my_agent", tmp_path)
+    assert first != second
+    assert first.is_file() and second.is_file()

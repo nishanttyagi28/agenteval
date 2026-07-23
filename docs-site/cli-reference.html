@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       name="description"
-      content="AgentEval CLI reference: every subcommand -- run, compare, report, generate, init, import, generate-cases, compare-models, trace, calibrate."
+      content="AgentEval CLI reference: every subcommand -- run, compare, report, generate, init, import, generate-cases, compare-models, trace, calibrate, serve, audit-log."
     >
     <title>CLI Reference — AgentEval Docs</title>
     <link rel="stylesheet" href="./styles.css">
@@ -94,6 +94,14 @@ agenteval trace runs/&lt;run&gt;.json --case-id total_customers --html trace.htm
         <h2 id="calibrate">agenteval calibrate</h2>
         <p>Score LLM-judge/human agreement (Cohen's kappa) against a labeled calibration set.</p>
         <pre><code>agenteval calibrate --judge agentic_data_analyst --golden-set tests/golden/calibration_example.yaml</code></pre>
+
+        <h2 id="serve">agenteval serve</h2>
+        <p>Run a local, read-only dashboard-data API (no auth, localhost only -- see the README's Deployment section).</p>
+        <pre><code>agenteval serve --local --agent agentic_data_analyst --port 8765</code></pre>
+
+        <h2 id="audit-log">agenteval audit-log</h2>
+        <p>Query the opt-in structured audit trail for one agent.</p>
+        <pre><code>agenteval audit-log --agent agentic_data_analyst --since 2026-07-01</code></pre>
 
         <div class="callout">
           Flags and defaults change as AgentEval evolves — <code>agenteval &lt;command&gt;
