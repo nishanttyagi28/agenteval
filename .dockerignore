@@ -1,0 +1,45 @@
+# Keep the Docker build context lean -- none of this is needed inside the image.
+.git
+.github
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Run artifacts
+runs/*
+!runs/.gitkeep
+!runs/baseline.json
+
+# Node-based subprojects (landing page, docs site, VS Code extension) --
+# irrelevant to the CLI image and often the largest thing in the tree.
+landing-page/node_modules/
+landing-page/dist/
+landing-page/test-results/
+docs-site/node_modules/
+docs-site/dist/
+vscode-extension/node_modules/
+vscode-extension/out/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

@@ -348,6 +348,27 @@ python -m pip install -r requirements-dev.txt
 
 Alternatively, install the repository's development extra with `python -m pip install -e ".[dev]"`.
 
+### Docker
+
+A minimal `Dockerfile` at the repository root packages the CLI as a runnable container:
+
+```bash
+docker build -t agenteval .
+docker run --rm agenteval --help
+docker run --rm agenteval run --agent action_demo --registry examples/action_demo/agents.yaml
+```
+
+The image is `python:3.12-slim`-based (pandas ships prebuilt wheels for glibc, avoiding a
+compiler toolchain), installs only the package's own runtime dependencies, and runs as a
+non-root user. `scripts/docker_smoke_test.sh` builds the image and verifies both `--help` and a
+fully self-contained sample evaluation (`examples/action_demo` — zero API key, zero external
+repo) succeed inside the container; the `Docker image` GitHub Actions workflow runs the same
+check in CI. Mount a registry and agent repository as volumes to evaluate your own agent:
+
+```bash
+docker run --rm -v "$PWD:/workspace" -w /workspace agenteval run --agent my_agent
+```
+
 ## Getting started with `agenteval init`
 
 For a brand-new project, `agenteval init` scaffolds everything needed for a first evaluation:
