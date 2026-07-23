@@ -41,6 +41,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [LangGraph adapter](#langgraph-adapter)
 - [GitHub Actions](#github-actions)
 - [Adversarial robustness](#adversarial-robustness)
+- [Dataset import and case generation](#dataset-import-and-case-generation)
 - [HTML reports and regression trend tracking](#html-reports-and-regression-trend-tracking)
 - [Model/provider comparison](#modelprovider-comparison)
 - [VS Code extension](#vs-code-extension)
@@ -598,6 +599,54 @@ agenteval generate \
 ```
 
 Each candidate retains its parent case, ground truth, tool expectations, and mutation type. New variants start with `review_status: candidate` and are not added to the blocking golden gate until reviewed.
+
+## Dataset import and case generation
+
+### `agenteval import` — convert a CSV into golden cases
+
+Turn an external dataset into a golden suite via a small column-mapping config:
+
+```bash
+agenteval import --emit-mapping-template mapping.yaml   # scaffold a starter config
+agenteval import data.csv --mapping mapping.yaml --output tests/golden/imported.yaml
+```
+
+```yaml
+# mapping.yaml
+prompt_column: question
+ground_truth_column: answer
+id_column: id                    # optional; auto-generated (row_1, row_2, ...) if omitted
+correctness_type: exact          # exact | numeric | contains | llm_judge (numeric_table is not
+                                  # supported here — a single flat cell can't hold a table)
+numeric_tolerance: 0.01
+tags: [imported]
+must_call_tools_column: null     # optional: a column of comma-separated required tool names
+must_not_hallucinate: false
+```
+
+Every row must yield a non-empty prompt and ground truth, and ids must be unique — a bad row
+fails the whole import with the exact row number rather than silently producing an incomplete
+or wrong suite. The written YAML is a normal golden suite (review it like any hand-written one)
+loadable by every existing command, not a separate format.
+
+### `agenteval generate-cases` — propose golden cases from production logs
+
+Reuses the same reviewable-candidate convention as `agenteval generate` (adversarial mutation)
+rather than a second one: proposed cases are written with `review_status: candidate` and
+`source: production_log`, and stay out of the blocking gate until a human confirms the observed
+answer was actually correct and promotes them into a real golden suite.
+
+```bash
+# From an existing `agenteval run` report:
+agenteval generate-cases --logs runs/<run>.json --output tests/adversarial/candidates_from_logs.yaml
+
+# From a plain JSONL sample log ({"prompt": ..., "answer": ...} per line):
+agenteval generate-cases --logs sample_logs.jsonl --format jsonl
+```
+
+Cases with an `agent_error`/`evaluator_error`/`skipped` outcome are skipped (there's no
+reliable answer to seed a ground truth from), duplicate prompts are deduplicated, and malformed
+JSONL lines are skipped individually with a warning rather than aborting the whole batch.
 
 ## HTML reports and regression trend tracking
 
