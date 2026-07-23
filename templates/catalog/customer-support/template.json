@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "name": "customer-support",
+  "title": "Customer-Support Agent",
+  "description": "Starter coverage for policy accuracy, privacy, escalation, outages, refusals, and helpful tone.",
+  "config": "agents.yaml",
+  "cases": "cases.yaml",
+  "case_count": 7,
+  "files": [
+    "README.md",
+    "agents.yaml",
+    "cases.yaml"
+  ]
+}

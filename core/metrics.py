@@ -427,12 +427,31 @@ def score_case(
             raw=raw,
         )
 
-    ok, note = check_correctness(
-        expects,
-        case.prompt,
-        result.final_answer,
-        use_llm_judge=use_llm_judge,
-    )
+    plugin_error = False
+    if expects.evaluator is not None:
+        from agenteval.evaluators import EvaluationContext
+        from agenteval.evaluators._registry import (
+            EvaluatorPluginError,
+            evaluate,
+        )
+
+        try:
+            plugin_result = evaluate(
+                expects.evaluator,
+                EvaluationContext(case=case, result=result),
+            )
+            ok, note = plugin_result.passed, plugin_result.reason
+        except EvaluatorPluginError as exc:
+            ok = False
+            note = f"evaluator error ({expects.evaluator}): {exc}"
+            plugin_error = True
+    else:
+        ok, note = check_correctness(
+            expects,
+            case.prompt,
+            result.final_answer,
+            use_llm_judge=use_llm_judge,
+        )
     hall = check_hallucination(
         expects,
         case.prompt,
@@ -457,7 +476,7 @@ def score_case(
         "correctness_note": note,
     }
 
-    evaluator_error = bool(
+    evaluator_error = plugin_error or bool(
         note
         and (
             note.lower().startswith("judge error")

@@ -1,0 +1,25 @@
+version: 1
+
+agents:
+  customer_support:
+    display_name: "Customer-Support Agent"
+    enabled: false
+    adapter: agenteval.adapters.base:AgentAdapter
+    repository:
+      env_var: CUSTOMER_SUPPORT_PATH
+      default_path: .
+      required_paths: []
+    golden_suite: cases.yaml
+    baseline: baseline.json
+    runs_dir: runs
+    adapter_options: {}
+    gates:
+      max_correctness_drop: 0.03
+      max_hallucination_rate: 0.03
+      min_tool_accuracy: 0.95
+      fail_on_evaluator_error: true
+      fail_on_agent_error: true
+    smoke_case_ids:
+      - refund_within_window
+      - account_privacy_boundary
+      - active_outage

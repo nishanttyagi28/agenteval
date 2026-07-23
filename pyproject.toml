@@ -57,6 +57,9 @@ packages = [
   "agenteval.adapters",
   "agenteval.core",
   "agenteval.dashboard",
+  "agenteval.evaluators",
+  "agenteval.templates",
+  "agenteval.templates.catalog",
 ]
 package-dir = { agenteval = "." }
 include-package-data = true
@@ -70,4 +73,9 @@ agenteval = [
   "baselines/*.json",
   "tests/golden/*.yaml",
   "tests/adversarial/*.yaml",
+]
+"agenteval.templates.catalog" = [
+  "*/*.json",
+  "*/*.md",
+  "*/*.yaml",
 ]

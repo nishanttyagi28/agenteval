@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       name="description"
-      content="AgentEval CLI reference: every subcommand -- run, compare, report, generate, init, import, generate-cases, compare-models, trace, calibrate, serve, audit-log."
+      content="AgentEval CLI reference: run, compare, report, generate, init, import, plugins, templates, trace, calibrate, serve, and audit-log."
     >
     <title>CLI Reference — AgentEval Docs</title>
     <link rel="stylesheet" href="./styles.css">
@@ -102,6 +102,23 @@ agenteval trace runs/&lt;run&gt;.json --case-id total_customers --html trace.htm
         <h2 id="audit-log">agenteval audit-log</h2>
         <p>Query the opt-in structured audit trail for one agent.</p>
         <pre><code>agenteval audit-log --agent agentic_data_analyst --since 2026-07-01</code></pre>
+
+        <h2 id="plugins">agenteval plugins</h2>
+        <p>Discover evaluator metadata, inspect one registration without importing it, or explicitly load and validate its callable contract.</p>
+        <pre><code>agenteval plugins list
+agenteval plugins inspect keyword_contains
+agenteval plugins validate keyword_contains</code></pre>
+
+        <h2 id="templates">agenteval templates</h2>
+        <p>Browse and safely install the bundled RAG, coding-agent, and customer-support evaluation starters.</p>
+        <pre><code>agenteval templates list
+agenteval templates show rag-assistant
+agenteval templates install rag-assistant --output ./evaluation
+agenteval templates install coding-agent --force</code></pre>
+
+        <h2 id="version">agenteval --version</h2>
+        <p>Print the package's single-source AgentEval version.</p>
+        <pre><code>agenteval --version</code></pre>
 
         <div class="callout">
           Flags and defaults change as AgentEval evolves — <code>agenteval &lt;command&gt;

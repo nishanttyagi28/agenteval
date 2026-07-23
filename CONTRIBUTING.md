@@ -124,6 +124,24 @@ An adapter should:
 
 Use `adapters/crewai.py`, `adapters/autogen.py`, and `adapters/openai_agents.py` as reference implementations. Tests must use lightweight fakes so contributors do not need API credentials.
 
+## Evaluator plugin requirements
+
+Evaluator plugins should implement the small callable contract documented in
+`docs/plugins.md` and register it under `agenteval.evaluators`.
+
+1. Keep plugin imports free of unrelated side effects.
+2. Declare every runtime and optional dependency in the plugin package.
+3. Return `EvaluationResult` with a strict boolean verdict.
+4. Treat `EvaluationContext.case` and `.result` as read-only.
+5. Raise evaluator/infrastructure failures instead of turning them into a pass.
+6. Use a unique lowercase entry-point name and never claim a built-in name.
+7. Test metadata-only discovery, explicit validation, successful evaluation,
+   invalid inputs, missing dependencies, and execution failures.
+8. Document the plugin's own trust and credential requirements honestly.
+
+The example package under `examples/plugins/agenteval-keyword-evaluator` is the
+minimal reference layout.
+
 ## Documentation changes
 
 - Keep commands copy-pasteable and indicate the working directory when it matters.

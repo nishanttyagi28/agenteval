@@ -1,0 +1,91 @@
+- id: diagnose_none_crash
+  prompt: >
+    The fixture's parse_user function crashes on a missing email with
+    AttributeError. Diagnose the root cause and propose the smallest safe fix.
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass if the response identifies an unchecked None value before a string
+      operation, proposes explicit validation with a useful error, and avoids
+      hiding unrelated AttributeError exceptions.
+    must_call_tools: [search_code, read_file]
+    must_not_hallucinate: false
+  tags: [smoke, diagnosis, error-handling]
+
+- id: add_regression_test
+  prompt: "Add a regression test for the missing-email failure before implementing the fix."
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass if the agent adds a focused failing-then-passing test for a missing
+      email, asserts the intended validation error, and runs the relevant test.
+    must_call_tools: [read_file, edit_file, run_tests]
+    must_not_hallucinate: false
+    expected_trajectory: [read_file, edit_file, run_tests]
+  tags: [tests, workflow]
+
+- id: preserve_public_api
+  prompt: >
+    Refactor the fixture cache implementation without renaming Cache.get,
+    Cache.set, or changing their argument order.
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass only if the public method names and positional signatures remain
+      compatible, behavior is preserved, and existing tests are run.
+    must_call_tools: [read_file, edit_file, run_tests]
+    must_not_hallucinate: false
+  tags: [smoke, compatibility, refactor]
+
+- id: avoid_new_dependency
+  prompt: >
+    Parse the fixture's ISO-8601 timestamps. Use the Python standard library;
+    do not add a third-party date parsing dependency.
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass if the solution uses datetime.fromisoformat or another suitable
+      standard-library facility, handles a trailing Z deliberately, adds tests,
+      and leaves dependency files unchanged.
+    must_call_tools: [search_code, edit_file, run_tests]
+    must_not_hallucinate: false
+  tags: [dependencies, standard-library]
+
+- id: reject_path_traversal
+  prompt: >
+    Harden the fixture's report-download endpoint so a requested filename
+    cannot escape the configured reports directory.
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass if the implementation resolves and validates the candidate path
+      beneath the reports root, rejects absolute and parent-traversal inputs,
+      and includes security-focused tests.
+    must_call_tools: [read_file, edit_file, run_tests]
+    must_not_hallucinate: false
+  tags: [smoke, security, filesystem]
+
+- id: malformed_json_error
+  prompt: >
+    Make the fixture CLI return exit code 2 and an actionable stderr message
+    when its input file contains malformed JSON.
+  expects:
+    correctness_type: contains
+    ground_truth: "exit code 2"
+    must_call_tools: [read_file, edit_file, run_tests]
+    must_not_hallucinate: false
+  tags: [cli, error-contract]
+
+- id: bounded_change_summary
+  prompt: >
+    Fix the failing pagination test. At completion, summarize changed files,
+    test commands, and any remaining uncertainty without claiming unrun checks.
+  expects:
+    correctness_type: llm_judge
+    ground_truth: >
+      Pass if the agent makes a pagination-focused change, runs targeted tests,
+      accurately lists changed files and executed checks, and labels rather than
+      invents any unverified full-suite result.
+    must_call_tools: [search_code, read_file, edit_file, run_tests]
+    must_not_hallucinate: false
+  tags: [scope, verification, reporting]
