@@ -493,6 +493,38 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_init(args: argparse.Namespace) -> int:
+    from agenteval.core.init import InitError, next_steps_message, run_first_evaluation, scaffold_project
+
+    target_dir = Path(args.path).resolve()
+    framework = None if args.framework == "none" else args.framework
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        plan = scaffold_project(
+            target_dir,
+            args.agent_name,
+            framework=framework,
+            force=args.force,
+        )
+    except (InitError, OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if not args.quiet:
+        print(f"agent_name={plan.agent_name}")
+        print(f"framework={plan.framework or 'none (unsupported/not detected)'}")
+        print(f"agents_yaml={plan.agents_yaml_path}")
+        print(f"golden_suite={plan.golden_suite_path}")
+        print(f"workflow={plan.workflow_path}")
+
+    if args.run:
+        run_first_evaluation(target_dir, plan.agent_name, quiet=args.quiet)
+
+    if not args.quiet:
+        print(next_steps_message(plan))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agenteval", description="AI agent evaluation harness")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -605,6 +637,24 @@ def build_parser() -> argparse.ArgumentParser:
     gen_p.add_argument("--case-id", action="append", default=None, help="Generate for one case")
     gen_p.add_argument("--overwrite", action="store_true", help="Replace an existing output")
     gen_p.set_defaults(func=_cmd_generate)
+
+    init_p = sub.add_parser(
+        "init", help="Scaffold agents.yaml, a sample golden suite, and a CI workflow"
+    )
+    init_p.add_argument("--path", default=".", help="Target project directory (default: cwd)")
+    init_p.add_argument("--agent-name", default="my_agent", help="Registry name for the new agent")
+    init_p.add_argument(
+        "--framework",
+        default="auto",
+        choices=["auto", "crewai", "langgraph", "autogen", "openai_agents", "none"],
+        help="Framework to scaffold for (default: auto-detect)",
+    )
+    init_p.add_argument("--force", action="store_true", help="Overwrite existing scaffold files")
+    init_p.add_argument(
+        "--run", action="store_true", help="Attempt a first `agenteval run` after scaffolding"
+    )
+    init_p.add_argument("--quiet", action="store_true", help="Less console output")
+    init_p.set_defaults(func=_cmd_init)
 
     return parser
 

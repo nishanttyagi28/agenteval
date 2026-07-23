@@ -31,6 +31,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Golden case example](#golden-case-example)
 - [Dashboard evidence](#dashboard-evidence)
 - [Installation](#installation)
+- [Getting started with `agenteval init`](#getting-started-with-agenteval-init)
 - [Quickstart with Agentic Data Analyst](#quickstart-with-agentic-data-analyst)
 - [Supported frameworks](#supported-frameworks)
 - [CrewAI adapter](#crewai-adapter)
@@ -266,6 +267,42 @@ python -m pip install -r requirements-dev.txt
 ```
 
 Alternatively, install the repository's development extra with `python -m pip install -e ".[dev]"`.
+
+## Getting started with `agenteval init`
+
+For a brand-new project, `agenteval init` scaffolds everything needed for a first evaluation:
+
+```bash
+cd my-agent-project
+agenteval init --agent-name my_agent
+```
+
+It auto-detects the framework in the current directory (CrewAI, LangGraph, Microsoft AutoGen,
+or the OpenAI Agents SDK — checked against `requirements.txt`/`pyproject.toml` and a bounded
+scan of imports) and generates:
+
+- `agents.yaml` — a registry entry wired to the matching first-party adapter, with
+  `adapter_options` placeholders to fill in (e.g. `crew_import`, `agent_import`, `graph_import`)
+- `tests/golden/<agent_name>.yaml` — a small sample golden suite (`exact`, `numeric`, and
+  `contains` cases) ready to edit with real prompts and expectations
+- `.github/workflows/agenteval.yml` — a PR-triggered workflow consuming the reusable
+  `nishanttyagi28/agenteval@v1` composite action
+
+When no supported framework is detected, `init` still scaffolds all three files: the registry
+entry points at the base `agenteval.adapters.base:AgentAdapter` contract and is written as
+`enabled: false` until you subclass it and flip it on — this never fails the scaffold itself.
+
+Useful flags:
+
+```bash
+agenteval init --path ./my-agent-project --agent-name my_agent --framework auto
+agenteval init --framework langgraph          # skip detection, force a framework
+agenteval init --force                        # overwrite a previous scaffold
+agenteval init --run                          # attempt a first `agenteval run` afterward
+```
+
+`--run` is best-effort: a missing dependency, missing API key, or a still-disabled placeholder
+adapter prints a clear `first-run skipped: ...` message instead of failing the scaffold.
 
 ## Quickstart with Agentic Data Analyst
 
