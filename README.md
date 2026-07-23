@@ -37,6 +37,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [CrewAI adapter](#crewai-adapter)
 - [Microsoft AutoGen adapter](#microsoft-autogen-adapter)
 - [OpenAI Agents SDK adapter](#openai-agents-sdk-adapter)
+- [LangGraph adapter](#langgraph-adapter)
 - [GitHub Actions](#github-actions)
 - [Adversarial robustness](#adversarial-robustness)
 - [HTML reports and regression trend tracking](#html-reports-and-regression-trend-tracking)
@@ -340,10 +341,8 @@ All framework integrations are optional at import time, so AgentEval's core does
 | [CrewAI](https://docs.crewai.com/) | First-party adapter | `agenteval.adapters.crewai:CrewAIAdapter` | Tasks, agents, tools, usage, cost, output |
 | [Microsoft AutoGen](https://microsoft.github.io/autogen/stable/) | First-party adapter | `agenteval.adapters.autogen:AutoGenAdapter` | Agent messages, tools, trajectory, usage, cost, output |
 | [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) | First-party adapter | `agenteval.adapters.openai_agents:OpenAIAgentsAdapter` | Run items, tools, handoffs, usage, cost, output |
-| [LangGraph](https://langchain-ai.github.io/langgraph/) | Contract-native | Custom `AgentAdapter` around the compiled graph | Graph state, tool calls, nodes, usage, output |
+| [LangGraph](https://langchain-ai.github.io/langgraph/) | First-party adapter | `agenteval.adapters.langgraph:LangGraphAdapter` | Node execution path, retries, state transitions, tool calls, usage, output |
 | Any Python agent | Stable public contract | Subclass `agenteval.adapters.base.AgentAdapter` | Any evidence mapped to `AgentResponse` |
-
-LangGraph uses the public adapter contract in this release; the repository does not currently claim a dedicated `LangGraphAdapter` module.
 
 ## CrewAI adapter
 
@@ -440,6 +439,45 @@ adapter_options:
   run_options:
     max_turns: 8
 ```
+
+## LangGraph adapter
+
+LangGraph mutates a shared state object across node executions rather than returning a single
+chat completion, so the adapter drives the compiled graph's `stream(inputs, config=...,
+stream_mode="updates")` contract and reconstructs the evidence AgentEval needs from that update
+stream: node execution order (including repeats, so a node revisited in a cycle reads as a
+retry), a best-effort merged final state, invoked tool names, and token usage summed off any
+LangChain message objects seen in the deltas.
+
+```python
+from agenteval.adapters import LangGraphAdapter
+
+adapter = LangGraphAdapter(
+    graph_factory=build_fresh_graph,
+    output_key="answer",
+    input_cost_per_million=0.50,
+    output_cost_per_million=1.50,
+)
+response = adapter.run("How many customers churned last quarter?")
+```
+
+`output_key` names the state key holding the final answer; without it, the adapter tries
+`output`, `answer`, `response`, `result`, then the last AI-message content, then a stringified
+state as a last resort. `input_key` (default `"messages"`) and `input_builder` control how the
+prompt is shaped into the graph's input state. `raw` evidence includes `node_visit_counts`,
+`retries` (nodes visited more than once), and `execution_path`.
+
+For registry-driven CLI runs:
+
+```yaml
+adapter: agenteval.adapters.langgraph:LangGraphAdapter
+adapter_options:
+  graph_import: my_graph.app:build_graph
+  output_key: answer
+```
+
+LangGraph itself remains optional at AgentEval import time — the adapter only duck-types the
+`stream`/`invoke` surface, so it never imports the `langgraph` package directly.
 
 ## GitHub Actions
 
@@ -619,7 +657,7 @@ The composite action has both static contract tests and a hosted deterministic s
 - Numeric-table flakiness currently compares verdicts only rather than extracting and clustering each table cell.
 - The smoke suite's only scalar numeric case currently falls back to verdict consistency because its answer restates the same count; `largest_complete_link_cluster` is covered deterministically but has not yet been exercised by a live CI repeat run.
 - Current trajectory depth is limited to the adapter's shallow `route → agent` sequence (typically two events); instrumenting deeper orchestrator events is a candidate for future enrichment.
-- LangGraph currently uses the public adapter contract rather than a dedicated first-party adapter module.
+- The LangGraph adapter reconstructs final state by merging successive `stream_mode="updates"` deltas (later delta wins per key); graphs with custom state reducers that don't simply overwrite may need an explicit `output_key` or `input_builder` to get an exact answer.
 - Provider-reported cost availability varies by framework and model; explicit per-million token rates can be configured for AutoGen and OpenAI Agents SDK runs.
 - The reusable action requires a stable repository tag such as `v1` before external workflows can pin a major release.
 
