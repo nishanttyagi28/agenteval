@@ -114,6 +114,43 @@ def test_agent_display_name_used_in_title_when_given():
     assert "Agentic Data Analyst" in html_text
 
 
+# ── cost breakdown (§Tier 5) ─────────────────────────────────────────────────
+
+
+def test_cost_breakdown_shows_empty_state_when_no_step_costs_recorded():
+    html_text = render_html_report(run_report(cases=[case("c1")]))
+    assert "No per-step cost data recorded for this run." in html_text
+
+
+def test_cost_breakdown_renders_step_rows_when_present():
+    stepped_case = case(
+        "c1",
+        trace_steps=[
+            {
+                "step_index": 0,
+                "kind": "tool_call",
+                "name": "search_api",
+                "prompt_tokens": 120,
+                "completion_tokens": 40,
+                "cost_usd": 0.000123,
+            }
+        ],
+    )
+    html_text = render_html_report(run_report(cases=[stepped_case]))
+    assert "search_api" in html_text
+    assert "$0.000123" in html_text
+    assert "No per-step cost data recorded for this run." not in html_text
+
+
+def test_cost_breakdown_skips_steps_without_cost_data():
+    stepped_case = case(
+        "c1",
+        trace_steps=[{"step_index": 0, "kind": "tool_call", "name": "search_api"}],
+    )
+    html_text = render_html_report(run_report(cases=[stepped_case]))
+    assert "No per-step cost data recorded for this run." in html_text
+
+
 # ── XSS / escaping safety ───────────────────────────────────────────────────
 
 

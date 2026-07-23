@@ -30,6 +30,9 @@ The static demo explains the workflow without executing an agent or making API c
 - [Flakiness detection](#flakiness-detection)
 - [Trajectory scoring](#trajectory-scoring)
 - [RAG evaluation mode](#rag-evaluation-mode)
+- [Trace viewer](#trace-viewer)
+- [Cost attribution](#cost-attribution)
+- [Regression alerting](#regression-alerting)
 - [Golden case example](#golden-case-example)
 - [Dashboard evidence](#dashboard-evidence)
 - [Installation](#installation)
@@ -277,6 +280,71 @@ structural check — is every cited id actually present in retrieved context —
 `expected_citations` ground truth is given. Suite-level averages (`context_relevance_avg`,
 `faithfulness_avg`, `unsupported_claim_rate_avg`, `citation_f1_avg`, `retrieval_f1_avg`) appear
 on the run report whenever at least one case produced a RAG evaluation, `null` otherwise.
+
+## Trace viewer
+
+Every run can carry a structured, step-by-step execution trace — tool calls, reasoning steps, or
+graph nodes, each with its input/output, timing, and (optionally) per-step cost. Like flakiness,
+trajectory, and RAG scoring, this is **observability-only** and additive: an adapter that reports
+nothing here scores and serializes exactly as before this existed.
+
+An adapter opts in by populating `trace_steps` on its `AgentResponse`:
+
+```python
+return AgentResponse(
+    output=answer,
+    trace_steps=[
+        {"kind": "tool_call", "name": "search", "input": "capital of Japan", "output": "Tokyo", "duration_ms": 210.5},
+        {"kind": "reasoning", "name": "synthesize", "output": "Tokyo is the capital of Japan."},
+    ],
+)
+```
+
+Replay a case's trace as text, or write a self-contained HTML page:
+
+```bash
+agenteval trace runs/20260723T120000Z_abc1234.json --case-id capital_of_japan
+agenteval trace runs/20260723T120000Z_abc1234.json --case-id capital_of_japan --html trace.html
+```
+
+The replay marks any step that trajectory scoring (`expected_trajectory`) flagged as unexpected,
+and lists any expected steps that never executed — pinpointing the exact step a case diverged at
+rather than just the pass/fail outcome.
+
+## Cost attribution
+
+Cost estimation now looks up per-model USD/1M-token pricing (`core/pricing.py`) instead of a
+single hardcoded rate, while staying fully backward compatible — omitting the model (as every
+existing caller does) preserves the original Groq-only pricing exactly. The model is read from
+the same `raw["_llm_usage"]["model"]` convention `agentic_data_analyst` already populates, so
+model-aware costing works with zero adapter changes.
+
+When an adapter reports per-step usage via `trace_steps` (see above), the HTML report's
+**Cost breakdown** section shows cost attributed down to an individual tool call; otherwise it
+shows a quiet empty-state message. Whole-run and per-case cost were already in the report and are
+unchanged.
+
+## Regression alerting
+
+An optional webhook alert fires when the regression gate (`agenteval compare`) fails — Slack- and
+Discord-compatible, no new dependency (stdlib `urllib`). It builds directly on the existing gate
+decision (`ComparisonResult`) rather than a parallel notification path, and never touches the CI
+workflow's PR-comment posting.
+
+Opt in per agent in `agents.yaml` — the webhook URL itself is never stored in YAML, only the name
+of an environment variable to read it from:
+
+```yaml
+agents:
+  my_agent:
+    alerting:
+      enabled: true
+      webhook_url_env: MY_AGENT_SLACK_WEBHOOK   # URL comes from this env var, not the file
+      kind: slack                               # or "discord"
+```
+
+An agent that doesn't set `alerting` behaves exactly as before — no output, no webhook calls. A
+failed send is reported (`alert=error: ...`) but never changes the gate's own exit code.
 
 ## Golden case example
 

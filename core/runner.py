@@ -37,6 +37,7 @@ def agent_run_to_case_result(case: TestCase, agent_run: AgentRun) -> CaseResult:
         raw=dict(agent_run.raw) if agent_run.raw else {},
         retrieved_context=[dict(chunk) for chunk in agent_run.retrieved_context],
         citations=list(agent_run.citations),
+        trace_steps=list(agent_run.trace_steps),
     )
 
 

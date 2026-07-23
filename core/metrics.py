@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import Any, Sequence
 
 from agenteval.core.judge import judge_correctness
+from agenteval.core.pricing import get_pricing
 from agenteval.core.schema import CaseResult, CorrectnessType, Expects, RunReport, TestCase
 
 # Groq list prices for llama-3.3-70b-versatile (USD per 1M tokens).
@@ -320,11 +321,16 @@ def compute_cost_usd(
     completion_tokens: int | None,
     prompt: str,
     final_answer: str,
+    *,
+    model: str | None = None,
 ) -> tuple[float, int, int, bool]:
     """
     Return (cost_usd, prompt_tokens_used, completion_tokens_used, estimated).
 
     When token counts are None, estimate from character length and set estimated=True.
+    ``model`` looks up per-model pricing (§Tier 5, core.pricing); omitting it
+    (the default) preserves the original Groq-only pricing for every existing
+    caller.
     """
     estimated = False
     pt = prompt_tokens
@@ -336,8 +342,25 @@ def compute_cost_usd(
         ct = estimate_tokens_from_text(final_answer)
         estimated = True
 
-    cost = (pt * GROQ_INPUT_USD_PER_1M + ct * GROQ_OUTPUT_USD_PER_1M) / 1_000_000.0
+    input_rate, output_rate = get_pricing(
+        model, default=(GROQ_INPUT_USD_PER_1M, GROQ_OUTPUT_USD_PER_1M)
+    )
+    cost = (pt * input_rate + ct * output_rate) / 1_000_000.0
     return cost, pt, ct, estimated
+
+
+def _model_from_raw(raw: dict[str, Any] | None) -> str | None:
+    """Read the model name an adapter reported via ``raw["_llm_usage"]["model"]``.
+
+    This is the existing convention (see adapters/agentic_data_analyst.py) for
+    surfacing provider usage metadata; absent for adapters that don't report
+    it, in which case cost falls back to the default pricing untouched.
+    """
+    usage = (raw or {}).get("_llm_usage")
+    if not isinstance(usage, dict):
+        return None
+    model = usage.get("model")
+    return model if isinstance(model, str) else None
 
 
 # ── per-case + suite scoring ─────────────────────────────────────────────────
@@ -356,7 +379,11 @@ def score_case(
     if result.raw.get("route") == "harness_error":
         prec, rec = tool_call_precision_recall(expects.must_call_tools, result.tools_called)
         cost, _, _, _ = compute_cost_usd(
-            result.prompt_tokens, result.completion_tokens, case.prompt, result.final_answer
+            result.prompt_tokens,
+            result.completion_tokens,
+            case.prompt,
+            result.final_answer,
+            model=_model_from_raw(result.raw),
         )
         return replace(
             result,
@@ -374,7 +401,11 @@ def score_case(
     if result.raw.get("success") is False:
         prec, rec = tool_call_precision_recall(expects.must_call_tools, result.tools_called)
         cost, prompt_used, completion_used, estimated = compute_cost_usd(
-            result.prompt_tokens, result.completion_tokens, case.prompt, result.final_answer
+            result.prompt_tokens,
+            result.completion_tokens,
+            case.prompt,
+            result.final_answer,
+            model=_model_from_raw(result.raw),
         )
         error = str(result.raw.get("error") or result.final_answer or "agent execution failed")
         raw = dict(result.raw or {})
@@ -414,6 +445,7 @@ def score_case(
         result.completion_tokens,
         case.prompt,
         result.final_answer,
+        model=_model_from_raw(result.raw),
     )
 
     # Attach estimate note into raw for dashboard later (non-breaking)
