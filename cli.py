@@ -83,7 +83,24 @@ def _gate_thresholds(config: AgentConfig):
         min_tool_accuracy=config.gates.min_tool_accuracy,
         fail_on_evaluator_error=config.gates.fail_on_evaluator_error,
         fail_on_agent_error=config.gates.fail_on_agent_error,
+        max_cost_increase_pct=config.gates.max_cost_increase_pct,
+        max_latency_p95_ms=config.gates.max_latency_p95_ms,
+        max_token_increase_pct=config.gates.max_token_increase_pct,
     )
+
+
+def _history_root(runs_dir_arg: str | None, registry_path: Path) -> Path:
+    """Root directory for per-agent history ledgers.
+
+    Mirrors the flakiness sidecar convention: always rooted at the top-level
+    ``runs/`` directory (or an explicit ``--runs-dir`` override), independent
+    of a registered agent's own configured ``runs_dir``.
+    """
+    return Path(runs_dir_arg) if runs_dir_arg else _configured_path(registry_path, Path("runs"))
+
+
+def _history_path_for(config: AgentConfig, root: Path) -> Path:
+    return root / config.name / "history.json"
 
 
 def validate_repeat_request(
@@ -244,6 +261,22 @@ def _run_registered_agent(
         gate = compare_runs(
             load_report(baseline_path), report.to_dict(), _gate_thresholds(config)
         ).passed
+
+    if not args.no_score and not args.no_history:
+        from agenteval.core.history import append_history_entry, entry_from_report
+
+        history_path = _history_path_for(config, _history_root(args.runs_dir, registry_path))
+        try:
+            append_history_entry(
+                entry_from_report(report.to_dict(), gate_passed=gate),
+                history_path,
+                limit=args.history_limit,
+            )
+        except OSError as exc:
+            print(f"warning: failed to record trend history: {exc}", file=sys.stderr)
+        else:
+            print(f"history_saved {history_path}")
+
     return {
         "agent": config.name,
         "passed": statuses.count("passed"),
@@ -269,6 +302,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         )
         if args.repeat > 1 and args.no_score:
             raise ValueError("--repeat > 1 cannot be combined with --no-score")
+        if args.history_limit < 1:
+            raise ValueError("--history-limit must be at least 1")
         if args.repeat != 1 or args.repeat_case:
             # Validate every selected suite before constructing any adapter or
             # making any live call, including later entries in a --all run.
@@ -354,6 +389,21 @@ def _cmd_compare(args: argparse.Namespace) -> int:
             fail_on_agent_error=(
                 False if args.allow_agent_errors else config.gates.fail_on_agent_error
             ),
+            max_cost_increase_pct=(
+                args.max_cost_increase_pct
+                if args.max_cost_increase_pct is not None
+                else config.gates.max_cost_increase_pct
+            ),
+            max_latency_p95_ms=(
+                args.max_latency_p95_ms
+                if args.max_latency_p95_ms is not None
+                else config.gates.max_latency_p95_ms
+            ),
+            max_token_increase_pct=(
+                args.max_token_increase_pct
+                if args.max_token_increase_pct is not None
+                else config.gates.max_token_increase_pct
+            ),
         )
         result = compare_runs(baseline, current, thresholds)
         write_outputs(
@@ -369,6 +419,64 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     print(f"current={current_path}")
     print(format_markdown(result), end="")
     return 0 if result.passed else 1
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    from agenteval.core.compare import compare_runs, latest_run_file, load_report
+    from agenteval.core.history import load_history
+    from agenteval.core.registry import load_agent_registry
+    from agenteval.core.report import generate_html_report
+
+    registry_path = _registry_path(args.registry)
+
+    try:
+        if args.history_limit < 1:
+            raise ValueError("--history-limit must be at least 1")
+        registry = load_agent_registry(registry_path)
+        config = resolve_agent_selection(registry, requested=args.agent)[0]
+        runs_dir = Path(args.runs_dir) if args.runs_dir else _configured_path(
+            registry_path, config.runs_dir
+        )
+        run_path = Path(args.run) if args.run else latest_run_file(runs_dir)
+        report_data = load_report(run_path)
+
+        baseline_data = None
+        comparison = None
+        if not args.no_baseline:
+            baseline_path = Path(args.baseline) if args.baseline else _configured_path(
+                registry_path, config.baseline
+            )
+            if args.baseline and not baseline_path.is_file():
+                raise ValueError(f"baseline file not found: {baseline_path}")
+            if baseline_path.is_file():
+                baseline_data = load_report(baseline_path)
+                comparison = compare_runs(baseline_data, report_data, _gate_thresholds(config))
+
+        history_path = (
+            Path(args.history_file)
+            if args.history_file
+            else _history_path_for(config, _history_root(args.runs_dir, registry_path))
+        )
+        history = load_history(history_path)[-args.history_limit :]
+
+        output_path = Path(args.output) if args.output else runs_dir / "report.html"
+        written = generate_html_report(
+            report_data,
+            output_path=output_path,
+            baseline=baseline_data,
+            comparison=comparison,
+            history=history,
+            agent_display_name=config.display_name,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"agent={config.name}")
+    print(f"run={run_path}")
+    print(f"history_entries={len(history)}")
+    print(f"report={written}")
+    return 0
 
 
 def _cmd_generate(args: argparse.Namespace) -> int:
@@ -400,6 +508,87 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     print(f"generated={len(generated)} source_cases={len(cases)}")
     print(f"candidates={path}")
     print("review_status=candidate (not included in the CI gate)")
+    return 0
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    from agenteval.core.init import InitError, next_steps_message, run_first_evaluation, scaffold_project
+
+    target_dir = Path(args.path).resolve()
+    framework = None if args.framework == "none" else args.framework
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        plan = scaffold_project(
+            target_dir,
+            args.agent_name,
+            framework=framework,
+            force=args.force,
+        )
+    except (InitError, OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if not args.quiet:
+        print(f"agent_name={plan.agent_name}")
+        print(f"framework={plan.framework or 'none (unsupported/not detected)'}")
+        print(f"agents_yaml={plan.agents_yaml_path}")
+        print(f"golden_suite={plan.golden_suite_path}")
+        print(f"workflow={plan.workflow_path}")
+
+    if args.run:
+        run_first_evaluation(target_dir, plan.agent_name, quiet=args.quiet)
+
+    if not args.quiet:
+        print(next_steps_message(plan))
+    return 0
+
+
+def _cmd_compare_models(args: argparse.Namespace) -> int:
+    from agenteval.core.model_compare import (
+        format_comparison_table,
+        run_model_comparison,
+        write_outputs,
+    )
+    from agenteval.core.registry import load_agent_registry
+
+    registry_path = _registry_path(args.registry)
+    try:
+        registry = load_agent_registry(registry_path)
+        requested = list(dict.fromkeys(args.agent or []))
+        if len(requested) < 2:
+            raise ValueError("compare-models requires at least 2 distinct --agent values")
+        unknown = [name for name in requested if name not in registry]
+        if unknown:
+            available = ", ".join(registry) or "(none)"
+            raise ValueError(
+                f"Unknown agent(s): {', '.join(unknown)}. Registered agents: {available}"
+            )
+        configs = [registry[name] for name in requested]
+
+        if args.cases:
+            cases_path = Path(args.cases)
+        else:
+            cases_path = _configured_path(registry_path, configs[0].golden_suite)
+            print(
+                f"note: --cases not given; using {configs[0].name}'s configured suite "
+                f"({cases_path}) for every agent"
+            )
+
+        rows = run_model_comparison(
+            configs,
+            cases_path=cases_path,
+            registry_path=registry_path,
+            runs_dir_override=args.runs_dir,
+            use_llm_judge=not args.no_llm_judge,
+            quiet=args.quiet,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    table = format_comparison_table(rows)
+    print(table, end="")
+    write_outputs(rows, json_path=args.json_out, markdown_path=args.markdown_out)
     return 0
 
 
@@ -439,6 +628,17 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--stop-on-error", action="store_true", help="Abort on adapter error")
     run_p.add_argument("--no-score", action="store_true", help="Collect raw outputs only")
     run_p.add_argument("--no-llm-judge", action="store_true", help="Skip LLM judged cases")
+    run_p.add_argument(
+        "--history-limit",
+        type=int,
+        default=20,
+        help="Number of recent scored runs to retain for trend tracking (default: 20)",
+    )
+    run_p.add_argument(
+        "--no-history",
+        action="store_true",
+        help="Do not record this run in the trend-history ledger",
+    )
     run_p.set_defaults(func=_cmd_run)
 
     cmp_p = sub.add_parser("compare", help="Compare a current run with a baseline")
@@ -450,6 +650,24 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_p.add_argument("--max-correctness-drop", type=float, default=None)
     cmp_p.add_argument("--max-hallucination-rate", type=float, default=None)
     cmp_p.add_argument("--min-tool-accuracy", type=float, default=None)
+    cmp_p.add_argument(
+        "--max-cost-increase-pct",
+        type=float,
+        default=None,
+        help="Fail if total cost increases more than this percent over baseline (opt-in)",
+    )
+    cmp_p.add_argument(
+        "--max-latency-p95-ms",
+        type=float,
+        default=None,
+        help="Fail if p95 latency exceeds this many milliseconds (opt-in)",
+    )
+    cmp_p.add_argument(
+        "--max-token-increase-pct",
+        type=float,
+        default=None,
+        help="Fail if total token usage increases more than this percent over baseline (opt-in)",
+    )
     cmp_p.add_argument(
         "--allow-evaluator-errors",
         action="store_true",
@@ -464,6 +682,39 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_p.add_argument("--markdown-out", default=None, help="Write Markdown comparison")
     cmp_p.set_defaults(func=_cmd_compare)
 
+    report_p = sub.add_parser("report", help="Generate a static HTML report for a run")
+    report_p.add_argument("--agent", default=None, help="Registered agent name")
+    report_p.add_argument("--registry", default=None, help=argparse.SUPPRESS)
+    report_p.add_argument(
+        "--run", default=None, help="Run JSON to report on (default: latest run in runs dir)"
+    )
+    report_p.add_argument(
+        "--runs-dir", default=None, help="Directory used to find the latest run and history"
+    )
+    report_p.add_argument(
+        "--baseline",
+        default=None,
+        help="Baseline JSON for gate comparison (default: agent's configured baseline)",
+    )
+    report_p.add_argument(
+        "--no-baseline",
+        action="store_true",
+        help="Skip baseline/gate comparison even if one is configured",
+    )
+    report_p.add_argument(
+        "--history-file",
+        default=None,
+        help="Trend-history JSON (default: <runs-root>/<agent>/history.json)",
+    )
+    report_p.add_argument(
+        "--history-limit",
+        type=int,
+        default=20,
+        help="Number of recent history entries to show in the trend section (default: 20)",
+    )
+    report_p.add_argument("--output", default=None, help="Output HTML path (default: <runs-dir>/report.html)")
+    report_p.set_defaults(func=_cmd_report)
+
     gen_p = sub.add_parser("generate", help="Generate reviewable adversarial candidates")
     gen_p.add_argument("--cases", default=None, help="Source golden YAML")
     gen_p.add_argument("--output", default=None, help="Candidate YAML output")
@@ -472,10 +723,73 @@ def build_parser() -> argparse.ArgumentParser:
     gen_p.add_argument("--overwrite", action="store_true", help="Replace an existing output")
     gen_p.set_defaults(func=_cmd_generate)
 
+    init_p = sub.add_parser(
+        "init", help="Scaffold agents.yaml, a sample golden suite, and a CI workflow"
+    )
+    init_p.add_argument("--path", default=".", help="Target project directory (default: cwd)")
+    init_p.add_argument("--agent-name", default="my_agent", help="Registry name for the new agent")
+    init_p.add_argument(
+        "--framework",
+        default="auto",
+        choices=["auto", "crewai", "langgraph", "autogen", "openai_agents", "none"],
+        help="Framework to scaffold for (default: auto-detect)",
+    )
+    init_p.add_argument("--force", action="store_true", help="Overwrite existing scaffold files")
+    init_p.add_argument(
+        "--run", action="store_true", help="Attempt a first `agenteval run` after scaffolding"
+    )
+    init_p.add_argument("--quiet", action="store_true", help="Less console output")
+    init_p.set_defaults(func=_cmd_init)
+
+    cmp_models_p = sub.add_parser(
+        "compare-models",
+        help="Run the same golden suite against multiple registered agents",
+    )
+    cmp_models_p.add_argument(
+        "--agent",
+        action="append",
+        default=None,
+        required=True,
+        help="Registered agent name; pass at least twice",
+    )
+    cmp_models_p.add_argument("--registry", default=None, help=argparse.SUPPRESS)
+    cmp_models_p.add_argument(
+        "--cases", default=None, help="Golden YAML shared by every agent (default: first agent's suite)"
+    )
+    cmp_models_p.add_argument("--runs-dir", default=None, help="Override every agent's configured runs dir")
+    cmp_models_p.add_argument("--no-llm-judge", action="store_true", help="Skip LLM judged cases")
+    cmp_models_p.add_argument("--quiet", action="store_true", help="Less progress output")
+    cmp_models_p.add_argument("--json-out", default=None, help="Write machine-readable comparison")
+    cmp_models_p.add_argument("--markdown-out", default=None, help="Write Markdown comparison table")
+    cmp_models_p.set_defaults(func=_cmd_compare_models)
+
     return parser
 
 
+def _harden_console_encoding() -> None:
+    """Never let a non-ASCII character (``≈``, ``→``, ...) crash CLI output.
+
+    Judge notes and case-transition summaries can contain characters that
+    don't exist in a legacy console codepage (e.g. Windows' default cp1252).
+    Without this, a plain ``print()`` of that text raises UnicodeEncodeError
+    and aborts the command — including, for ``run``, after the report JSON
+    was already written but before the history ledger got a chance to
+    record it. Replacing unencodable characters is strictly better than
+    crashing; UTF-8 targets (JSON/HTML files) are unaffected since they set
+    their own encoding explicitly.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="backslashreplace")
+        except (ValueError, OSError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> None:
+    _harden_console_encoding()
     args = build_parser().parse_args(argv)
     raise SystemExit(args.func(args))
 

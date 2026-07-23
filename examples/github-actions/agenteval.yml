@@ -1,0 +1,36 @@
+name: AgentEval
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # GitHub Actions resolve owner/repository@ref. This repository publishes
+      # the root action as nishanttyagi28/agenteval@v1.
+      - name: Run AgentEval
+        id: agenteval
+        uses: nishanttyagi28/agenteval@v1
+        with:
+          agent: my_agent
+          config-file: agents.yaml
+          agent-path: .
+          cases-file: tests/golden/cases.yaml
+          runs-dir: .agenteval/runs
+          install-extras: autogen
+          no-llm-judge: "true"
+
+      - name: Upload AgentEval report
+        if: always() && steps.agenteval.outputs.report-path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: agenteval-report
+          path: |
+            ${{ steps.agenteval.outputs.report-path }}
+            ${{ steps.agenteval.outputs.comparison-path }}

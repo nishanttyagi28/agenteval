@@ -14,13 +14,22 @@ from typing import Any, Iterable
 
 @dataclass(frozen=True)
 class GateThresholds:
-    """Thresholds that decide whether a current run may be shipped."""
+    """Thresholds that decide whether a current run may be shipped.
+
+    ``max_cost_increase_pct``, ``max_latency_p95_ms``, and
+    ``max_token_increase_pct`` are opt-in safety gates: ``None`` (the
+    default) disables the corresponding check, so existing callers that
+    never set them see no behavior change.
+    """
 
     max_correctness_drop: float = 0.05
     max_hallucination_rate: float = 0.10
     min_tool_accuracy: float = 0.90
     fail_on_evaluator_error: bool = True
     fail_on_agent_error: bool = True
+    max_cost_increase_pct: float | None = None
+    max_latency_p95_ms: float | None = None
+    max_token_increase_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -59,6 +68,7 @@ _METRICS: tuple[tuple[str, bool], ...] = (
     ("latency_p50_ms", False),
     ("latency_p95_ms", False),
     ("total_cost_usd", False),
+    ("total_tokens", False),
 )
 
 
@@ -74,7 +84,15 @@ def _number(report: dict[str, Any], key: str) -> float | None:
         return None
 
 
-def _case_status(case: dict[str, Any] | None) -> str:
+def case_status(case: dict[str, Any] | None) -> str:
+    """Derive a case's status, tolerating run JSON written before ``status`` existed.
+
+    Older run artifacts (and any hand-built report dict) may not carry an
+    explicit ``status`` field; this reconstructs one from ``correctness_pass``
+    / ``judge_reason`` / ``raw`` the same way the regression gate always has,
+    so every consumer of a persisted report — the gate, ``agenteval report``,
+    dashboards — agrees on one case's outcome.
+    """
     if case is None:
         return "missing"
     explicit = case.get("status")
@@ -148,14 +166,65 @@ def compare_runs(
             f"{limits.min_tool_accuracy * 100:.1f}%"
         )
 
+    if limits.max_cost_increase_pct is not None:
+        base_cost = _number(baseline, "total_cost_usd")
+        current_cost = _number(current, "total_cost_usd")
+        if base_cost is None or current_cost is None:
+            reasons.append(
+                "total_cost_usd is missing or invalid (required by max_cost_increase_pct gate)"
+            )
+        elif base_cost > 0:
+            increase_pct = (current_cost - base_cost) / base_cost * 100
+            if increase_pct > limits.max_cost_increase_pct + 1e-9:
+                reasons.append(
+                    f"cost increased {increase_pct:.1f}% "
+                    f"(allowed {limits.max_cost_increase_pct:.1f}%)"
+                )
+        elif current_cost > 0:
+            reasons.append(
+                f"cost increased from $0 to ${current_cost:.6f} "
+                "(baseline had no cost to compare against)"
+            )
+
+    if limits.max_latency_p95_ms is not None:
+        current_latency = _number(current, "latency_p95_ms")
+        if current_latency is None:
+            reasons.append(
+                "latency_p95_ms is missing or invalid (required by max_latency_p95_ms gate)"
+            )
+        elif current_latency > limits.max_latency_p95_ms + 1e-9:
+            reasons.append(
+                f"p95 latency {current_latency:.0f}ms exceeds {limits.max_latency_p95_ms:.0f}ms"
+            )
+
+    if limits.max_token_increase_pct is not None:
+        base_tokens = _number(baseline, "total_tokens")
+        current_tokens = _number(current, "total_tokens")
+        if base_tokens is None or current_tokens is None:
+            reasons.append(
+                "total_tokens is missing or invalid (required by max_token_increase_pct gate)"
+            )
+        elif base_tokens > 0:
+            increase_pct = (current_tokens - base_tokens) / base_tokens * 100
+            if increase_pct > limits.max_token_increase_pct + 1e-9:
+                reasons.append(
+                    f"token usage increased {increase_pct:.1f}% "
+                    f"(allowed {limits.max_token_increase_pct:.1f}%)"
+                )
+        elif current_tokens > 0:
+            reasons.append(
+                f"token usage increased from 0 to {current_tokens:.0f} "
+                "(baseline had no token usage to compare against)"
+            )
+
     base_cases = _cases_by_id(baseline)
     current_cases = _cases_by_id(current)
     all_case_ids = sorted(set(base_cases) | set(current_cases))
     transitions = [
         CaseTransition(
             case_id=case_id,
-            baseline_status=_case_status(base_cases.get(case_id)),
-            current_status=_case_status(current_cases.get(case_id)),
+            baseline_status=case_status(base_cases.get(case_id)),
+            current_status=case_status(current_cases.get(case_id)),
         )
         for case_id in all_case_ids
     ]

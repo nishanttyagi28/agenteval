@@ -1,0 +1,9 @@
+- id: action_smoke
+  prompt: "run the deterministic smoke test"
+  expects:
+    correctness_type: exact
+    ground_truth: "AgentEval action received: run the deterministic smoke test"
+    must_call_tools: [demo_tool]
+    must_not_hallucinate: true
+    expected_trajectory: ["agent:action_demo"]
+  tags: [action, smoke]

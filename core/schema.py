@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from agenteval.core.trajectory import TrajectoryEvaluation
 
@@ -23,13 +23,21 @@ class RepositoryConfig:
 
 @dataclass(frozen=True)
 class GateConfig:
-    """Default regression thresholds for one registered agent."""
+    """Default regression thresholds for one registered agent.
+
+    The budget/latency/token fields are opt-in safety gates (§Phase 5):
+    ``None`` (the default) disables the check entirely, preserving prior
+    behavior for every existing config that doesn't set them.
+    """
 
     max_correctness_drop: float = 0.05
     max_hallucination_rate: float = 0.10
     min_tool_accuracy: float = 0.90
     fail_on_evaluator_error: bool = True
     fail_on_agent_error: bool = True
+    max_cost_increase_pct: float | None = None
+    max_latency_p95_ms: float | None = None
+    max_token_increase_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -123,6 +131,10 @@ class Expects:
 class TestCase:
     """One evaluation case as loaded from YAML."""
 
+    # The domain model is imported into test modules; do not let pytest mistake
+    # it for a test container merely because its public name starts with Test.
+    __test__: ClassVar[bool] = False
+
     id: str
     prompt: str
     expects: Expects
@@ -199,6 +211,7 @@ class RunReport:
     latency_p50_ms: float | None = None
     latency_p95_ms: float | None = None
     total_cost_usd: float | None = None
+    total_tokens: int | None = None
     evaluator_error_count: int = 0
     agent_error_count: int = 0
     break_rate: float | None = None

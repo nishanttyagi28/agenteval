@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agenteval.core._fsutil import atomic_write_text
 from agenteval.core.schema import RunReport
 
 # Start git discovery inside the package checkout. ``git rev-parse`` walks up to
@@ -116,8 +117,7 @@ def save_run_report(
 
     path = out_dir / filename
     payload = report_to_jsonable(report)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return path.resolve()
+    return atomic_write_text(path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
 
 
 def load_run_report(path: str | Path) -> dict[str, Any]:
@@ -156,11 +156,7 @@ def save_flakiness_report(
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{report.run_id}.json"
     payload = _flakiness_to_jsonable(report)
-    path.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    return path.resolve()
+    return atomic_write_text(path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
 
 
 def load_flakiness_report(path: str | Path):

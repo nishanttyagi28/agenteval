@@ -469,6 +469,7 @@ def aggregate_report(report: RunReport) -> RunReport:
             latency_p50_ms=0.0,
             latency_p95_ms=0.0,
             total_cost_usd=0.0,
+            total_tokens=None,
             evaluator_error_count=sum(1 for c in scored if c.status == "evaluator_error"),
             agent_error_count=sum(1 for c in scored if c.status == "agent_error"),
             break_rate=None,
@@ -486,6 +487,12 @@ def aggregate_report(report: RunReport) -> RunReport:
 
     latencies = [c.latency_ms for c in scored]
     total_cost = sum(c.cost_usd or 0.0 for c in scored)
+    token_counts = [
+        (c.prompt_tokens or 0) + (c.completion_tokens or 0)
+        for c in scored
+        if c.prompt_tokens is not None or c.completion_tokens is not None
+    ]
+    total_tokens = sum(token_counts) if token_counts else None
     evaluator_errors = sum(1 for c in scored if c.status == "evaluator_error")
     agent_errors = sum(1 for c in scored if c.status == "agent_error")
     adversarial = [c for c in eligible if c.source == "adversarial"]
@@ -504,6 +511,7 @@ def aggregate_report(report: RunReport) -> RunReport:
         latency_p50_ms=percentile(latencies, 50),
         latency_p95_ms=percentile(latencies, 95),
         total_cost_usd=total_cost,
+        total_tokens=total_tokens,
         evaluator_error_count=evaluator_errors,
         agent_error_count=agent_errors,
         break_rate=break_rate,

@@ -4,6 +4,7 @@ import pytest
 
 from agenteval.core.compare import (
     GateThresholds,
+    case_status,
     compare_runs,
     format_markdown,
     latest_run_file,
@@ -152,7 +153,179 @@ def test_non_object_report_rejected(tmp_path):
         load_report(path)
 
 
+def test_case_status_is_public_and_handles_missing_case():
+    assert case_status(None) == "missing"
+    assert case_status({"status": "passed"}) == "passed"
+    assert case_status({"correctness_pass": True}) == "passed"
+    assert case_status({"correctness_pass": False}) == "failed"
+    assert case_status({"raw": {"route": "harness_error"}}) == "agent_error"
+    assert case_status({}) == "skipped"
+
+
 def test_thresholds_are_configurable():
     limits = GateThresholds(max_correctness_drop=0.01)
     result = compare_runs(report(correctness=0.95), report(correctness=0.93), limits)
     assert not result.passed
+
+
+# --- Phase 5: opt-in budget/latency/token safety gates ------------------------
+
+
+def test_new_safety_gates_default_to_disabled():
+    limits = GateThresholds()
+    assert limits.max_cost_increase_pct is None
+    assert limits.max_latency_p95_ms is None
+    assert limits.max_token_increase_pct is None
+
+
+def test_cost_gate_disabled_by_default_ignores_large_increase():
+    baseline = report()
+    current = report()
+    current["total_cost_usd"] = 100.0
+    result = compare_runs(baseline, current)
+    assert result.passed
+
+
+def test_cost_gate_enabled_fails_on_excess_increase():
+    baseline = report()
+    baseline["total_cost_usd"] = 0.01
+    current = report()
+    current["total_cost_usd"] = 0.02  # +100%
+    limits = GateThresholds(max_cost_increase_pct=50.0)
+    result = compare_runs(baseline, current, limits)
+    assert not result.passed
+    assert any("cost increased" in reason for reason in result.reasons)
+
+
+def test_cost_gate_enabled_passes_within_bound():
+    baseline = report()
+    baseline["total_cost_usd"] = 0.01
+    current = report()
+    current["total_cost_usd"] = 0.011  # +10%
+    limits = GateThresholds(max_cost_increase_pct=50.0)
+    result = compare_runs(baseline, current, limits)
+    assert result.passed
+
+
+def test_cost_gate_missing_data_fails_loudly_when_enabled():
+    baseline = report()
+    baseline["total_cost_usd"] = None
+    current = report()
+    limits = GateThresholds(max_cost_increase_pct=50.0)
+    result = compare_runs(baseline, current, limits)
+    assert not result.passed
+    assert any("total_cost_usd is missing" in reason for reason in result.reasons)
+
+
+def test_cost_gate_zero_baseline_any_positive_current_fails():
+    baseline = report()
+    baseline["total_cost_usd"] = 0.0
+    current = report()
+    current["total_cost_usd"] = 0.001
+    limits = GateThresholds(max_cost_increase_pct=50.0)
+    result = compare_runs(baseline, current, limits)
+    assert not result.passed
+    assert any("baseline had no cost" in reason for reason in result.reasons)
+
+
+def test_cost_gate_zero_baseline_zero_current_passes():
+    baseline = report()
+    baseline["total_cost_usd"] = 0.0
+    current = report()
+    current["total_cost_usd"] = 0.0
+    limits = GateThresholds(max_cost_increase_pct=50.0)
+    result = compare_runs(baseline, current, limits)
+    assert result.passed
+
+
+def test_latency_gate_disabled_by_default_ignores_high_latency():
+    baseline = report()
+    current = report()
+    current["latency_p95_ms"] = 99999
+    result = compare_runs(baseline, current)
+    assert result.passed
+
+
+def test_latency_gate_enabled_fails_over_ceiling():
+    limits = GateThresholds(max_latency_p95_ms=1000)
+    current = report()
+    current["latency_p95_ms"] = 1500
+    result = compare_runs(report(), current, limits)
+    assert not result.passed
+    assert any("p95 latency" in reason for reason in result.reasons)
+
+
+def test_latency_gate_enabled_passes_within_ceiling():
+    limits = GateThresholds(max_latency_p95_ms=5000)
+    result = compare_runs(report(), report(), limits)
+    assert result.passed
+
+
+def test_latency_gate_missing_data_fails_loudly_when_enabled():
+    current = report()
+    current["latency_p95_ms"] = None
+    limits = GateThresholds(max_latency_p95_ms=1000)
+    result = compare_runs(report(), current, limits)
+    assert not result.passed
+    assert any("latency_p95_ms is missing" in reason for reason in result.reasons)
+
+
+def test_token_gate_disabled_by_default_ignores_spike():
+    baseline = report()
+    baseline["total_tokens"] = 100
+    current = report()
+    current["total_tokens"] = 100000
+    result = compare_runs(baseline, current)
+    assert result.passed
+
+
+def test_token_gate_enabled_fails_on_spike():
+    baseline = report()
+    baseline["total_tokens"] = 1000
+    current = report()
+    current["total_tokens"] = 5000
+    limits = GateThresholds(max_token_increase_pct=100.0)
+    result = compare_runs(baseline, current, limits)
+    assert not result.passed
+    assert any("token usage increased" in reason for reason in result.reasons)
+
+
+def test_token_gate_enabled_passes_within_bound():
+    baseline = report()
+    baseline["total_tokens"] = 1000
+    current = report()
+    current["total_tokens"] = 1050
+    limits = GateThresholds(max_token_increase_pct=100.0)
+    result = compare_runs(baseline, current, limits)
+    assert result.passed
+
+
+def test_token_gate_missing_baseline_data_fails_loudly_when_enabled():
+    # A pre-Phase-5 baseline predates total_tokens tracking entirely, so the
+    # key is simply absent rather than explicitly null -- both must fail
+    # loudly once the gate is opted into, never silently pass.
+    baseline = report()
+    current = report()
+    current["total_tokens"] = 500
+    limits = GateThresholds(max_token_increase_pct=10.0)
+    result = compare_runs(baseline, current, limits)
+    assert not result.passed
+    assert any("total_tokens is missing" in reason for reason in result.reasons)
+
+
+def test_total_tokens_appears_as_metric_delta_when_present():
+    baseline = report()
+    baseline["total_tokens"] = 100
+    current = report()
+    current["total_tokens"] = 150
+    result = compare_runs(baseline, current)
+    token_metric = next(m for m in result.metrics if m.key == "total_tokens")
+    assert token_metric.baseline == 100
+    assert token_metric.current == 150
+    assert token_metric.delta == 50
+
+
+def test_new_safety_gates_do_not_affect_an_otherwise_healthy_run():
+    result = compare_runs(report(), report(correctness=0.96))
+    assert result.passed
+    assert result.reasons == []
