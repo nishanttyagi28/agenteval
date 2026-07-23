@@ -36,6 +36,10 @@ The static demo explains the workflow without executing an agent or making API c
 - [Calibrated LLM-as-judge](#calibrated-llm-as-judge)
 - [Regression suites from production failures](#regression-suites-from-production-failures)
 - [Cross-run statistical significance](#cross-run-statistical-significance)
+- [Local dashboard API](#local-dashboard-api)
+- [RBAC (schema and logic)](#rbac-schema-and-logic)
+- [Audit logs](#audit-logs)
+- [Deployment (Coming Soon)](#deployment-coming-soon)
 - [Golden case example](#golden-case-example)
 - [Dashboard evidence](#dashboard-evidence)
 - [Installation](#installation)
@@ -451,6 +455,92 @@ variation"*), not just the raw statistic.
   overconfident p-value or a misleadingly narrow interval.
 - "Not statistically significant" is not proof of "no real change" — it means the evidence doesn't
   clear the bar, which is a meaningfully different (and weaker) claim, especially on small suites.
+
+## Local dashboard API
+
+`agenteval serve --local` runs a small, read-only JSON API over data that already exists as run
+JSON files — no database, no new dependency. It's built on Python's standard-library
+`http.server` (`ThreadingHTTPServer` + a small path-dispatch handler), which is enough for the
+actual scope: a handful of GET endpoints, no templating, no request bodies.
+
+```bash
+agenteval serve --local --agent agentic_data_analyst --port 8765
+```
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/health` | `{"status": "ok"}` liveness check |
+| `GET /api/runs?agent=<name>` | Summaries of every primary run JSON for that agent |
+| `GET /api/trend?agent=<name>&limit=20` | The trend-history ledger (`core.history`) |
+| `GET /api/calibration-history?agent=<name>` | Every persisted `agenteval calibrate` result |
+
+`--local` is a required flag, not just a default — it's a standing reminder that **this server has
+no authentication and no TLS**, and must only be reachable on your own machine. `agenteval
+calibrate` now persists every run under `runs/<agent>/calibration/<timestamp>.json` (mirroring the
+existing flakiness-sidecar convention) specifically so the calibration-history endpoint has real
+data to serve.
+
+## RBAC (schema and logic)
+
+Three roles — `admin`, `contributor`, `viewer` — with a static role → permission mapping
+(`core/rbac.py`): `admin` can do everything; `contributor` can view and trigger runs and read the
+audit log but not change configuration; `viewer` is read-only. This is **pure logic, not an
+authentication system** — `has_permission(role, permission)` answers "can this role do X", never
+"who is this request actually from". No command in AgentEval enforces these permissions
+automatically today; wiring a real identity provider around this is explicitly deferred to the
+hosted deployment.
+
+Roles live in a separate, optional `rbac.yaml` (see `rbac.example.yaml`) rather than
+`agents.yaml`, since they're global and orthogonal to per-agent config:
+
+```yaml
+version: 1
+users:
+  alice: admin
+  bob: contributor
+  carol: viewer
+```
+
+## Audit logs
+
+An opt-in, structured audit trail — one JSON line per action (`timestamp`, `actor`, `action`,
+`details`, `outcome`) — written to a local file, no database or remote sink. Enable it per agent,
+the same `enabled: false`-by-default convention as Tier 5's alerting:
+
+```yaml
+agents:
+  my_agent:
+    audit:
+      enabled: true
+      log_path: logs/my_agent_audit.jsonl   # optional; defaults to runs/<agent>/audit.jsonl
+```
+
+`run`, `compare`, and `calibrate` each append one entry after completing when audit logging is
+enabled — an agent that never sets `audit` behaves exactly as before. Query the trail with:
+
+```bash
+agenteval audit-log --agent my_agent --since 2026-07-01
+```
+
+A logging failure is reported as a warning and never fails the command it's attached to, the same
+stance alerting takes toward a broken webhook.
+
+## Deployment (Coming Soon)
+
+**Not yet activated.** A dedicated server for hosting AgentEval's dashboard/API isn't provisioned
+yet — everything above (`agenteval serve --local`, RBAC, audit logs) is local-first and fully
+testable today, but none of it is exposed anywhere beyond your own machine. `docker-compose.yml`
+and `.env.example` are prep, not execution:
+
+```bash
+cp .env.example .env   # fill in only what a command you actually run needs
+docker compose up      # runs `agenteval serve --local` in the existing Tier-4 image, on localhost
+```
+
+Once the server is available, real hosting will need its own auth-aware deployment configuration
+(TLS termination, a real identity provider wired to `core.rbac`, secrets management) — not a
+straight `docker compose up` of the file in this repo. Track this section for updates; it will
+stop saying "Coming Soon" once that lands.
 
 ## Golden case example
 

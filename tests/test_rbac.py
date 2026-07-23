@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from agenteval.core.rbac import (
@@ -7,6 +9,9 @@ from agenteval.core.rbac import (
     has_permission,
     load_rbac_config,
 )
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+RBAC_EXAMPLE = REPO_ROOT / "rbac.example.yaml"
 
 # ── has_permission / ROLE_PERMISSIONS ───────────────────────────────────────
 
@@ -127,3 +132,8 @@ def test_load_rbac_config_invalid_yaml_raises_value_error(tmp_path):
 def test_load_rbac_config_missing_file_raises_oserror(tmp_path):
     with pytest.raises(OSError):
         load_rbac_config(tmp_path / "does_not_exist.yaml")
+
+
+def test_repo_root_rbac_example_loads_and_covers_every_role():
+    config = load_rbac_config(RBAC_EXAMPLE)
+    assert set(config.users.values()) == set(Role)

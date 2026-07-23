@@ -1,0 +1,12 @@
+# Example RBAC config (Tier 7, Phase 2) -- copy to rbac.yaml and edit the
+# usernames to activate. Loading this file is entirely optional: nothing in
+# AgentEval requires it to exist, and no command enforces these permissions
+# automatically today -- this is pure role/permission logic + schema, decoupled
+# from any real authentication provider. See core/rbac.py and the README's
+# RBAC section.
+
+version: 1
+users:
+  alice: admin
+  bob: contributor
+  carol: viewer
