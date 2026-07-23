@@ -74,3 +74,23 @@ def test_yaml_without_expected_trajectory_remains_backward_compatible(tmp_path):
 
     loaded = load_test_cases(path)
     assert loaded[0].expects.expected_trajectory == []
+
+
+def test_must_not_hallucinate_strict_bool():
+    # Valid booleans should pass
+    expects_true = Expects.from_dict({"must_not_hallucinate": True})
+    assert expects_true.must_not_hallucinate is True
+
+    expects_false = Expects.from_dict({"must_not_hallucinate": False})
+    assert expects_false.must_not_hallucinate is False
+
+    # String representations like "false" or "true" must raise TypeError
+    with pytest.raises(TypeError, match="must_not_hallucinate must be a boolean"):
+        Expects.from_dict({"must_not_hallucinate": "false"})
+
+    with pytest.raises(TypeError, match="must_not_hallucinate must be a boolean"):
+        Expects.from_dict({"must_not_hallucinate": "true"})
+
+    # Numeric values like 0 or 1 must also raise TypeError
+    with pytest.raises(TypeError, match="must_not_hallucinate must be a boolean"):
+        Expects.from_dict({"must_not_hallucinate": 1})
