@@ -47,6 +47,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Installation](#installation)
 - [Getting started with `agenteval init`](#getting-started-with-agenteval-init)
 - [Quickstart with Agentic Data Analyst](#quickstart-with-agentic-data-analyst)
+- [CLI reference](#cli-reference)
 - [Supported frameworks](#supported-frameworks)
 - [CrewAI adapter](#crewai-adapter)
 - [Microsoft AutoGen adapter](#microsoft-autogen-adapter)
@@ -80,6 +81,15 @@ AgentEval adds the missing evaluation layer:
 - a Streamlit dashboard for summary, regression, and case-level inspection
 - GitHub Actions automation with a six-case smoke suite and optional 21-case full suite
 - reviewable adversarial variants that remain outside blocking CI until approved
+- optional RAG evaluation (context relevance, faithfulness, citation correctness) for
+  retrieval-augmented agents
+- a calibrated LLM-as-judge (Cohen's kappa against human labels) with opt-in
+  statistical-significance gating (McNemar's test, bootstrap confidence intervals)
+- a local dashboard API, RBAC, and structured audit logs for team deployments
+- a plugin system for third-party correctness evaluators, plus a bundled template catalog for
+  common agent types (RAG, coding, customer support)
+- optional multi-turn conversation scoring, tool-use efficiency scoring, and deterministic,
+  LLM-free red-team case generation
 
 | Capability | AgentEval | Manual spot checks | Custom eval scripts |
 |---|:---:|:---:|:---:|
@@ -91,6 +101,9 @@ AgentEval adds the missing evaluation layer:
 | Baseline regression gate | ✅ | ❌ | ⚠️ You maintain it |
 | JSON and Markdown reports | ✅ | ❌ | ⚠️ You build it |
 | Reusable GitHub Action | ✅ | ❌ | ⚠️ You maintain it |
+| Extensible correctness evaluators (plugins) | ✅ | ❌ | ⚠️ You build it |
+| RAG-specific metrics | ✅ | Rarely captured | ⚠️ You build it |
+| Multi-turn conversation scoring | ✅ | Impractical | ⚠️ You build it |
 
 ## Evaluation flow
 
@@ -135,7 +148,8 @@ flowchart LR
     Contract --> Response["Normalized AgentResponse"]
     Cases["YAML golden cases"] --> Runner["Suite runner"]
     Response --> Runner
-    Runner --> Scoring["Correctness, tools, trajectory, flakiness, cost, latency"]
+    Plugins["Third-party evaluator plugins"] --> Scoring
+    Runner --> Scoring["Correctness, tools, trajectory & RAG evidence, flakiness, cost/latency"]
     Scoring --> Reports["JSON and Markdown reports"]
     Reports --> Gate["Baseline regression gate"]
     Gate --> CI["Pull request status"]
@@ -761,6 +775,30 @@ python -m streamlit run agenteval/dashboard/app.py
 
 The repositories may live anywhere when `AGENTIC_ANALYST_PATH` points to the Agentic Data Analyst checkout. Keeping them as siblings also supports the default local discovery path.
 
+## CLI reference
+
+Every command supports `--help` for its full flag list. The table below is a quick lookup; see the
+full [CLI reference](docs-site/cli-reference.html) for command-by-command usage examples, or jump
+to that command's own section in this README (linked below) for context and YAML examples.
+
+| Command | Purpose |
+|---|---|
+| `agenteval init` | Scaffold `agents.yaml`, a sample golden suite, and a CI workflow for a new project |
+| `agenteval run` | Run the golden suite against a registered agent and write a scored report |
+| `agenteval compare` | Compare a run against a baseline and apply the [regression gate](#budget-and-latency-gates) |
+| `agenteval report` | Generate a self-contained [HTML report](#html-reports-and-regression-trend-tracking) |
+| `agenteval generate` | Generate LLM-based [adversarial variants](#adversarial-robustness) of existing cases |
+| `agenteval generate-adversarial` | Generate deterministic, LLM-free [red-team probes](#adversarial-robustness) |
+| `agenteval import` | Convert an external CSV dataset into [golden test cases](#dataset-import-and-case-generation) |
+| `agenteval generate-cases` | Propose candidate cases from [production logs or regressions](#regression-suites-from-production-failures) |
+| `agenteval compare-models` | Run the same suite against multiple registered agents ([model comparison](#modelprovider-comparison)) |
+| `agenteval trace` | Replay a case's step-by-step execution [trace](#trace-viewer) |
+| `agenteval calibrate` | Score [LLM-judge/human agreement](#calibrated-llm-as-judge) against a labeled calibration set |
+| `agenteval audit-log` | Query the opt-in structured [audit log](#audit-logs) for one agent |
+| `agenteval serve` | Run a local, read-only [dashboard-data API](#local-dashboard-api) |
+| `agenteval plugins list` / `inspect` / `validate` | Discover and validate [evaluator plugins](#evaluator-plugins-and-templates) |
+| `agenteval templates list` / `show` / `install` | Browse and install the [bundled template catalog](#evaluator-plugins-and-templates) |
+
 ## Supported frameworks
 
 All framework integrations are optional at import time, so AgentEval's core does not require every agent SDK.
@@ -1154,7 +1192,9 @@ npm test        # build + static structural/accessibility/link validation
 npm run serve   # http://127.0.0.1:4174
 ```
 
-See [`docs-site/README.md`](docs-site/README.md) for details.
+Pages: [Getting Started](docs-site/index.html), [CLI Reference](docs-site/cli-reference.html),
+[Adapter Guide](docs-site/adapter-guide.html), [Comparison](docs-site/comparison.html). See
+[`docs-site/README.md`](docs-site/README.md) for build/serve details.
 
 ## Evaluator plugins and templates
 
