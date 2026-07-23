@@ -524,7 +524,11 @@ def _cmd_trace(args: argparse.Namespace) -> int:
 def _cmd_calibrate(args: argparse.Namespace) -> int:
     import functools
 
-    from agenteval.core.calibration import load_calibration_set, run_calibration
+    from agenteval.core.calibration import (
+        load_calibration_set,
+        run_calibration,
+        save_calibration_result,
+    )
     from agenteval.core.config import AgentDependencyNotFound
     from agenteval.core.judge import judge_correctness
     from agenteval.core.registry import load_agent_registry, resolve_agent_repository
@@ -537,6 +541,12 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         cases = load_calibration_set(args.golden_set)
         judge_fn = functools.partial(judge_correctness, agent_repo=agent_repo)
         result = run_calibration(cases, judge_fn, kappa_threshold=args.kappa_threshold)
+        saved_path = save_calibration_result(
+            result,
+            config.name,
+            _history_root(args.runs_dir, registry_path),
+            judge_name=config.name,
+        )
     except (OSError, ValueError, AgentDependencyNotFound) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -545,6 +555,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
     print(f"n_cases={result.n_cases}")
     print(f"agreement_rate={result.agreement_rate:.3f}")
     print(f"cohens_kappa={result.kappa:.3f} ({result.interpretation})")
+    print(f"saved={saved_path}")
     if result.mismatches:
         print(f"mismatches={','.join(result.mismatches)}")
     if result.below_threshold:
@@ -555,6 +566,65 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     return 1 if result.below_threshold else 0
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    from agenteval.core.registry import load_agent_registry
+    from agenteval.core.server import DEFAULT_PORT, AgentPaths, run_server
+
+    if not args.local:
+        print(
+            "error: --local is required -- this server has no authentication or TLS and "
+            "must only be run for local use (see README's Deployment section)",
+            file=sys.stderr,
+        )
+        return 2
+
+    registry_path = _registry_path(args.registry)
+    try:
+        registry = load_agent_registry(registry_path)
+        if args.agent:
+            requested = list(dict.fromkeys(args.agent))
+            unknown = [name for name in requested if name not in registry]
+            if unknown:
+                available = ", ".join(registry) or "(none)"
+                raise ValueError(
+                    f"Unknown agent(s): {', '.join(unknown)}. Registered agents: {available}"
+                )
+            configs = [registry[name] for name in requested]
+        else:
+            configs = list(registry.values())
+
+        sidecar_root = _history_root(args.runs_dir, registry_path)
+        agent_paths = {
+            config.name: AgentPaths(
+                runs_dir=_configured_path(registry_path, config.runs_dir),
+                history_path=_history_path_for(config, sidecar_root),
+                calibration_dir=sidecar_root / config.name / "calibration",
+            )
+            for config in configs
+        }
+        port = args.port if args.port is not None else DEFAULT_PORT
+        server = run_server(agent_paths, host=args.host, port=port)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    bound_port = server.server_address[1]
+    print(f"agents={','.join(agent_paths)}")
+    print(f"serving on http://{args.host}:{bound_port}")
+    print(
+        "endpoints: /api/health  /api/runs?agent=<name>  /api/trend?agent=<name>  "
+        "/api/calibration-history?agent=<name>"
+    )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+        server.server_close()
+    return 0
 
 
 def _cmd_generate(args: argparse.Namespace) -> int:
@@ -1012,7 +1082,32 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_KAPPA_THRESHOLD,
         help=f"Warn when Cohen's kappa falls below this (default: {DEFAULT_KAPPA_THRESHOLD})",
     )
+    calibrate_p.add_argument(
+        "--runs-dir",
+        default=None,
+        help="Sidecar root the calibration result is saved under (default: <registry-dir>/runs)",
+    )
     calibrate_p.set_defaults(func=_cmd_calibrate)
+
+    serve_p = sub.add_parser(
+        "serve", help="Run a local, read-only dashboard-data API (no auth, localhost only)"
+    )
+    serve_p.add_argument(
+        "--local",
+        action="store_true",
+        help="Required flag acknowledging this is a local-only server (no TLS/auth)",
+    )
+    serve_p.add_argument(
+        "--agent",
+        action="append",
+        default=None,
+        help="Registered agent(s) to serve (default: every enabled agent)",
+    )
+    serve_p.add_argument("--registry", default=None, help=argparse.SUPPRESS)
+    serve_p.add_argument("--runs-dir", default=None, help="Sidecar root override (default: <registry-dir>/runs)")
+    serve_p.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    serve_p.add_argument("--port", type=int, default=None, help="Bind port (default: 8765)")
+    serve_p.set_defaults(func=_cmd_serve)
 
     return parser
 
