@@ -12,7 +12,9 @@ from agenteval.core.registry import (
 )
 
 
-def registry_yaml(*, adapter="agenteval.adapters.scheme_saathi:SchemeSaathiAdapter", **overrides):
+def registry_yaml(
+    *, adapter="agenteval.adapters.scheme_saathi:SchemeSaathiAdapter", extra_gates="", **overrides
+):
     values = {
         "name": "example_agent",
         "env_var": "EXAMPLE_AGENT_PATH",
@@ -24,6 +26,7 @@ def registry_yaml(*, adapter="agenteval.adapters.scheme_saathi:SchemeSaathiAdapt
         "min_tool_accuracy": "0.90",
         **overrides,
     }
+    extra = "".join(f"      {line}\n" for line in extra_gates.splitlines())
     return f"""\
 version: 1
 agents:
@@ -43,7 +46,7 @@ agents:
       max_correctness_drop: {values['max_correctness_drop']}
       max_hallucination_rate: {values['max_hallucination_rate']}
       min_tool_accuracy: {values['min_tool_accuracy']}
-"""
+{extra}"""
 
 
 def write_registry(tmp_path: Path, content: str) -> Path:
@@ -124,3 +127,43 @@ def test_missing_repository_raises_typed_actionable_error(tmp_path, monkeypatch)
     monkeypatch.delenv("EXAMPLE_AGENT_PATH", raising=False)
     with pytest.raises(AgentDependencyNotFound, match="EXAMPLE_AGENT_PATH"):
         resolve_agent_repository(config, registry_path=registry_path)
+
+
+# --- Phase 5: opt-in budget/latency/token safety gate keys --------------------
+
+
+def test_safety_gate_keys_default_to_none_when_absent(tmp_path):
+    config = load_agent_registry(write_registry(tmp_path, registry_yaml()))["example_agent"]
+    assert config.gates.max_cost_increase_pct is None
+    assert config.gates.max_latency_p95_ms is None
+    assert config.gates.max_token_increase_pct is None
+
+
+def test_safety_gate_keys_parse_when_present(tmp_path):
+    content = registry_yaml(
+        extra_gates=(
+            "max_cost_increase_pct: 20\n"
+            "max_latency_p95_ms: 2500\n"
+            "max_token_increase_pct: 50\n"
+        )
+    )
+    config = load_agent_registry(write_registry(tmp_path, content))["example_agent"]
+    assert config.gates.max_cost_increase_pct == 20.0
+    assert config.gates.max_latency_p95_ms == 2500.0
+    assert config.gates.max_token_increase_pct == 50.0
+
+
+def test_safety_gate_keys_accept_explicit_null(tmp_path):
+    content = registry_yaml(extra_gates="max_cost_increase_pct: null\n")
+    config = load_agent_registry(write_registry(tmp_path, content))["example_agent"]
+    assert config.gates.max_cost_increase_pct is None
+
+
+@pytest.mark.parametrize(
+    "key", ["max_cost_increase_pct", "max_latency_p95_ms", "max_token_increase_pct"]
+)
+@pytest.mark.parametrize("bad_value", ["0", "-1", "not-a-number"])
+def test_safety_gate_keys_reject_non_positive_or_non_numeric(tmp_path, key, bad_value):
+    content = registry_yaml(extra_gates=f"{key}: {bad_value}\n")
+    with pytest.raises(ValueError, match="must be a positive number or null"):
+        load_agent_registry(write_registry(tmp_path, content))

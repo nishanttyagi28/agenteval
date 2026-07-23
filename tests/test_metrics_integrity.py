@@ -55,6 +55,77 @@ def test_scored_case_gets_explicit_status():
     assert failed.status == "failed"
 
 
+def test_total_tokens_sums_prompt_and_completion_across_cases():
+    report = RunReport(
+        case_results=[
+            CaseResult(
+                case_id="a",
+                prompt="",
+                status="passed",
+                correctness_pass=True,
+                prompt_tokens=100,
+                completion_tokens=20,
+            ),
+            CaseResult(
+                case_id="b",
+                prompt="",
+                status="passed",
+                correctness_pass=True,
+                prompt_tokens=50,
+                completion_tokens=10,
+            ),
+        ]
+    )
+    aggregated = aggregate_report(report)
+    assert aggregated.total_tokens == 180
+
+
+def test_total_tokens_is_none_when_no_case_has_token_data():
+    report = RunReport(
+        case_results=[
+            CaseResult(case_id="a", prompt="", status="passed", correctness_pass=True),
+        ]
+    )
+    aggregated = aggregate_report(report)
+    assert aggregated.total_tokens is None
+
+
+def test_total_tokens_treats_missing_completion_as_zero_not_excluded():
+    report = RunReport(
+        case_results=[
+            CaseResult(
+                case_id="a",
+                prompt="",
+                status="passed",
+                correctness_pass=True,
+                prompt_tokens=42,
+                completion_tokens=None,
+            ),
+        ]
+    )
+    aggregated = aggregate_report(report)
+    assert aggregated.total_tokens == 42
+
+
+def test_total_tokens_is_none_when_no_eligible_cases():
+    report = RunReport(
+        case_results=[
+            CaseResult(
+                case_id="a",
+                prompt="",
+                status="agent_error",
+                correctness_pass=None,
+                prompt_tokens=10,
+                completion_tokens=5,
+            ),
+        ]
+    )
+    aggregated = aggregate_report(report)
+    # Mirrors the existing "no eligible cases" early-return, which force-zeros
+    # every other quality metric rather than reporting stale token data.
+    assert aggregated.total_tokens is None
+
+
 def test_evaluator_errors_are_excluded_from_denominator():
     report = RunReport(
         case_results=[

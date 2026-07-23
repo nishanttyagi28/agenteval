@@ -75,6 +75,19 @@ def _rate(value: Any, label: str) -> float:
     return result
 
 
+def _positive_or_none(value: Any, label: str) -> float | None:
+    """Parse an opt-in safety-gate threshold: absent/null disables the check."""
+    if value is None:
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a positive number or null") from exc
+    if result <= 0:
+        raise ValueError(f"{label} must be a positive number or null")
+    return result
+
+
 def load_adapter_class(import_path: str) -> type[AgentAdapter]:
     """Import an adapter class and verify the AgentAdapter contract."""
     match = _ADAPTER_RE.fullmatch(import_path or "")
@@ -142,6 +155,18 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
         ),
         fail_on_evaluator_error=bool(gates_raw.get("fail_on_evaluator_error", True)),
         fail_on_agent_error=bool(gates_raw.get("fail_on_agent_error", True)),
+        max_cost_increase_pct=_positive_or_none(
+            gates_raw.get("max_cost_increase_pct"),
+            f"agents.{name}.gates.max_cost_increase_pct",
+        ),
+        max_latency_p95_ms=_positive_or_none(
+            gates_raw.get("max_latency_p95_ms"),
+            f"agents.{name}.gates.max_latency_p95_ms",
+        ),
+        max_token_increase_pct=_positive_or_none(
+            gates_raw.get("max_token_increase_pct"),
+            f"agents.{name}.gates.max_token_increase_pct",
+        ),
     )
     options = data.get("adapter_options") or {}
     if not isinstance(options, dict):

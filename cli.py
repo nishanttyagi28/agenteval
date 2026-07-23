@@ -83,6 +83,9 @@ def _gate_thresholds(config: AgentConfig):
         min_tool_accuracy=config.gates.min_tool_accuracy,
         fail_on_evaluator_error=config.gates.fail_on_evaluator_error,
         fail_on_agent_error=config.gates.fail_on_agent_error,
+        max_cost_increase_pct=config.gates.max_cost_increase_pct,
+        max_latency_p95_ms=config.gates.max_latency_p95_ms,
+        max_token_increase_pct=config.gates.max_token_increase_pct,
     )
 
 
@@ -386,6 +389,21 @@ def _cmd_compare(args: argparse.Namespace) -> int:
             fail_on_agent_error=(
                 False if args.allow_agent_errors else config.gates.fail_on_agent_error
             ),
+            max_cost_increase_pct=(
+                args.max_cost_increase_pct
+                if args.max_cost_increase_pct is not None
+                else config.gates.max_cost_increase_pct
+            ),
+            max_latency_p95_ms=(
+                args.max_latency_p95_ms
+                if args.max_latency_p95_ms is not None
+                else config.gates.max_latency_p95_ms
+            ),
+            max_token_increase_pct=(
+                args.max_token_increase_pct
+                if args.max_token_increase_pct is not None
+                else config.gates.max_token_increase_pct
+            ),
         )
         result = compare_runs(baseline, current, thresholds)
         write_outputs(
@@ -493,6 +511,87 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_init(args: argparse.Namespace) -> int:
+    from agenteval.core.init import InitError, next_steps_message, run_first_evaluation, scaffold_project
+
+    target_dir = Path(args.path).resolve()
+    framework = None if args.framework == "none" else args.framework
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        plan = scaffold_project(
+            target_dir,
+            args.agent_name,
+            framework=framework,
+            force=args.force,
+        )
+    except (InitError, OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if not args.quiet:
+        print(f"agent_name={plan.agent_name}")
+        print(f"framework={plan.framework or 'none (unsupported/not detected)'}")
+        print(f"agents_yaml={plan.agents_yaml_path}")
+        print(f"golden_suite={plan.golden_suite_path}")
+        print(f"workflow={plan.workflow_path}")
+
+    if args.run:
+        run_first_evaluation(target_dir, plan.agent_name, quiet=args.quiet)
+
+    if not args.quiet:
+        print(next_steps_message(plan))
+    return 0
+
+
+def _cmd_compare_models(args: argparse.Namespace) -> int:
+    from agenteval.core.model_compare import (
+        format_comparison_table,
+        run_model_comparison,
+        write_outputs,
+    )
+    from agenteval.core.registry import load_agent_registry
+
+    registry_path = _registry_path(args.registry)
+    try:
+        registry = load_agent_registry(registry_path)
+        requested = list(dict.fromkeys(args.agent or []))
+        if len(requested) < 2:
+            raise ValueError("compare-models requires at least 2 distinct --agent values")
+        unknown = [name for name in requested if name not in registry]
+        if unknown:
+            available = ", ".join(registry) or "(none)"
+            raise ValueError(
+                f"Unknown agent(s): {', '.join(unknown)}. Registered agents: {available}"
+            )
+        configs = [registry[name] for name in requested]
+
+        if args.cases:
+            cases_path = Path(args.cases)
+        else:
+            cases_path = _configured_path(registry_path, configs[0].golden_suite)
+            print(
+                f"note: --cases not given; using {configs[0].name}'s configured suite "
+                f"({cases_path}) for every agent"
+            )
+
+        rows = run_model_comparison(
+            configs,
+            cases_path=cases_path,
+            registry_path=registry_path,
+            runs_dir_override=args.runs_dir,
+            use_llm_judge=not args.no_llm_judge,
+            quiet=args.quiet,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    table = format_comparison_table(rows)
+    print(table, end="")
+    write_outputs(rows, json_path=args.json_out, markdown_path=args.markdown_out)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agenteval", description="AI agent evaluation harness")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -552,6 +651,24 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_p.add_argument("--max-hallucination-rate", type=float, default=None)
     cmp_p.add_argument("--min-tool-accuracy", type=float, default=None)
     cmp_p.add_argument(
+        "--max-cost-increase-pct",
+        type=float,
+        default=None,
+        help="Fail if total cost increases more than this percent over baseline (opt-in)",
+    )
+    cmp_p.add_argument(
+        "--max-latency-p95-ms",
+        type=float,
+        default=None,
+        help="Fail if p95 latency exceeds this many milliseconds (opt-in)",
+    )
+    cmp_p.add_argument(
+        "--max-token-increase-pct",
+        type=float,
+        default=None,
+        help="Fail if total token usage increases more than this percent over baseline (opt-in)",
+    )
+    cmp_p.add_argument(
         "--allow-evaluator-errors",
         action="store_true",
         help="Report evaluator errors without failing the gate",
@@ -605,6 +722,46 @@ def build_parser() -> argparse.ArgumentParser:
     gen_p.add_argument("--case-id", action="append", default=None, help="Generate for one case")
     gen_p.add_argument("--overwrite", action="store_true", help="Replace an existing output")
     gen_p.set_defaults(func=_cmd_generate)
+
+    init_p = sub.add_parser(
+        "init", help="Scaffold agents.yaml, a sample golden suite, and a CI workflow"
+    )
+    init_p.add_argument("--path", default=".", help="Target project directory (default: cwd)")
+    init_p.add_argument("--agent-name", default="my_agent", help="Registry name for the new agent")
+    init_p.add_argument(
+        "--framework",
+        default="auto",
+        choices=["auto", "crewai", "langgraph", "autogen", "openai_agents", "none"],
+        help="Framework to scaffold for (default: auto-detect)",
+    )
+    init_p.add_argument("--force", action="store_true", help="Overwrite existing scaffold files")
+    init_p.add_argument(
+        "--run", action="store_true", help="Attempt a first `agenteval run` after scaffolding"
+    )
+    init_p.add_argument("--quiet", action="store_true", help="Less console output")
+    init_p.set_defaults(func=_cmd_init)
+
+    cmp_models_p = sub.add_parser(
+        "compare-models",
+        help="Run the same golden suite against multiple registered agents",
+    )
+    cmp_models_p.add_argument(
+        "--agent",
+        action="append",
+        default=None,
+        required=True,
+        help="Registered agent name; pass at least twice",
+    )
+    cmp_models_p.add_argument("--registry", default=None, help=argparse.SUPPRESS)
+    cmp_models_p.add_argument(
+        "--cases", default=None, help="Golden YAML shared by every agent (default: first agent's suite)"
+    )
+    cmp_models_p.add_argument("--runs-dir", default=None, help="Override every agent's configured runs dir")
+    cmp_models_p.add_argument("--no-llm-judge", action="store_true", help="Skip LLM judged cases")
+    cmp_models_p.add_argument("--quiet", action="store_true", help="Less progress output")
+    cmp_models_p.add_argument("--json-out", default=None, help="Write machine-readable comparison")
+    cmp_models_p.add_argument("--markdown-out", default=None, help="Write Markdown comparison table")
+    cmp_models_p.set_defaults(func=_cmd_compare_models)
 
     return parser
 

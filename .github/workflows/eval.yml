@@ -217,6 +217,23 @@ jobs:
           set -e
           echo "gate_exit=$gate_exit" >> "$GITHUB_OUTPUT"
 
+      - name: Generate HTML report
+        id: html_report
+        if: always() && steps.preflight.outputs.has_secret == 'true' && steps.dependency.outputs.available == 'true'
+        shell: bash
+        run: |
+          artifact_dir="artifacts/${{ matrix.agent }}"
+          current=$(find "$artifact_dir/current" -maxdepth 1 -name '*.json' -type f | head -n 1)
+          if [ -z "$current" ] || [ ! -f "$artifact_dir/baseline.json" ]; then
+            echo "::warning::Skipping HTML report generation (missing current run or baseline)."
+            exit 0
+          fi
+          python -m agenteval report \
+            --agent "${{ matrix.agent }}" \
+            --run "$current" \
+            --baseline "$artifact_dir/baseline.json" \
+            --output "$artifact_dir/report.html"
+
       - name: Publish job summary
         if: always()
         run: |
@@ -250,7 +267,10 @@ jobs:
             const fs = require('fs');
             const marker = '<!-- agenteval-regression-report:${{ matrix.agent }} -->';
             const report = fs.readFileSync(`artifacts/${{ matrix.agent }}/comparison.md`, 'utf8');
-            const body = `${marker}\n${report}`;
+            const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+            const artifactName = `agenteval-${{ matrix.agent }}-${{ github.sha }}`;
+            const reportLink = `**Full HTML report:** download the \`${artifactName}\` artifact from [this workflow run](${runUrl}).`;
+            const body = `${marker}\n${report}\n${reportLink}\n`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.paginate(github.rest.issues.listComments, {
