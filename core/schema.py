@@ -63,6 +63,21 @@ class AlertConfig:
 
 
 @dataclass(frozen=True)
+class AuditConfig:
+    """Optional structured audit logging for run/compare/calibrate (§Tier 7).
+
+    Disabled by default (``enabled=False``); a config that never sets this
+    behaves exactly as before this field existed. ``log_path`` is relative
+    to the registry file's directory when given; omitting it (the default)
+    falls back to the sidecar-root convention (``runs/<agent>/audit.jsonl``),
+    the same one flakiness/history/calibration already use.
+    """
+
+    enabled: bool = False
+    log_path: str | None = None
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     """Validated configuration for one pluggable agent."""
 
@@ -78,6 +93,7 @@ class AgentConfig:
     gates: GateConfig = field(default_factory=GateConfig)
     smoke_case_ids: tuple[str, ...] = ()
     alerting: AlertConfig = field(default_factory=AlertConfig)
+    audit: AuditConfig = field(default_factory=AuditConfig)
 
 
 class CorrectnessType(str, Enum):

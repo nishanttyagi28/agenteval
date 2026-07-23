@@ -12,7 +12,7 @@ import yaml
 
 from agenteval.adapters.base import AgentAdapter
 from agenteval.core.config import AgentDependencyNotFound
-from agenteval.core.schema import AgentConfig, AlertConfig, GateConfig, RepositoryConfig
+from agenteval.core.schema import AgentConfig, AlertConfig, AuditConfig, GateConfig, RepositoryConfig
 
 REGISTRY_VERSION = 1
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "agents.yaml"
@@ -195,6 +195,18 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
         kind=alert_kind,
     )
 
+    audit_raw = _mapping(data.get("audit") or {}, f"agents.{name}.audit")
+    audit_log_path_raw = audit_raw.get("log_path")
+    audit_log_path = (
+        str(_safe_artifact_path(audit_log_path_raw, f"agents.{name}.audit.log_path"))
+        if audit_log_path_raw is not None
+        else None
+    )
+    audit = AuditConfig(
+        enabled=bool(audit_raw.get("enabled", False)),
+        log_path=audit_log_path,
+    )
+
     options = data.get("adapter_options") or {}
     if not isinstance(options, dict):
         raise ValueError(f"agents.{name}.adapter_options must be a mapping")
@@ -223,6 +235,7 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
         gates=gates,
         smoke_case_ids=tuple(smoke_raw),
         alerting=alerting,
+        audit=audit,
     )
 
 
