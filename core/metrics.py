@@ -449,9 +449,34 @@ def score_case(
     )
 
 
+def _rag_averages(scored: list[CaseResult]) -> dict[str, float | None]:
+    """Mean of each RAG sub-metric across cases that produced a RAG evaluation.
+
+    Applicability is per-case (``case.rag is not None``) and independent of
+    correctness eligibility — an agent_error case can still carry retrieval
+    evidence — and per-metric (some cases may have e.g. citation_f1 but not
+    retrieval_f1), mirroring ``total_tokens``'s "None means nothing
+    qualified" convention for each of the five averages individually.
+    """
+    rag_cases = [case.rag for case in scored if case.rag is not None]
+
+    def _average(attr: str) -> float | None:
+        values = [value for case in rag_cases if (value := getattr(case, attr)) is not None]
+        return sum(values) / len(values) if values else None
+
+    return {
+        "context_relevance_avg": _average("context_relevance"),
+        "faithfulness_avg": _average("faithfulness"),
+        "unsupported_claim_rate_avg": _average("unsupported_claim_rate"),
+        "citation_f1_avg": _average("citation_f1"),
+        "retrieval_f1_avg": _average("retrieval_f1"),
+    }
+
+
 def aggregate_report(report: RunReport) -> RunReport:
     """Compute suite-level aggregates from already-scored CaseResults."""
     scored = list(report.case_results)
+    rag_averages = _rag_averages(scored)
     eligible = [
         case
         for case in scored
@@ -473,6 +498,7 @@ def aggregate_report(report: RunReport) -> RunReport:
             evaluator_error_count=sum(1 for c in scored if c.status == "evaluator_error"),
             agent_error_count=sum(1 for c in scored if c.status == "agent_error"),
             break_rate=None,
+            **rag_averages,
         )
 
     correctness_rate = sum(1 for c in eligible if c.correctness_pass is True) / n
@@ -515,6 +541,7 @@ def aggregate_report(report: RunReport) -> RunReport:
         evaluator_error_count=evaluator_errors,
         agent_error_count=agent_errors,
         break_rate=break_rate,
+        **rag_averages,
     )
 
 

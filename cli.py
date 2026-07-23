@@ -511,6 +511,69 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_import(args: argparse.Namespace) -> int:
+    from agenteval.core.dataset_import import (
+        DatasetImportError,
+        emit_mapping_template,
+        import_csv,
+        load_mapping,
+        write_golden_yaml,
+    )
+
+    try:
+        if args.emit_mapping_template:
+            template_path = emit_mapping_template(
+                Path(args.emit_mapping_template), force=args.overwrite
+            )
+            print(f"mapping_template={template_path}")
+            return 0
+        if not args.csv_path:
+            raise DatasetImportError(
+                "csv_path is required unless --emit-mapping-template is used"
+            )
+        if not args.mapping:
+            raise DatasetImportError("--mapping is required")
+        if not args.output:
+            raise DatasetImportError("--output is required")
+        mapping = load_mapping(args.mapping)
+        cases = import_csv(args.csv_path, mapping)
+        path = write_golden_yaml(cases, args.output, force=args.overwrite)
+    except (DatasetImportError, OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"imported={len(cases)}")
+    print(f"output={path}")
+    return 0
+
+
+def _cmd_generate_cases(args: argparse.Namespace) -> int:
+    from agenteval.core.generator import generate_cases_from_logs, write_candidate_yaml
+
+    output = (
+        Path(args.output)
+        if args.output
+        else Path(__file__).resolve().parent / "tests" / "adversarial" / "candidates_from_logs.yaml"
+    )
+    if output.exists() and not args.overwrite:
+        print(f"error: output exists: {output} (use --overwrite)", file=sys.stderr)
+        return 2
+    try:
+        cases = generate_cases_from_logs(
+            args.logs,
+            log_format=args.log_format,
+            correctness_type=args.correctness_type,
+            limit=args.limit,
+        )
+        path = write_candidate_yaml(cases, output)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"proposed={len(cases)}")
+    print(f"candidates={path}")
+    print("review_status=candidate (not included in the CI gate)")
+    return 0
+
+
 def _cmd_init(args: argparse.Namespace) -> int:
     from agenteval.core.init import InitError, next_steps_message, run_first_evaluation, scaffold_project
 
@@ -722,6 +785,45 @@ def build_parser() -> argparse.ArgumentParser:
     gen_p.add_argument("--case-id", action="append", default=None, help="Generate for one case")
     gen_p.add_argument("--overwrite", action="store_true", help="Replace an existing output")
     gen_p.set_defaults(func=_cmd_generate)
+
+    import_p = sub.add_parser(
+        "import", help="Convert an external CSV dataset into golden test cases"
+    )
+    import_p.add_argument("csv_path", nargs="?", default=None, help="Path to the source CSV file")
+    import_p.add_argument("--mapping", default=None, help="Path to the column-mapping YAML config")
+    import_p.add_argument("--output", default=None, help="Golden YAML output path")
+    import_p.add_argument("--overwrite", action="store_true", help="Replace an existing output")
+    import_p.add_argument(
+        "--emit-mapping-template",
+        default=None,
+        metavar="PATH",
+        help="Write a starter mapping config to PATH and exit (no CSV needed)",
+    )
+    import_p.set_defaults(func=_cmd_import)
+
+    gen_cases_p = sub.add_parser(
+        "generate-cases", help="Propose candidate golden cases from production run logs"
+    )
+    gen_cases_p.add_argument(
+        "--logs", required=True, help="Path to a run-report JSON or JSONL sample log file"
+    )
+    gen_cases_p.add_argument(
+        "--format",
+        dest="log_format",
+        default="run-report",
+        choices=["run-report", "jsonl"],
+        help="Shape of --logs (default: run-report)",
+    )
+    gen_cases_p.add_argument("--output", default=None, help="Candidate YAML output")
+    gen_cases_p.add_argument(
+        "--correctness-type",
+        default="exact",
+        choices=["exact", "numeric", "contains", "llm_judge"],
+        help="Correctness type applied to every proposed case (default: exact)",
+    )
+    gen_cases_p.add_argument("--limit", type=int, default=None, help="Cap the number of proposals")
+    gen_cases_p.add_argument("--overwrite", action="store_true", help="Replace an existing output")
+    gen_cases_p.set_defaults(func=_cmd_generate_cases)
 
     init_p = sub.add_parser(
         "init", help="Scaffold agents.yaml, a sample golden suite, and a CI workflow"

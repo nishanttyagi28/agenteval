@@ -7,6 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
 
+from agenteval.core.rag_metrics import RagEvaluation
 from agenteval.core.trajectory import TrajectoryEvaluation
 
 
@@ -74,6 +75,28 @@ class EvaluationStatus(str, Enum):
     skipped = "skipped"
 
 
+def _parse_string_list(data: dict[str, Any], key: str) -> list[str]:
+    """Parse an optional list-of-non-blank-strings golden-case field.
+
+    Shared by ``expected_trajectory`` and the RAG ground-truth fields below
+    since all four have identical shape and validation rules.
+    """
+    raw = data.get(key)
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError(f"{key} must be a list")
+    values: list[str] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, str):
+            raise ValueError(f"{key}[{index}] must be a string")
+        normalized = item.strip()
+        if not normalized:
+            raise ValueError(f"{key}[{index}] must not be blank")
+        values.append(normalized)
+    return values
+
+
 @dataclass
 class Expects:
     """Expectations for a single golden (or adversarial) test case."""
@@ -84,36 +107,33 @@ class Expects:
     ground_truth: Any = None
     numeric_tolerance: float = 0.01
     expected_trajectory: list[str] = field(default_factory=list)
+    # RAG-specific, optional ground truth (§Phase 2). ``relevant_context_ids``
+    # grades retrieval precision/recall against a case's *actually* retrieved
+    # context ids; ``expected_citations`` grades citation correctness the
+    # same way. ``reference_context`` is a fallback: pre-declared context
+    # text used only when the adapter's own response carries none, so a case
+    # can still test faithfulness/context-relevance in isolation from a live
+    # retriever. All optional and backward compatible — a case that sets
+    # none of them is scored exactly as before.
+    relevant_context_ids: list[str] = field(default_factory=list)
+    expected_citations: list[str] = field(default_factory=list)
+    reference_context: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Expects:
         ct = data.get("correctness_type", "exact")
         if isinstance(ct, str):
             ct = CorrectnessType(ct)
-        trajectory_raw = data.get("expected_trajectory")
-        if trajectory_raw is None:
-            trajectory_raw = []
-        elif not isinstance(trajectory_raw, list):
-            raise ValueError("expected_trajectory must be a list")
-        expected_trajectory: list[str] = []
-        for index, step in enumerate(trajectory_raw):
-            if not isinstance(step, str):
-                raise ValueError(
-                    f"expected_trajectory[{index}] must be a string"
-                )
-            normalized = step.strip()
-            if not normalized:
-                raise ValueError(
-                    f"expected_trajectory[{index}] must not be blank"
-                )
-            expected_trajectory.append(normalized)
         return cls(
             correctness_type=ct,
             must_call_tools=list(data.get("must_call_tools") or []),
             must_not_hallucinate=bool(data.get("must_not_hallucinate", False)),
             ground_truth=data.get("ground_truth"),
             numeric_tolerance=float(data.get("numeric_tolerance", 0.01)),
-            expected_trajectory=expected_trajectory,
+            expected_trajectory=_parse_string_list(data, "expected_trajectory"),
+            relevant_context_ids=_parse_string_list(data, "relevant_context_ids"),
+            expected_citations=_parse_string_list(data, "expected_citations"),
+            reference_context=_parse_string_list(data, "reference_context"),
         )
 
 
@@ -177,11 +197,18 @@ class CaseResult:
     cost_usd: float | None = None
     judge_reason: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+    # RAG-specific (§Phase 2): observed retrieval evidence and its scoring,
+    # populated only when the adapter response or case declares RAG fields.
+    retrieved_context: list[dict[str, Any]] = field(default_factory=list)
+    citations: list[str] = field(default_factory=list)
+    rag: RagEvaluation | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         if self.trajectory is None:
             data.pop("trajectory")
+        if self.rag is None:
+            data.pop("rag")
         return data
 
 
@@ -205,6 +232,14 @@ class RunReport:
     evaluator_error_count: int = 0
     agent_error_count: int = 0
     break_rate: float | None = None
+    # RAG suite-level averages (§Phase 2) — None when no case in the run
+    # produced a RAG evaluation, mirroring total_tokens' "None means nothing
+    # qualified" convention.
+    context_relevance_avg: float | None = None
+    faithfulness_avg: float | None = None
+    unsupported_claim_rate_avg: float | None = None
+    citation_f1_avg: float | None = None
+    retrieval_f1_avg: float | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -212,6 +247,8 @@ class RunReport:
         for case in data["case_results"]:
             if case.get("trajectory") is None:
                 case.pop("trajectory", None)
+            if case.get("rag") is None:
+                case.pop("rag", None)
         return data
 
 

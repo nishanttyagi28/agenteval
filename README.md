@@ -29,6 +29,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Budget and latency gates](#budget-and-latency-gates)
 - [Flakiness detection](#flakiness-detection)
 - [Trajectory scoring](#trajectory-scoring)
+- [RAG evaluation mode](#rag-evaluation-mode)
 - [Golden case example](#golden-case-example)
 - [Dashboard evidence](#dashboard-evidence)
 - [Installation](#installation)
@@ -41,9 +42,11 @@ The static demo explains the workflow without executing an agent or making API c
 - [LangGraph adapter](#langgraph-adapter)
 - [GitHub Actions](#github-actions)
 - [Adversarial robustness](#adversarial-robustness)
+- [Dataset import and case generation](#dataset-import-and-case-generation)
 - [HTML reports and regression trend tracking](#html-reports-and-regression-trend-tracking)
 - [Model/provider comparison](#modelprovider-comparison)
 - [VS Code extension](#vs-code-extension)
+- [Documentation site (scaffold, not deployed)](#documentation-site-scaffold-not-deployed)
 - [Project structure](#project-structure)
 - [Testing](#testing)
 - [Current limitations](#current-limitations)
@@ -127,7 +130,7 @@ flowchart LR
     Reports --> Dashboard["Dashboard and artifacts"]
 ```
 
-Every framework adapter returns the same `AgentResponse` fields: output, tool calls, fired nodes, token usage, cost, latency, and JSON-safe raw evidence. The runner, scoring, comparison, and reporting layers therefore remain framework-independent.
+Every framework adapter returns the same `AgentResponse` fields: output, tool calls, fired nodes, token usage, cost, latency, retrieved context/citations (for [RAG evaluation](#rag-evaluation-mode)), and JSON-safe raw evidence. The runner, scoring, comparison, and reporting layers therefore remain framework-independent.
 
 ## Five metrics
 
@@ -230,6 +233,51 @@ AgentEval compares `expected_trajectory` with the adapter's actual `nodes_fired`
 
 The field is optional and backward compatible: cases without it are scored and serialized exactly as before. Trajectory scoring is observability-only in v1 and does not affect correctness, existing metrics, baseline comparison, or CI gates.
 
+## RAG evaluation mode
+
+For retrieval-augmented agents, AgentEval scores five additional optional metrics whenever an
+adapter response carries retrieved context — **context relevance**, **faithfulness** (is the
+answer grounded in the retrieved context), **citation correctness**, **retrieval precision/
+recall**, and **unsupported-claim detection**. These integrate directly into the existing
+metric system rather than a parallel one: they reuse the same set-based precision/recall
+(`tool_call_precision_recall`) already used for tool-call accuracy, and the same numeric-claim
+extraction already used for hallucination detection — applied against retrieved context instead
+of ground truth. Like flakiness and trajectory scoring, this is **observability-only** and does
+not affect correctness, the five core metrics, or the baseline regression gate.
+
+An adapter opts in simply by populating `retrieved_context`/`citations` on its `AgentResponse`:
+
+```python
+return AgentResponse(
+    output=answer,
+    retrieved_context=[{"id": "doc1", "text": "Tokyo is the capital of Japan."}],
+    citations=["doc1"],
+)
+```
+
+A golden case can optionally declare RAG-specific ground truth alongside its existing
+expectations — all fields are optional and backward compatible; cases without them are scored
+exactly as before:
+
+```yaml
+- id: capital_of_japan
+  prompt: "What is the capital of Japan?"
+  expects:
+    correctness_type: contains
+    ground_truth: "Tokyo"
+    relevant_context_ids: [doc1]      # ground truth for retrieval precision/recall
+    expected_citations: [doc1]        # ground truth for citation correctness
+    reference_context:                # fallback context, used only if the adapter
+      - "Tokyo is the capital of Japan."   # itself returns no retrieved_context
+```
+
+`reference_context` lets a case test faithfulness/context-relevance in isolation from a live
+retriever (e.g. testing the generation step alone). Citation correctness falls back to a
+structural check — is every cited id actually present in retrieved context — when no
+`expected_citations` ground truth is given. Suite-level averages (`context_relevance_avg`,
+`faithfulness_avg`, `unsupported_claim_rate_avg`, `citation_f1_avg`, `retrieval_f1_avg`) appear
+on the run report whenever at least one case produced a RAG evaluation, `null` otherwise.
+
 ## Golden case example
 
 ```yaml
@@ -300,6 +348,27 @@ python -m pip install -r requirements-dev.txt
 ```
 
 Alternatively, install the repository's development extra with `python -m pip install -e ".[dev]"`.
+
+### Docker
+
+A minimal `Dockerfile` at the repository root packages the CLI as a runnable container:
+
+```bash
+docker build -t agenteval .
+docker run --rm agenteval --help
+docker run --rm agenteval run --agent action_demo --registry examples/action_demo/agents.yaml
+```
+
+The image is `python:3.12-slim`-based (pandas ships prebuilt wheels for glibc, avoiding a
+compiler toolchain), installs only the package's own runtime dependencies, and runs as a
+non-root user. `scripts/docker_smoke_test.sh` builds the image and verifies both `--help` and a
+fully self-contained sample evaluation (`examples/action_demo` — zero API key, zero external
+repo) succeed inside the container; the `Docker image` GitHub Actions workflow runs the same
+check in CI. Mount a registry and agent repository as volumes to evaluate your own agent:
+
+```bash
+docker run --rm -v "$PWD:/workspace" -w /workspace agenteval run --agent my_agent
+```
 
 ## Getting started with `agenteval init`
 
@@ -599,6 +668,54 @@ agenteval generate \
 
 Each candidate retains its parent case, ground truth, tool expectations, and mutation type. New variants start with `review_status: candidate` and are not added to the blocking golden gate until reviewed.
 
+## Dataset import and case generation
+
+### `agenteval import` — convert a CSV into golden cases
+
+Turn an external dataset into a golden suite via a small column-mapping config:
+
+```bash
+agenteval import --emit-mapping-template mapping.yaml   # scaffold a starter config
+agenteval import data.csv --mapping mapping.yaml --output tests/golden/imported.yaml
+```
+
+```yaml
+# mapping.yaml
+prompt_column: question
+ground_truth_column: answer
+id_column: id                    # optional; auto-generated (row_1, row_2, ...) if omitted
+correctness_type: exact          # exact | numeric | contains | llm_judge (numeric_table is not
+                                  # supported here — a single flat cell can't hold a table)
+numeric_tolerance: 0.01
+tags: [imported]
+must_call_tools_column: null     # optional: a column of comma-separated required tool names
+must_not_hallucinate: false
+```
+
+Every row must yield a non-empty prompt and ground truth, and ids must be unique — a bad row
+fails the whole import with the exact row number rather than silently producing an incomplete
+or wrong suite. The written YAML is a normal golden suite (review it like any hand-written one)
+loadable by every existing command, not a separate format.
+
+### `agenteval generate-cases` — propose golden cases from production logs
+
+Reuses the same reviewable-candidate convention as `agenteval generate` (adversarial mutation)
+rather than a second one: proposed cases are written with `review_status: candidate` and
+`source: production_log`, and stay out of the blocking gate until a human confirms the observed
+answer was actually correct and promotes them into a real golden suite.
+
+```bash
+# From an existing `agenteval run` report:
+agenteval generate-cases --logs runs/<run>.json --output tests/adversarial/candidates_from_logs.yaml
+
+# From a plain JSONL sample log ({"prompt": ..., "answer": ...} per line):
+agenteval generate-cases --logs sample_logs.jsonl --format jsonl
+```
+
+Cases with an `agent_error`/`evaluator_error`/`skipped` outcome are skipped (there's no
+reliable answer to seed a ground truth from), duplicate prompts are deduplicated, and malformed
+JSONL lines are skipped individually with a warning rather than aborting the whole batch.
+
 ## HTML reports and regression trend tracking
 
 Every scored `agenteval run` appends a lightweight entry (the five metrics,
@@ -667,6 +784,22 @@ channel. It's an unpublished local scaffold; see
 [`vscode-extension/README.md`](vscode-extension/README.md) for how to build
 and debug it (`npm install && npm run compile`, then `F5`).
 
+## Documentation site (scaffold, not deployed)
+
+`docs-site/` is a minimal, framework-light static documentation site — Getting Started, CLI
+reference, an adapter-writing guide, and a factual comparison against Promptfoo/DeepEval/
+LangSmith — built the same way `landing-page/` is (plain HTML/CSS/JS, no framework, zero
+runtime dependencies). It's a local scaffold only: there is no deployment workflow for it yet.
+
+```bash
+cd docs-site
+npm run build   # writes docs-site/dist/
+npm test        # build + static structural/accessibility/link validation
+npm run serve   # http://127.0.0.1:4174
+```
+
+See [`docs-site/README.md`](docs-site/README.md) for details.
+
 ## Project structure
 
 ```text
@@ -674,7 +807,9 @@ agenteval/
 ├── pyproject.toml        # Package metadata and agenteval console entry point
 ├── agents.yaml           # Registered agents, adapters, suites, and gate defaults
 ├── action.yml            # Reusable composite GitHub Action
+├── Dockerfile            # Minimal container image for the CLI
 ├── CONTRIBUTING.md       # Development and pull-request guidance
+├── scripts/              # docker_smoke_test.sh and other repo-level scripts
 ├── adapters/             # Agent interface and concrete adapter
 │   ├── base.py           # Framework-neutral AgentAdapter contract
 │   ├── crewai.py         # CrewAI integration
@@ -696,6 +831,7 @@ agenteval/
 ├── dashboard/app.py      # Streamlit dashboard
 ├── vscode-extension/     # Minimal "AgentEval: Run Suite" VS Code extension
 ├── landing-page/         # Static demo and Playwright browser tests
+├── docs-site/            # Documentation site scaffold (not deployed)
 ├── examples/             # Composite-action fixtures and consumer workflow
 ├── tests/golden/         # Hand-written YAML suite
 ├── baselines/            # Versioned baseline reports

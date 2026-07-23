@@ -1,4 +1,13 @@
-"""Generate reviewable adversarial variants from hand-written golden cases."""
+"""Generate reviewable candidate cases: adversarial mutations of hand-written
+golden cases, and proposals mined from production run logs.
+
+Both generators share one convention rather than inventing a second one:
+every proposed case is written with ``review_status="candidate"`` (see
+``TestCase``) and stays out of the blocking golden gate until a human
+reviews and promotes it. ``write_candidate_yaml``/``test_case_to_dict``
+below are already generic over any sequence of ``TestCase`` objects, so both
+generators reuse the same writer.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +18,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from agenteval.core.compare import case_status
 from agenteval.core.config import resolve_agent_repo
 from agenteval.core.schema import CorrectnessType, Expects, TestCase
 
@@ -156,6 +166,152 @@ def test_case_to_dict(case: TestCase) -> dict[str, Any]:
         if value is not None:
             data[key] = value
     return data
+
+
+# ── generate-cases: propose candidates from production logs ─────────────────
+
+_LOG_FORMATS = ("run-report", "jsonl")
+
+
+def _log_candidate(
+    prompt: str,
+    answer: str,
+    case_id: str,
+    *,
+    correctness_type: str,
+) -> TestCase:
+    return TestCase(
+        id=case_id,
+        prompt=prompt,
+        expects=Expects(
+            correctness_type=CorrectnessType(correctness_type),
+            ground_truth=answer,
+        ),
+        tags=["candidate", "production_log"],
+        source="production_log",
+        review_status="candidate",
+    )
+
+
+def propose_cases_from_run_report(
+    report: dict[str, Any],
+    *,
+    correctness_type: str = "exact",
+    limit: int | None = None,
+) -> list[TestCase]:
+    """Propose candidate cases from an already-scored ``agenteval run`` report.
+
+    Cases whose status is ``agent_error``/``evaluator_error``/``skipped``/
+    ``missing`` are skipped — there is no reliable observed answer to seed a
+    ground truth from. Duplicate prompts (case-insensitive, whitespace
+    -normalized) are deduplicated, keeping the first occurrence.
+    """
+    cases: list[TestCase] = []
+    seen_prompts: set[str] = set()
+    for entry in report.get("case_results") or []:
+        if not isinstance(entry, dict):
+            continue
+        if case_status(entry) in {"agent_error", "evaluator_error", "skipped", "missing"}:
+            continue
+        prompt = str(entry.get("prompt") or "").strip()
+        answer = str(entry.get("final_answer") or "").strip()
+        if not prompt or not answer:
+            continue
+        normalized = re.sub(r"\s+", " ", prompt.lower())
+        if normalized in seen_prompts:
+            continue
+        seen_prompts.add(normalized)
+        base_id = str(entry.get("case_id") or f"log_case_{len(cases) + 1}")
+        cases.append(
+            _log_candidate(
+                prompt, answer, f"{base_id}__from_log", correctness_type=correctness_type
+            )
+        )
+        if limit is not None and len(cases) >= limit:
+            break
+    return cases
+
+
+def propose_cases_from_jsonl(
+    path: str | Path,
+    *,
+    correctness_type: str = "exact",
+    limit: int | None = None,
+) -> list[TestCase]:
+    """Propose candidate cases from a JSONL file of ``{"prompt": ..., "answer": ...}`` lines.
+
+    Malformed or incomplete lines are skipped with a printed warning rather
+    than aborting the whole batch — sample logs are rarely perfectly clean.
+    """
+    cases: list[TestCase] = []
+    seen_prompts: set[str] = set()
+    text = Path(path).read_text(encoding="utf-8")
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            print(f"warning: skipping malformed JSONL line {line_number}", file=sys.stderr)
+            continue
+        if not isinstance(record, dict):
+            print(f"warning: skipping non-object JSONL line {line_number}", file=sys.stderr)
+            continue
+        prompt = str(record.get("prompt") or "").strip()
+        answer = str(record.get("answer") or "").strip()
+        if not prompt or not answer:
+            print(
+                f"warning: skipping JSONL line {line_number}: missing prompt or answer",
+                file=sys.stderr,
+            )
+            continue
+        normalized = re.sub(r"\s+", " ", prompt.lower())
+        if normalized in seen_prompts:
+            continue
+        seen_prompts.add(normalized)
+        cases.append(
+            _log_candidate(
+                prompt, answer, f"log_line_{line_number}__from_log", correctness_type=correctness_type
+            )
+        )
+        if limit is not None and len(cases) >= limit:
+            break
+    return cases
+
+
+def generate_cases_from_logs(
+    logs_path: str | Path,
+    *,
+    log_format: str = "run-report",
+    correctness_type: str = "exact",
+    limit: int | None = None,
+) -> list[TestCase]:
+    """Propose candidate golden cases from a run-report JSON or a JSONL sample log."""
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be at least 1")
+    path = Path(logs_path)
+    if not path.is_file():
+        raise ValueError(f"logs file not found: {path}")
+    if log_format == "run-report":
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"logs file is not valid JSON: {path}: {exc}") from exc
+        if not isinstance(report, dict):
+            raise ValueError(f"run-report logs must be a JSON object: {path}")
+        cases = propose_cases_from_run_report(
+            report, correctness_type=correctness_type, limit=limit
+        )
+    elif log_format == "jsonl":
+        cases = propose_cases_from_jsonl(path, correctness_type=correctness_type, limit=limit)
+    else:
+        raise ValueError(
+            f"unknown log_format {log_format!r}; expected one of {_LOG_FORMATS}"
+        )
+    if not cases:
+        raise ValueError("no usable cases found in the provided logs")
+    return cases
 
 
 def write_candidate_yaml(cases: Sequence[TestCase], path: str | Path) -> Path:

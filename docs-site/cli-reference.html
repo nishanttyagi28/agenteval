@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="AgentEval CLI reference: every subcommand -- run, compare, report, generate, init, import, generate-cases, compare-models."
+    >
+    <title>CLI Reference — AgentEval Docs</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="container nav-shell">
+        <a class="brand" href="./index.html">AgentEval Docs</a>
+
+        <button
+          class="nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-navigation"
+          aria-label="Open navigation"
+        >
+          <span></span><span></span><span></span>
+        </button>
+
+        <nav id="primary-navigation" class="primary-nav" aria-label="Primary navigation">
+          <a href="./index.html">Getting Started</a>
+          <a href="./cli-reference.html" aria-current="page">CLI Reference</a>
+          <a href="./adapter-guide.html">Adapter Guide</a>
+          <a href="./comparison.html">Comparison</a>
+          <a href="https://github.com/nishanttyagi28/agenteval" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="container" aria-labelledby="page-title">
+        <h1 id="page-title">CLI Reference</h1>
+        <p class="lede">
+          Every AgentEval subcommand accepts <code>--help</code> for the authoritative, current
+          flag list. This page summarizes what each one does.
+        </p>
+
+        <h2 id="run">agenteval run</h2>
+        <p>Run a registered agent's golden suite, score it, and save a JSON report.</p>
+        <pre><code>agenteval run --agent my_agent
+agenteval run --all
+agenteval run --agent my_agent --case-id total_customers --tag smoke
+agenteval run --agent my_agent --repeat 5 --repeat-case total_customers</code></pre>
+
+        <h2 id="compare">agenteval compare</h2>
+        <p>Compare a current run with a versioned baseline and apply the regression gate.</p>
+        <pre><code>agenteval compare --agent my_agent
+agenteval compare --agent my_agent --max-cost-increase-pct 20 --max-latency-p95-ms 3000</code></pre>
+
+        <h2 id="report">agenteval report</h2>
+        <p>Generate a self-contained HTML report for a run, with baseline deltas and trend history.</p>
+        <pre><code>agenteval report --agent my_agent</code></pre>
+
+        <h2 id="init">agenteval init</h2>
+        <p>Scaffold <code>agents.yaml</code>, a sample golden suite, and a CI workflow for a new project.</p>
+        <pre><code>agenteval init --agent-name my_agent --framework auto</code></pre>
+
+        <h2 id="generate">agenteval generate</h2>
+        <p>Generate reviewable adversarial variants of existing golden cases.</p>
+        <pre><code>agenteval generate --cases tests/golden/my_cases.yaml --variants 3</code></pre>
+
+        <h2 id="import">agenteval import</h2>
+        <p>Convert an external CSV dataset into golden test cases via a column-mapping config.</p>
+        <pre><code>agenteval import --emit-mapping-template mapping.yaml
+agenteval import data.csv --mapping mapping.yaml --output tests/golden/imported.yaml</code></pre>
+
+        <h2 id="generate-cases">agenteval generate-cases</h2>
+        <p>Propose candidate golden cases from production run logs (a run-report JSON or JSONL).</p>
+        <pre><code>agenteval generate-cases --logs runs/&lt;run&gt;.json
+agenteval generate-cases --logs sample_logs.jsonl --format jsonl</code></pre>
+
+        <h2 id="compare-models">agenteval compare-models</h2>
+        <p>Run the same golden suite against multiple registered agents and compare their metrics.</p>
+        <pre><code>agenteval compare-models --agent my_agent_v1 --agent my_agent_v2</code></pre>
+
+        <div class="callout">
+          Flags and defaults change as AgentEval evolves — <code>agenteval &lt;command&gt;
+          --help</code> is always the source of truth.
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>
+          This is a local documentation scaffold, not yet deployed. See
+          <a href="https://github.com/nishanttyagi28/agenteval">the AgentEval repository</a> for
+          the full README.
+        </p>
+        <small>&copy; <span id="current-year">2026</span> Nishant Tyagi</small>
+      </div>
+    </footer>
+  </body>
+</html>
