@@ -337,6 +337,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_compare(args: argparse.Namespace) -> int:
+    from agenteval.core.alerts import maybe_send_regression_alert
     from agenteval.core.compare import (
         GateThresholds,
         compare_runs,
@@ -418,6 +419,17 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     print(f"baseline={baseline_path}")
     print(f"current={current_path}")
     print(format_markdown(result), end="")
+
+    alert_status = maybe_send_regression_alert(
+        agent_name=config.name,
+        result=result,
+        enabled=config.alerting.enabled,
+        webhook_url_env=config.alerting.webhook_url_env,
+        kind=config.alerting.kind,
+    )
+    if alert_status is not None:
+        print(f"alert={alert_status}")
+
     return 0 if result.passed else 1
 
 

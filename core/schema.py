@@ -43,6 +43,21 @@ class GateConfig:
 
 
 @dataclass(frozen=True)
+class AlertConfig:
+    """Optional webhook alert fired when the regression gate fails (§Tier 5).
+
+    Disabled by default (``enabled=False``) and reads the webhook URL from an
+    environment variable named by ``webhook_url_env`` rather than storing the
+    URL itself in YAML, so secrets never land in the registry file. A config
+    that sets none of this behaves exactly as before this field existed.
+    """
+
+    enabled: bool = False
+    webhook_url_env: str | None = None
+    kind: str = "slack"
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     """Validated configuration for one pluggable agent."""
 
@@ -57,6 +72,7 @@ class AgentConfig:
     adapter_options: dict[str, Any] = field(default_factory=dict)
     gates: GateConfig = field(default_factory=GateConfig)
     smoke_case_ids: tuple[str, ...] = ()
+    alerting: AlertConfig = field(default_factory=AlertConfig)
 
 
 class CorrectnessType(str, Enum):

@@ -12,7 +12,7 @@ import yaml
 
 from agenteval.adapters.base import AgentAdapter
 from agenteval.core.config import AgentDependencyNotFound
-from agenteval.core.schema import AgentConfig, GateConfig, RepositoryConfig
+from agenteval.core.schema import AgentConfig, AlertConfig, GateConfig, RepositoryConfig
 
 REGISTRY_VERSION = 1
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "agents.yaml"
@@ -168,6 +168,26 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
             f"agents.{name}.gates.max_token_increase_pct",
         ),
     )
+    alerting_raw = _mapping(data.get("alerting") or {}, f"agents.{name}.alerting")
+    webhook_url_env = alerting_raw.get("webhook_url_env")
+    if webhook_url_env is not None and (
+        not isinstance(webhook_url_env, str) or not _ENV_VAR_RE.fullmatch(webhook_url_env)
+    ):
+        raise ValueError(f"agents.{name}.alerting.webhook_url_env is not a valid environment variable")
+    alert_kind = alerting_raw.get("kind", "slack")
+    if alert_kind not in ("slack", "discord"):
+        raise ValueError(f"agents.{name}.alerting.kind must be 'slack' or 'discord'")
+    alerting_enabled = bool(alerting_raw.get("enabled", False))
+    if alerting_enabled and not webhook_url_env:
+        raise ValueError(
+            f"agents.{name}.alerting.webhook_url_env is required when alerting.enabled is true"
+        )
+    alerting = AlertConfig(
+        enabled=alerting_enabled,
+        webhook_url_env=webhook_url_env,
+        kind=alert_kind,
+    )
+
     options = data.get("adapter_options") or {}
     if not isinstance(options, dict):
         raise ValueError(f"agents.{name}.adapter_options must be a mapping")
@@ -195,6 +215,7 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
         adapter_options=dict(options),
         gates=gates,
         smoke_case_ids=tuple(smoke_raw),
+        alerting=alerting,
     )
 
 
