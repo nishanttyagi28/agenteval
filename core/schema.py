@@ -10,6 +10,22 @@ from typing import Any, ClassVar
 from agenteval.core.trajectory import TrajectoryEvaluation
 
 
+def _bool(value: Any, default: bool, label: str) -> bool:
+    """Parse a strict YAML boolean, applying `default` when the key is absent.
+
+    Unlike `bool(...)`, this does not coerce truthy/falsy values: a quoted
+    string such as ``"false"`` (or a number, list, or mapping) is rejected
+    instead of silently becoming ``True``. Kept local (rather than imported
+    from `agenteval.core.registry`) since `registry` already imports from
+    this module and importing back would be circular.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{label} must be a boolean (true or false), got {value!r}")
+
+
 @dataclass(frozen=True)
 class RepositoryConfig:
     """How to locate and identify an agent's repository."""
@@ -110,7 +126,9 @@ class Expects:
         return cls(
             correctness_type=ct,
             must_call_tools=list(data.get("must_call_tools") or []),
-            must_not_hallucinate=bool(data.get("must_not_hallucinate", False)),
+            must_not_hallucinate=_bool(
+                data.get("must_not_hallucinate"), False, "expects.must_not_hallucinate"
+            ),
             ground_truth=data.get("ground_truth"),
             numeric_tolerance=float(data.get("numeric_tolerance", 0.01)),
             expected_trajectory=expected_trajectory,

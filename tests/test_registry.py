@@ -167,3 +167,41 @@ def test_safety_gate_keys_reject_non_positive_or_non_numeric(tmp_path, key, bad_
     content = registry_yaml(extra_gates=f"{key}: {bad_value}\n")
     with pytest.raises(ValueError, match="must be a positive number or null"):
         load_agent_registry(write_registry(tmp_path, content))
+
+
+# --- issue #13: strict boolean parsing (no more `bool("false") == True`) -----
+
+
+def test_gate_flags_default_to_true_when_absent(tmp_path):
+    config = load_agent_registry(write_registry(tmp_path, registry_yaml()))["example_agent"]
+    assert config.gates.fail_on_evaluator_error is True
+    assert config.gates.fail_on_agent_error is True
+
+
+@pytest.mark.parametrize("key", ["fail_on_evaluator_error", "fail_on_agent_error"])
+def test_gate_flags_accept_valid_booleans(tmp_path, key):
+    content = registry_yaml(extra_gates=f"{key}: false\n")
+    config = load_agent_registry(write_registry(tmp_path, content))["example_agent"]
+    assert getattr(config.gates, key) is False
+
+
+@pytest.mark.parametrize("key", ["fail_on_evaluator_error", "fail_on_agent_error"])
+@pytest.mark.parametrize("bad_value", ['"false"', '"true"', "1", "[a]", "{}"])
+def test_gate_flags_reject_non_boolean_values(tmp_path, key, bad_value):
+    content = registry_yaml(extra_gates=f"{key}: {bad_value}\n")
+    with pytest.raises(ValueError, match=f"gates.{key} must be a boolean"):
+        load_agent_registry(write_registry(tmp_path, content))
+
+
+@pytest.mark.parametrize("value", ["true", "false"])
+def test_enabled_accepts_valid_unquoted_booleans(tmp_path, value):
+    content = registry_yaml().replace("enabled: true\n", f"enabled: {value}\n")
+    config = load_agent_registry(write_registry(tmp_path, content))["example_agent"]
+    assert config.enabled is (value == "true")
+
+
+@pytest.mark.parametrize("bad_value", ['"false"', '"true"', "1", "[]", "{}"])
+def test_enabled_rejects_non_boolean_values(tmp_path, bad_value):
+    content = registry_yaml().replace("enabled: true\n", f"enabled: {bad_value}\n")
+    with pytest.raises(ValueError, match="agents.example_agent.enabled must be a boolean"):
+        load_agent_registry(write_registry(tmp_path, content))
