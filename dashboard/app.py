@@ -227,10 +227,19 @@ def latest_flakiness_report(
     return reports[0][1] if reports else None
 
 
-def flakiness_table_rows(report: Any) -> list[dict[str, Any]]:
-    """Build the display rows used by the conditional Flakiness tab."""
-    return [
-        {
+def flakiness_table_rows(
+    report: Any,
+    *,
+    max_flakiness_rate: float | None = None,
+) -> list[dict[str, Any]]:
+    """Build the display rows used by the conditional Flakiness tab.
+
+    When ``max_flakiness_rate`` is unset the row shape is unchanged (gate
+    columns are omitted), preserving the pre-gate dashboard contract.
+    """
+    rows: list[dict[str, Any]] = []
+    for case in report.cases:
+        row: dict[str, Any] = {
             "case_id": case.case_id,
             "consistency": (
                 f"{case.consistent_observations}/{case.total_observations}"
@@ -239,8 +248,14 @@ def flakiness_table_rows(report: Any) -> list[dict[str, Any]]:
             "classification": case.classification,
             "comparison_basis": case.comparison_basis,
         }
-        for case in report.cases
-    ]
+        if max_flakiness_rate is not None:
+            rate = 1.0 - float(case.consistency_score)
+            row["flakiness_rate"] = f"{rate:.3f}"
+            row["gate status"] = (
+                "FAIL" if rate > max_flakiness_rate + 1e-12 else "PASS"
+            )
+        rows.append(row)
+    return rows
 
 
 def dashboard_tab_labels(flakiness_report: Any | None) -> list[str]:
@@ -369,7 +384,7 @@ def trajectory_table_rows(trajectory: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def render_trajectory(trajectory: Any) -> None:
+def render_trajectory(trajectory: Any, *, min_trajectory_f1: float | None = None) -> None:
     """Render optional trajectory evidence without changing legacy case views."""
     if not isinstance(trajectory, dict):
         return
@@ -380,9 +395,13 @@ def render_trajectory(trajectory: Any) -> None:
     recall = trajectory.get("recall")
     exact_match = trajectory.get("exact_match")
     cols = st.columns(4)
+    score_label = f"{100.0 * float(score):.1f}%" if score is not None else "n/a"
+    if min_trajectory_f1 is not None and score is not None:
+        gate = "PASS" if float(score) >= min_trajectory_f1 - 1e-12 else "FAIL"
+        score_label = f"{score_label} · gate {gate}"
     cols[0].metric(
         "Trajectory score",
-        f"{100.0 * float(score):.1f}%" if score is not None else "n/a",
+        score_label,
     )
     cols[1].metric(
         "Trajectory precision",
@@ -761,7 +780,11 @@ def render_adversarial(run: dict[str, Any]) -> None:
     st.dataframe(frame, width="stretch", hide_index=True)
 
 
-def render_flakiness(report: Any) -> None:
+def render_flakiness(
+    report: Any,
+    *,
+    max_flakiness_rate: float | None = None,
+) -> None:
     """Render opt-in repeat consistency without affecting existing views."""
     st.subheader("Flakiness / consistency")
     summary = report.summary
@@ -770,11 +793,24 @@ def render_flakiness(report: Any) -> None:
     c2.metric("Stable", summary.stable_cases)
     c3.metric("Flaky", summary.flaky_cases)
     c4.metric("Unstable", summary.unstable_cases)
-    c5.metric("Mean consistency", f"{summary.mean_consistency:.1%}")
+    mean_label = f"{summary.mean_consistency:.1%}"
+    if max_flakiness_rate is not None:
+        mean_rate = 1.0 - float(summary.mean_consistency)
+        gate = "FAIL" if mean_rate > max_flakiness_rate + 1e-12 else "PASS"
+        # Per-case gate is authoritative; surface suite-level status next to mean.
+        any_fail = any(
+            (1.0 - float(case.consistency_score)) > max_flakiness_rate + 1e-12
+            for case in report.cases
+        )
+        gate = "FAIL" if any_fail else "PASS"
+        mean_label = f"{mean_label} · gate {gate}"
+    c5.metric("Mean consistency", mean_label)
 
     st.markdown("#### Per-case consistency")
     st.dataframe(
-        pd.DataFrame(flakiness_table_rows(report)),
+        pd.DataFrame(
+            flakiness_table_rows(report, max_flakiness_rate=max_flakiness_rate)
+        ),
         width="stretch",
         hide_index=True,
     )

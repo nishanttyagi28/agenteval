@@ -34,6 +34,10 @@ class GateConfig:
     The budget/latency/token fields are opt-in safety gates (§Phase 5):
     ``None`` (the default) disables the check entirely, preserving prior
     behavior for every existing config that doesn't set them.
+
+    ``max_flakiness_rate`` and ``min_trajectory_f1`` are likewise opt-in
+    (``None`` = disabled). They gate per-case flakiness and trajectory F1
+    evidence that was previously observability-only.
     """
 
     max_correctness_drop: float = 0.05
@@ -49,6 +53,9 @@ class GateConfig:
     # fields). False/0.05 default preserves the exact prior gate behavior.
     require_statistical_significance: bool = False
     significance_alpha: float = 0.05
+    # Opt-in observability gates (None = disabled, fully backward compatible).
+    max_flakiness_rate: float | None = None
+    min_trajectory_f1: float | None = None
 
 
 @dataclass(frozen=True)

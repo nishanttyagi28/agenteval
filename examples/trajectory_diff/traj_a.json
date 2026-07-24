@@ -1,0 +1,9 @@
+{
+  "actual": [
+    "route:sql",
+    "agent:sql",
+    "tool:summarize"
+  ],
+  "score": 1.0,
+  "exact_match": true
+}

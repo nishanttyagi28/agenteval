@@ -1,0 +1,23 @@
+{
+  "run_id": "mock-agent-baseline",
+  "correctness_rate": 1.0,
+  "hallucination_rate": 0.0,
+  "tool_call_accuracy": 1.0,
+  "latency_p50_ms": 0.0,
+  "latency_p95_ms": 0.0,
+  "total_cost_usd": 0.0,
+  "case_results": [
+    {
+      "case_id": "simple_addition",
+      "status": "passed"
+    },
+    {
+      "case_id": "capital_lookup",
+      "status": "passed"
+    },
+    {
+      "case_id": "inventory_count",
+      "status": "passed"
+    }
+  ]
+}

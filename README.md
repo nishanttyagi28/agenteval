@@ -29,6 +29,8 @@ The static demo explains the workflow without executing an agent or making API c
 - [Budget and latency gates](#budget-and-latency-gates)
 - [Flakiness detection](#flakiness-detection)
 - [Trajectory scoring](#trajectory-scoring)
+- [Trajectory diff](#trajectory-diff)
+- [Optional flakiness and trajectory gates](#optional-flakiness-and-trajectory-gates)
 - [RAG evaluation mode](#rag-evaluation-mode)
 - [Multi-turn conversation evaluation](#multi-turn-conversation-evaluation)
 - [Trace viewer](#trace-viewer)
@@ -45,6 +47,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Golden case example](#golden-case-example)
 - [Dashboard evidence](#dashboard-evidence)
 - [Installation](#installation)
+- [Try it in 30 seconds](#try-it-in-30-seconds)
 - [Getting started with `agenteval init`](#getting-started-with-agenteval-init)
 - [Quickstart with Agentic Data Analyst](#quickstart-with-agentic-data-analyst)
 - [CLI reference](#cli-reference)
@@ -63,6 +66,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Project structure](#project-structure)
 - [Testing](#testing)
 - [Current limitations](#current-limitations)
+- [How AgentEval compares](#how-agenteval-compares)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -240,7 +244,7 @@ These labels are documented defaults rather than information-losing buckets: eve
 
 Scalar numeric cases use `largest_complete_link_cluster`. Values cluster when the difference between the cluster maximum and minimum remains within the case's existing `numeric_tolerance`; the largest same-verdict cluster wins, and the primary observation receives no special preference. Exact, contains, and LLM-judge cases use verdict consistency. Ambiguous scalar numeric answers and numeric-table cases also fall back to verdict-only consistency.
 
-Flakiness is observability-only in this phase. It does not affect the regression gate or baseline comparison. Evidence is stored separately under `runs/<agent>/flakiness/<run_id>.json`, keeping repeated latency, cost, answers, and verdicts isolated from the primary run report.
+Flakiness is observability-only by default. It does not affect the regression gate or baseline comparison unless you opt in (see [Optional flakiness and trajectory gates](#optional-flakiness-and-trajectory-gates) below). Evidence is stored separately under `runs/<agent>/flakiness/<run_id>.json`, keeping repeated latency, cost, answers, and verdicts isolated from the primary run report.
 
 ## Trajectory scoring
 
@@ -257,7 +261,62 @@ Trajectory scoring adds step-level evidence about how an agent reached its answe
 
 AgentEval compares `expected_trajectory` with the adapter's actual `nodes_fired` sequence using a longest common subsequence (LCS). The matched subsequence produces precision (matched steps divided by actual steps), recall (matched steps divided by expected steps), and their F1 score, while preserving evidence about exact match, ordering, missing steps, and extra steps. Duplicate steps retain their multiplicity.
 
-The field is optional and backward compatible: cases without it are scored and serialized exactly as before. Trajectory scoring is observability-only in v1 and does not affect correctness, existing metrics, baseline comparison, or CI gates.
+The field is optional and backward compatible: cases without it are scored and serialized exactly as before. Trajectory scoring is observability-only by default and does not affect correctness, existing metrics, baseline comparison, or CI gates unless you opt in (see [Optional flakiness and trajectory gates](#optional-flakiness-and-trajectory-gates) below).
+
+## Trajectory diff
+
+Compare two agent trajectories step-by-step (for example two model versions). This is an
+**additive** CLI utility — it does not change scoring, baselines, or CI gates.
+
+```bash
+# TrajectoryEvaluation-shaped JSON (actual + optional score)
+python -m agenteval diff examples/trajectory_diff/traj_a.json examples/trajectory_diff/traj_b.json
+
+# Machine-readable output
+python -m agenteval diff traj_a.json traj_b.json --json
+```
+
+Accepted input shapes match existing trajectory data: a list of step strings (`nodes_fired` /
+`trajectory.actual`), a `TrajectoryEvaluation` object, `trace_steps` (with optional
+input/output for change detection), or a full run report with `--case-id`.
+
+Text output marks removed (`-`), added (`+`), and changed (`~`) steps, collapses unchanged
+steps by default, and prints a summary such as `3 steps added, 1 removed, 2 changed` plus LCS
+similarity and optional score delta.
+
+## Optional flakiness and trajectory gates
+
+Two additional **opt-in** gates sit next to the existing budget/latency fields. Each defaults
+to `null` (disabled), so existing `agents.yaml` files and CI workflows see **zero behavior
+change** until you set them:
+
+```yaml
+gates:
+  # existing gates...
+  max_correctness_drop: 0.05
+  max_hallucination_rate: 0.10
+  min_tool_accuracy: 0.90
+
+  # NEW (optional) — omit both for prior observability-only behaviour
+  max_flakiness_rate: 0.20   # fail if any case's flakiness rate (1 - consistency) > 0.20
+  min_trajectory_f1: 0.90    # fail if any case's trajectory F1 score < 0.90
+```
+
+Semantics:
+
+| Field | Applies to | Breach condition | When evaluated |
+|---|---|---|---|
+| `max_flakiness_rate` | Per-case flakiness from `--repeat` evidence | `1 - consistency_score` exceeds the threshold | `agenteval run` (with a flakiness sidecar) and `agenteval compare` (when the matching sidecar is present) |
+| `min_trajectory_f1` | Per-case `trajectory.score` (LCS F1) | Score falls below the threshold | `agenteval run` and `agenteval compare` |
+
+CLI overrides (same pattern as the other opt-in compare flags):
+
+```bash
+agenteval compare --max-flakiness-rate 0.20 --min-trajectory-f1 0.90
+```
+
+When a gate is enabled and breached, AgentEval prints which case failed by how much and exits
+non-zero so CI fails. When the fields are unset, flakiness and trajectory remain report-only.
 
 ## RAG evaluation mode
 
@@ -712,6 +771,16 @@ check in CI. Mount a registry and agent repository as volumes to evaluate your o
 docker run --rm -v "$PWD:/workspace" -w /workspace agenteval run --agent my_agent
 ```
 
+## Try it in 30 seconds
+
+No external agent repository, API key, or network calls required. After an editable install from a clone, run the bundled mock-agent demo:
+
+```bash
+python -m agenteval run --agent mock_agent --registry examples/mock_agent/agents.yaml
+```
+
+That command evaluates three deterministic golden cases (exact match, tool call + contains, numeric tool answer) and writes a scored run under `examples/mock_agent/runs/`. See [`examples/mock_agent/README.md`](examples/mock_agent/README.md) for details.
+
 ## Getting started with `agenteval init`
 
 For a brand-new project, `agenteval init` scaffolds everything needed for a first evaluation:
@@ -793,6 +862,7 @@ to that command's own section in this README (linked below) for context and YAML
 | `agenteval generate-cases` | Propose candidate cases from [production logs or regressions](#regression-suites-from-production-failures) |
 | `agenteval compare-models` | Run the same suite against multiple registered agents ([model comparison](#modelprovider-comparison)) |
 | `agenteval trace` | Replay a case's step-by-step execution [trace](#trace-viewer) |
+| `agenteval diff` | Step-by-step [trajectory diff](#trajectory-diff) between two runs or trajectory JSON files |
 | `agenteval calibrate` | Score [LLM-judge/human agreement](#calibrated-llm-as-judge) against a labeled calibration set |
 | `agenteval audit-log` | Query the opt-in structured [audit log](#audit-logs) for one agent |
 | `agenteval serve` | Run a local, read-only [dashboard-data API](#local-dashboard-api) |
@@ -1214,6 +1284,14 @@ field continue through the existing `correctness_type` behavior unchanged. See
 [`docs/plugins.md`](docs/plugins.md) and the installable example under
 [`examples/plugins/agenteval-keyword-evaluator`](examples/plugins/agenteval-keyword-evaluator).
 
+### Example plugins and write-your-own guide
+
+Working sample packages (JSON Schema validation and keyword/regex presence), how
+to register them in a golden suite, and a copy-paste skeleton for a custom
+evaluator live under
+[`examples/plugins/`](examples/plugins/) — start with
+[`examples/plugins/README.md`](examples/plugins/README.md).
+
 AgentEval also bundles realistic starting suites for RAG, coding, and
 customer-support agents:
 
@@ -1314,6 +1392,31 @@ The composite action has both static contract tests and a hosted deterministic s
 - The LangGraph adapter reconstructs final state by merging successive `stream_mode="updates"` deltas (later delta wins per key); graphs with custom state reducers that don't simply overwrite may need an explicit `output_key` or `input_builder` to get an exact answer.
 - Provider-reported cost availability varies by framework and model; explicit per-million token rates can be configured for AutoGen and OpenAI Agents SDK runs.
 - The reusable action requires a stable repository tag such as `v1` before external workflows can pin a major release.
+
+## How AgentEval compares
+
+Most LLM evaluation tools are excellent at scoring **prompts and final answers**. Multi-step agents also need a different layer: versioned golden suites, tool and step evidence, and a **CI-native regression gate** that fails the build when agent behavior drifts after a model, prompt, or tool change. AgentEval is built around that CI workflow—baseline comparison, configurable exit codes, and reviewable run artifacts—rather than only interactive prompt testing or hosted tracing.
+
+The table below is a high-level, feature-oriented snapshot of what this repository implements today versus three well-known tools in the broader LLM evaluation space. Capabilities change quickly; treat competitor columns as directional, not a full product audit. ✅ = first-class / documented focus; ⚠️ = partial, adjacent, or available through a related workflow; — = not a primary documented focus of that tool.
+
+| Dimension | AgentEval | [Promptfoo](https://www.promptfoo.dev/) | [DeepEval](https://deepeval.com/) | [LangSmith](https://www.langchain.com/langsmith) |
+|---|:---:|:---:|:---:|:---:|
+| **CI/CD-native gating** (pass/fail exit codes, PR checks) | ✅ `compare` / composite GitHub Action, registry gates | ✅ CLI-oriented eval and CI use cases | ✅ pytest-style runs and CI | ⚠️ SDK/API and platform evals; CI is integration work |
+| **Baseline regression gate** (version-to-version drop thresholds) | ✅ correctness, hallucination, tools, opt-in cost/latency/tokens | ⚠️ assertion thresholds more than suite baselines | ⚠️ metric thresholds via tests | ⚠️ datasets and experiments; product-centric workflows |
+| **Flakiness detection** (repeat same case, consistency labels) | ✅ `--repeat` + sidecar report; opt-in `max_flakiness_rate` | — | — | ⚠️ repeats/experiments possible; not the same gate model |
+| **Trajectory-level scoring** (ordered steps / tools, not only final text) | ✅ `expected_trajectory` LCS F1 on `nodes_fired` | ⚠️ agent/red-team paths; less suite-native step F1 | ⚠️ agent/conversational metrics; output-centric by default | ✅ rich run traces and step observability |
+| **Trajectory diff** (A vs B step sequences across versions) | ✅ `agenteval diff` (text + `--json`) | — | — | ⚠️ run comparison in the product UI/API |
+| **Framework-agnostic agent adapters** | ✅ `AgentAdapter` + CrewAI, AutoGen, OpenAI Agents SDK, LangGraph | ⚠️ multi-provider/model; not the same adapter registry | ⚠️ library you wire into your stack | ⚠️ strongest with LangChain/LangGraph ecosystems |
+| **Zero-dependency local quickstart** (no API key / external agent) | ✅ `examples/mock_agent` and `examples/action_demo` | ⚠️ local OSS; live models often needed for real evals | ⚠️ local OSS; live models often needed for real evals | — hosted platform (free tier); agent traffic required |
+| **Open-source / self-hostable** | ✅ MIT, local CLI, dashboard, optional local API | ✅ open source, self-hostable | ✅ open source, self-hostable | ⚠️ commercial platform; enterprise self-host options |
+| **Cost and latency tracking in the same gate** | ✅ per-case + suite; opt-in budget/latency gates | ⚠️ depends on provider/config | ⚠️ depends on how you instrument tests | ✅ strong production cost/latency observability |
+| **Evaluator plugins / extension** | ✅ entry-point correctness plugins + templates | ✅ rich assertion and provider ecosystem | ✅ large metric library | ⚠️ custom evaluators via platform/SDK |
+
+### When to use AgentEval vs when not to
+
+**Use AgentEval** when you want a pytest/GitHub Actions-style harness for an agent under test: YAML golden cases, baseline regression gates, tool/trajectory evidence, optional flakiness and trajectory gates, and local artifacts you can review in CI or the Streamlit dashboard—including a zero-network mock-agent path for smoke checks.
+
+**Prefer another tool (or use them together)** when you need Promptfoo’s depth of prompt/red-team matrices, DeepEval’s broad unit-test metric catalog for RAG/answer quality, or LangSmith’s production tracing and hosted observability. AgentEval does not replace a full tracing platform or every specialized metric library; it focuses on **blocking regressions in agent behavior before merge**.
 
 ## Contributing
 

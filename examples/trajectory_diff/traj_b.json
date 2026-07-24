@@ -1,0 +1,10 @@
+{
+  "actual": [
+    "route:sql",
+    "agent:ml",
+    "tool:summarize",
+    "tool:report"
+  ],
+  "score": 0.85,
+  "exact_match": false
+}

@@ -1,0 +1,33 @@
+# Golden suite for the zero-dependency mock agent demo.
+# Format matches AgentEval TestCase / Expects schema (see core/schema.py).
+
+- id: simple_addition
+  prompt: "What is 2 + 2?"
+  expects:
+    correctness_type: exact
+    ground_truth: "4"
+    must_call_tools: []
+    must_not_hallucinate: true
+    expected_trajectory: ["agent:mock"]
+  tags: [mock, exact, smoke]
+
+- id: capital_lookup
+  prompt: "What is the capital of France?"
+  expects:
+    correctness_type: contains
+    ground_truth: "Paris"
+    must_call_tools: [lookup_tool]
+    must_not_hallucinate: true
+    expected_trajectory: ["tool:lookup_tool", "agent:mock"]
+  tags: [mock, tools, contains]
+
+- id: inventory_count
+  prompt: "How many items are in the demo inventory?"
+  expects:
+    correctness_type: numeric
+    ground_truth: 42
+    numeric_tolerance: 0
+    must_call_tools: [inventory_tool]
+    must_not_hallucinate: true
+    expected_trajectory: ["tool:inventory_tool", "agent:mock"]
+  tags: [mock, tools, numeric]

@@ -75,6 +75,13 @@ def _rate(value: Any, label: str) -> float:
     return result
 
 
+def _optional_rate(value: Any, label: str) -> float | None:
+    """Parse an opt-in 0..1 gate: absent/null disables the check entirely."""
+    if value is None:
+        return None
+    return _rate(value, label)
+
+
 def _positive_or_none(value: Any, label: str) -> float | None:
     """Parse an opt-in safety-gate threshold: absent/null disables the check."""
     if value is None:
@@ -173,6 +180,14 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
         significance_alpha=_rate(
             gates_raw.get("significance_alpha", 0.05),
             f"agents.{name}.gates.significance_alpha",
+        ),
+        max_flakiness_rate=_optional_rate(
+            gates_raw.get("max_flakiness_rate"),
+            f"agents.{name}.gates.max_flakiness_rate",
+        ),
+        min_trajectory_f1=_optional_rate(
+            gates_raw.get("min_trajectory_f1"),
+            f"agents.{name}.gates.min_trajectory_f1",
         ),
     )
     alerting_raw = _mapping(data.get("alerting") or {}, f"agents.{name}.alerting")

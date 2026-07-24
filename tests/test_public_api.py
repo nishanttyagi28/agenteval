@@ -69,6 +69,7 @@ def test_existing_and_tier9_cli_commands_are_registered():
         "init",
         "compare-models",
         "trace",
+        "diff",
         "calibrate",
         "audit-log",
         "serve",

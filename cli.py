@@ -88,6 +88,10 @@ def _gate_thresholds(config: AgentConfig):
         max_cost_increase_pct=config.gates.max_cost_increase_pct,
         max_latency_p95_ms=config.gates.max_latency_p95_ms,
         max_token_increase_pct=config.gates.max_token_increase_pct,
+        require_statistical_significance=config.gates.require_statistical_significance,
+        significance_alpha=config.gates.significance_alpha,
+        max_flakiness_rate=config.gates.max_flakiness_rate,
+        min_trajectory_f1=config.gates.min_trajectory_f1,
     )
 
 
@@ -289,19 +293,78 @@ def _run_registered_agent(
             f"mean_consistency={summary.mean_consistency:.1%}"
         )
         for case in flakiness_report.cases:
+            rate = 1.0 - case.consistency_score
             print(
                 f"{case.case_id}: {case.consistent_observations}/"
                 f"{case.total_observations} consistent ({case.classification}) "
-                f"pass_rate={case.pass_count}/{case.total_observations}"
+                f"pass_rate={case.pass_count}/{case.total_observations} "
+                f"flakiness_rate={rate:.3f}"
             )
+        max_flake = config.gates.max_flakiness_rate
+        if max_flake is not None:
+            from agenteval.core.compare import flakiness_gate_reasons
+
+            flake_reasons = flakiness_gate_reasons(flakiness_report, max_flake)
+            status = "FAIL" if flake_reasons else "PASS"
+            print(f"gate status: {status} (max_flakiness_rate={max_flake:.3f})")
+            for reason in flake_reasons:
+                print(f"  - {reason}")
 
     statuses = [case.status for case in report.case_results]
     gate: bool | None = None
+    thresholds = _gate_thresholds(config)
     baseline_path = _configured_path(registry_path, config.baseline)
     if not args.no_score and baseline_path.is_file():
         gate = compare_runs(
-            load_report(baseline_path), report.to_dict(), _gate_thresholds(config)
+            load_report(baseline_path),
+            report.to_dict(),
+            thresholds,
+            flakiness_report=flakiness_report,
         ).passed
+
+    # Opt-in observability gates are evaluated even without a baseline so a
+    # standalone `agenteval run` can fail CI when the user explicitly enables them.
+    observability_reasons: list[str] = []
+    if not args.no_score:
+        from agenteval.core.compare import flakiness_gate_reasons, trajectory_gate_reasons
+
+        observability_reasons.extend(
+            trajectory_gate_reasons(report.to_dict(), thresholds.min_trajectory_f1)
+        )
+        observability_reasons.extend(
+            flakiness_gate_reasons(flakiness_report, thresholds.max_flakiness_rate)
+        )
+        if thresholds.min_trajectory_f1 is not None:
+            traj_scores = [
+                case.trajectory.score
+                for case in report.case_results
+                if case.trajectory is not None
+            ]
+            if traj_scores:
+                mean_traj = sum(traj_scores) / len(traj_scores)
+                traj_status = (
+                    "FAIL"
+                    if any("trajectory F1" in r for r in observability_reasons)
+                    else "PASS"
+                )
+                print(
+                    f"trajectory gate status: {traj_status} "
+                    f"(min_trajectory_f1={thresholds.min_trajectory_f1:.3f}, "
+                    f"mean_f1={mean_traj:.3f}, cases={len(traj_scores)})"
+                )
+            else:
+                print(
+                    f"trajectory gate status: FAIL "
+                    f"(min_trajectory_f1={thresholds.min_trajectory_f1:.3f}, "
+                    "no trajectory scores)"
+                )
+        for reason in observability_reasons:
+            if thresholds.min_trajectory_f1 is not None and "trajectory" in reason:
+                print(f"  - {reason}")
+            elif thresholds.max_flakiness_rate is not None and "flakiness" in reason:
+                # Already printed under the flakiness block when a report exists.
+                if flakiness_report is None:
+                    print(f"  - {reason}")
 
     if not args.no_score and not args.no_history:
         from agenteval.core.history import append_history_entry, entry_from_report
@@ -338,6 +401,8 @@ def _run_registered_agent(
         "failed": statuses.count("failed"),
         "errors": statuses.count("agent_error") + statuses.count("evaluator_error"),
         "gate": gate,
+        "observability_gate_failed": bool(observability_reasons),
+        "observability_reasons": list(observability_reasons),
         "report": report,
         "path": out,
         "flakiness": flakiness_report,
@@ -386,7 +451,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 f"{item['agent']}: passed={item['passed']} failed={item['failed']} "
                 f"errors={item['errors']} gate={gate}"
             )
+    # Baseline gate still only fails multi-agent runs (historical behaviour).
     if args.all and any(item["gate"] is False for item in summaries):
+        return 1
+    # Opt-in flakiness/trajectory gates fail any run that enabled and breached them.
+    if any(item.get("observability_gate_failed") for item in summaries):
+        for item in summaries:
+            for reason in item.get("observability_reasons") or []:
+                print(f"error: {item['agent']}: {reason}", file=sys.stderr)
         return 1
     return 0
 
@@ -470,8 +542,34 @@ def _cmd_compare(args: argparse.Namespace) -> int:
                 if args.significance_alpha is not None
                 else config.gates.significance_alpha
             ),
+            max_flakiness_rate=(
+                args.max_flakiness_rate
+                if args.max_flakiness_rate is not None
+                else config.gates.max_flakiness_rate
+            ),
+            min_trajectory_f1=(
+                args.min_trajectory_f1
+                if args.min_trajectory_f1 is not None
+                else config.gates.min_trajectory_f1
+            ),
         )
-        result = compare_runs(baseline, current, thresholds)
+        flakiness_report = None
+        if thresholds.max_flakiness_rate is not None:
+            from agenteval.core.store import load_flakiness_report
+
+            run_id = str(current.get("run_id") or "").strip()
+            if run_id:
+                flake_path = (
+                    _history_root(args.runs_dir, registry_path)
+                    / config.name
+                    / "flakiness"
+                    / f"{run_id}.json"
+                )
+                if flake_path.is_file():
+                    flakiness_report = load_flakiness_report(flake_path)
+        result = compare_runs(
+            baseline, current, thresholds, flakiness_report=flakiness_report
+        )
         write_outputs(
             result,
             json_path=args.json_out,
@@ -581,6 +679,37 @@ def _cmd_trace(args: argparse.Namespace) -> int:
     except (OSError, ValueError, TraceViewError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    return 0
+
+
+def _cmd_diff(args: argparse.Namespace) -> int:
+    """Compare two trajectory JSON files step-by-step (additive; not a gate)."""
+    import json
+
+    from agenteval.core.trajectory_diff import (
+        TrajectoryDiffError,
+        diff_trajectories,
+        format_trajectory_diff,
+        load_trajectory_file,
+    )
+
+    try:
+        side_a = load_trajectory_file(args.trajectory_a, case_id=args.case_id)
+        side_b = load_trajectory_file(args.trajectory_b, case_id=args.case_id)
+        result = diff_trajectories(
+            side_a,
+            side_b,
+            path_a=str(args.trajectory_a),
+            path_b=str(args.trajectory_b),
+        )
+    except TrajectoryDiffError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+    else:
+        print(format_trajectory_diff(result, verbose=args.verbose), end="")
     return 0
 
 
@@ -1216,6 +1345,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fail if total token usage increases more than this percent over baseline (opt-in)",
     )
     cmp_p.add_argument(
+        "--max-flakiness-rate",
+        type=float,
+        default=None,
+        help="Fail if any case's flakiness rate (1 - consistency) exceeds this 0..1 value (opt-in)",
+    )
+    cmp_p.add_argument(
+        "--min-trajectory-f1",
+        type=float,
+        default=None,
+        help="Fail if any case's trajectory F1 score falls below this 0..1 value (opt-in)",
+    )
+    cmp_p.add_argument(
         "--allow-evaluator-errors",
         action="store_true",
         help="Report evaluator errors without failing the gate",
@@ -1412,6 +1553,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--html", default=None, metavar="PATH", help="Write a self-contained HTML replay to PATH"
     )
     trace_p.set_defaults(func=_cmd_trace)
+
+    diff_p = sub.add_parser(
+        "diff",
+        help="Step-by-step diff of two agent trajectories (nodes_fired / trajectory.actual)",
+    )
+    diff_p.add_argument("trajectory_a", help="Path to trajectory JSON (side A)")
+    diff_p.add_argument("trajectory_b", help="Path to trajectory JSON (side B)")
+    diff_p.add_argument(
+        "--case-id",
+        default=None,
+        help="When a path is a full run report, select this case_id from case_results",
+    )
+    diff_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON instead of the text summary",
+    )
+    diff_p.add_argument(
+        "--verbose",
+        action="store_true",
+        help="List unchanged steps individually instead of collapsing them",
+    )
+    diff_p.set_defaults(func=_cmd_diff)
 
     calibrate_p = sub.add_parser(
         "calibrate", help="Score LLM-judge/human agreement against a labeled calibration set"

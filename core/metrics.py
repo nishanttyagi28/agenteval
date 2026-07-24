@@ -714,11 +714,14 @@ def format_report_summary(report: RunReport) -> str:
         flag = c.status.upper()
         hall = "HALL" if c.hallucination_flag else "ok"
         tools = ",".join(c.tools_called) or "-"
+        traj = ""
+        if c.trajectory is not None:
+            traj = f"  traj_f1={c.trajectory.score:.2f}"
         lines.append(
             f"{c.case_id:32} {flag:4} hall={hall:4}  "
             f"P={_num(c.tool_call_precision, 2)} R={_num(c.tool_call_recall, 2)}  "
             f"lat={c.latency_ms:.0f}ms  cost=${c.cost_usd or 0:.6f}  "
-            f"tools=[{tools}]  {(c.judge_reason or '')[:60]}"
+            f"tools=[{tools}]{traj}  {(c.judge_reason or '')[:60]}"
         )
     return "\n".join(lines)
 

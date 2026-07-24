@@ -22,6 +22,10 @@ class GateThresholds:
     ``max_token_increase_pct`` are opt-in safety gates: ``None`` (the
     default) disables the corresponding check, so existing callers that
     never set them see no behavior change.
+
+    ``max_flakiness_rate`` and ``min_trajectory_f1`` are the same kind of
+    opt-in gate for per-case flakiness (1 - consistency) and trajectory F1.
+    ``None`` (default) leaves those metrics observability-only.
     """
 
     max_correctness_drop: float = 0.05
@@ -37,6 +41,8 @@ class GateThresholds:
     # every existing caller that never sets this sees no change at all.
     require_statistical_significance: bool = False
     significance_alpha: float = DEFAULT_ALPHA
+    max_flakiness_rate: float | None = None
+    min_trajectory_f1: float | None = None
 
 
 @dataclass(frozen=True)
@@ -134,12 +140,103 @@ def _cases_by_id(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return result
 
 
+def trajectory_gate_reasons(
+    report: dict[str, Any],
+    min_trajectory_f1: float | None,
+) -> list[str]:
+    """Return human-readable breaches for the opt-in trajectory F1 gate.
+
+    ``None`` disables the gate entirely (no reasons). Cases without trajectory
+    evidence are skipped; only cases that already carry a ``trajectory.score``
+    are checked, so suites without ``expected_trajectory`` stay unaffected.
+    """
+    if min_trajectory_f1 is None:
+        return []
+    reasons: list[str] = []
+    scored = 0
+    for case in report.get("case_results") or []:
+        if not isinstance(case, dict):
+            continue
+        trajectory = case.get("trajectory")
+        if not isinstance(trajectory, dict):
+            continue
+        score = trajectory.get("score")
+        if score is None:
+            continue
+        try:
+            score_f = float(score)
+        except (TypeError, ValueError):
+            continue
+        scored += 1
+        if score_f < min_trajectory_f1 - 1e-12:
+            case_id = str(case.get("case_id") or "?")
+            reasons.append(
+                f"trajectory F1 for {case_id} is {score_f:.3f} "
+                f"(below min_trajectory_f1={min_trajectory_f1:.3f})"
+            )
+    if scored == 0:
+        reasons.append(
+            "min_trajectory_f1 is set but no case reported a trajectory score "
+            "(add expected_trajectory to golden cases or unset the gate)"
+        )
+    return reasons
+
+
+def flakiness_gate_reasons(
+    flakiness_report: Any,
+    max_flakiness_rate: float | None,
+) -> list[str]:
+    """Return human-readable breaches for the opt-in per-case flakiness gate.
+
+    Flakiness rate for a case is ``1 - consistency_score`` (so stable cases
+    have rate 0.0). ``None`` disables the gate. When no flakiness report is
+    supplied the gate is a no-op (repeat evidence was never collected).
+    """
+    if max_flakiness_rate is None or flakiness_report is None:
+        return []
+
+    if isinstance(flakiness_report, dict):
+        cases = flakiness_report.get("cases") or []
+    else:
+        cases = getattr(flakiness_report, "cases", ()) or ()
+
+    reasons: list[str] = []
+    for case in cases:
+        if isinstance(case, dict):
+            case_id = str(case.get("case_id") or "?")
+            consistency = case.get("consistency_score")
+        else:
+            case_id = str(getattr(case, "case_id", "?") or "?")
+            consistency = getattr(case, "consistency_score", None)
+        if consistency is None:
+            continue
+        try:
+            consistency_f = float(consistency)
+        except (TypeError, ValueError):
+            continue
+        rate = 1.0 - consistency_f
+        if rate > max_flakiness_rate + 1e-12:
+            reasons.append(
+                f"flakiness rate for {case_id} is {rate:.3f} "
+                f"(exceeds max_flakiness_rate={max_flakiness_rate:.3f}; "
+                f"consistency={consistency_f:.3f})"
+            )
+    return reasons
+
+
 def compare_runs(
     baseline: dict[str, Any],
     current: dict[str, Any],
     thresholds: GateThresholds | None = None,
+    *,
+    flakiness_report: Any = None,
 ) -> ComparisonResult:
-    """Compare two persisted run reports and evaluate CI gates."""
+    """Compare two persisted run reports and evaluate CI gates.
+
+    ``flakiness_report`` is optional sidecar evidence used only when
+    ``thresholds.max_flakiness_rate`` is set. Omitting it (the default)
+    preserves prior compare behaviour for every caller that never opts in.
+    """
 
     limits = thresholds or GateThresholds()
     reasons: list[str] = []
@@ -293,6 +390,10 @@ def compare_runs(
     if limits.fail_on_agent_error and agent_errors:
         reasons.append(f"current run contains {agent_errors} agent execution error(s)")
 
+    # Opt-in observability gates — only when explicitly configured.
+    reasons.extend(trajectory_gate_reasons(current, limits.min_trajectory_f1))
+    reasons.extend(flakiness_gate_reasons(flakiness_report, limits.max_flakiness_rate))
+
     return ComparisonResult(
         passed=not reasons,
         reasons=reasons,
@@ -339,6 +440,19 @@ def format_markdown(result: ComparisonResult) -> str:
         lines.extend(f"- {reason}" for reason in result.reasons)
     else:
         lines.append("- All configured gates passed.")
+
+    # Surface opt-in flakiness/trajectory breaches with an explicit gate status
+    # next to the existing reasons list (no restructuring of other sections).
+    observability = [
+        reason
+        for reason in result.reasons
+        if "flakiness rate" in reason
+        or "trajectory F1" in reason
+        or "min_trajectory_f1 is set" in reason
+    ]
+    if observability:
+        lines.extend(["", "## Observability gates", ""])
+        lines.append(f"- **gate status:** FAIL ({len(observability)} breach(es))")
 
     if result.significance is not None:
         mcnemar = result.significance.mcnemar
