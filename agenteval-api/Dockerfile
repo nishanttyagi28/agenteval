@@ -15,9 +15,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# git is required for pip install of git+https deps (nishanttyagi-agenteval).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --upgrade pip
 
-# Install API deps + published/git AgentEval package (see requirements.txt).
+# Install API deps + AgentEval from git+https (see requirements.txt).
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
