@@ -27,6 +27,7 @@ dependencies = [
   "PyYAML>=6.0,<7",
   "pandas>=2.2,<4",
   "streamlit>=1.59,<2",
+  "sqlglot>=30.13.0,<31",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +59,8 @@ packages = [
   "agenteval.core",
   "agenteval.dashboard",
   "agenteval.evaluators",
+  "agenteval.sql",
+  "agenteval.sql.rules",
   "agenteval.templates",
   "agenteval.templates.catalog",
 ]

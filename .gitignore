@@ -54,3 +54,6 @@ vscode-extension/*.vsix
 # Logs / local
 *.log
 terminals/
+
+# AgentEval SQL importer (raw logs may contain PII)
+.agenteval/sql/raw/

@@ -46,6 +46,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Deployment (Coming Soon)](#deployment-coming-soon)
 - [Golden case example](#golden-case-example)
 - [Dashboard evidence](#dashboard-evidence)
+- [SQL agent safety scanner (Tier 1)](#sql-agent-safety-scanner-tier-1)
 - [Installation](#installation)
 - [Try it in 30 seconds](#try-it-in-30-seconds)
 - [Getting started with `agenteval init`](#getting-started-with-agenteval-init)
@@ -715,6 +716,18 @@ The comparison view exposes trade-offs instead of collapsing health into one num
 ![AgentEval failure drill-down](assets/failure.png)
 
 A numeric answer of approximately 25 months failed against a ground truth of 25.23 with a tolerance of 0.05. The ground truth was intentionally preserved rather than loosened to produce a green result.
+
+## SQL agent safety scanner (Tier 1)
+
+Structural scanning of SQL emitted by text-to-SQL / data agents — block writes, multi-statement smuggling, cartesian joins, and related review signals **without** schema policy or execution.
+
+```bash
+agenteval sql scan queries.jsonl --dialect postgres
+agenteval sql diff-runs baseline.jsonl candidate.jsonl
+agenteval sql import logs.jsonl --question-field q --sql-field sql
+```
+
+Full command reference, gotchas, known limitations, sample `sql-policy.yml` (Tier 2 not enforced yet), and a CI snippet: **[docs/sql-scanner.md](docs/sql-scanner.md)**.
 
 ## Installation
 

@@ -1675,6 +1675,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     templates_install_p.set_defaults(func=_cmd_templates_install)
 
+    from agenteval.sql.cli import register_sql_parser
+
+    register_sql_parser(sub)
+
     return parser
 
 

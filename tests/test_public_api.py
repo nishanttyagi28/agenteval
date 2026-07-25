@@ -75,4 +75,5 @@ def test_existing_and_tier9_cli_commands_are_registered():
         "serve",
         "plugins",
         "templates",
+        "sql",
     }
