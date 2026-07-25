@@ -1,8 +1,8 @@
-# Render Blueprint — one-click deploy of the AgentEval SQL API (free tier).
+# Render Blueprint — AgentEval SQL API (free tier).
 #
-# In the Render dashboard: New → Blueprint → connect this GitHub repo.
-# Or create a Web Service manually using the settings documented in
-# DEPLOY.md / the root deployment steps.
+# When this service uses Root Directory = agenteval-api, paths below are
+# relative to that directory (Docker context is agenteval-api/, not the
+# monorepo root).
 #
 # Note: free-tier Web Services spin down after idle; cold starts are fine
 # for a portfolio demo.
@@ -12,9 +12,8 @@ services:
     name: agenteval-api
     runtime: docker
     plan: free
-    # Build context = repository root so the Dockerfile can install the
-    # local nishanttyagi-agenteval package (SQL Tiers 1–5).
-    dockerfilePath: ./agenteval-api/Dockerfile
+    # Context and Dockerfile are both inside Root Directory (agenteval-api/).
+    dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
     envVars:
