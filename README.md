@@ -46,7 +46,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Deployment (Coming Soon)](#deployment-coming-soon)
 - [Golden case example](#golden-case-example)
 - [Dashboard evidence](#dashboard-evidence)
-- [SQL agent safety scanner (Tier 1)](#sql-agent-safety-scanner-tier-1)
+- [SQL agent safety scanner](#sql-agent-safety-scanner)
 - [Installation](#installation)
 - [Try it in 30 seconds](#try-it-in-30-seconds)
 - [Getting started with `agenteval init`](#getting-started-with-agenteval-init)
@@ -717,17 +717,17 @@ The comparison view exposes trade-offs instead of collapsing health into one num
 
 A numeric answer of approximately 25 months failed against a ground truth of 25.23 with a tolerance of 0.05. The ground truth was intentionally preserved rather than loosened to produce a green result.
 
-## SQL agent safety scanner (Tier 1)
+## SQL agent safety scanner
 
-Structural scanning of SQL emitted by text-to-SQL / data agents — block writes, multi-statement smuggling, cartesian joins, and related review signals **without** schema policy or execution.
+`agenteval sql` is a multi-tier safety scanner for SQL emitted by text-to-SQL / data agents (Tiers 1–5: structural rules, schema/policy, sandboxed EXPLAIN, session behaviour, and heuristic semantic alignment).
 
 ```bash
-agenteval sql scan queries.jsonl --dialect postgres
+agenteval sql scan queries.jsonl --dialect postgres [--policy sql-policy.yml]
 agenteval sql diff-runs baseline.jsonl candidate.jsonl
 agenteval sql import logs.jsonl --question-field q --sql-field sql
 ```
 
-Full command reference, gotchas, known limitations, sample `sql-policy.yml` (Tier 2 not enforced yet), and a CI snippet: **[docs/sql-scanner.md](docs/sql-scanner.md)**.
+Full command reference, policy format, sandbox allowlist notes, and CI examples: **[docs/sql-scanner.md](docs/sql-scanner.md)**.
 
 ## Installation
 
