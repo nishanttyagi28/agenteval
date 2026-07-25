@@ -1,0 +1,14 @@
+# Render Blueprint (repo root) — free-tier AgentEval SQL API.
+# Dashboard: New → Blueprint → connect this GitHub repo → apply.
+
+services:
+  - type: web
+    name: agenteval-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./agenteval-api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"

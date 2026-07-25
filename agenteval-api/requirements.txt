@@ -1,0 +1,9 @@
+# AgentEval SQL API — free-tier deploy dependencies
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+python-multipart==0.0.20
+
+# Core scanner. For monorepo/Docker installs the Dockerfile installs the
+# local package; for Render native Python builds prefer a published release
+# (or git+https — see render.yaml notes).
+nishanttyagi-agenteval>=0.1.1
