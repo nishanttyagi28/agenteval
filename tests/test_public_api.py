@@ -20,7 +20,7 @@ from agenteval.evaluators import EvaluationContext, EvaluationResult, Evaluator
 
 
 def test_root_version_and_compatibility_exports():
-    assert agenteval.__version__ == "0.1.1"
+    assert agenteval.__version__ == "0.2.0"
     assert agenteval.AgentEvalDeprecationWarning is AgentEvalDeprecationWarning
     assert agenteval.warn_deprecated is warn_deprecated
 
