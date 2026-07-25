@@ -110,6 +110,8 @@ rules:
 
 execution:
   sandbox_dsn: "sqlite:///:memory:"   # Tier 3; omit to skip
+  sandbox_confirmed: true             # required for Tier 3 (or --sandbox-confirm)
+  allowed_hosts: [":memory:", "localhost"]  # required non-empty allowlist
   cost_budget: 1000000
   timeout_ms: 5000
 
@@ -131,7 +133,13 @@ tables:
 
 ## Tier 3 — execution (SQL201–SQL204)
 
-**Sandbox only.** Before any connection, the DSN host/path is checked against production-looking substrings (`prod`, `production`, `live`, `master`, case-insensitive). Matches **refuse to connect**.
+**Allowlist-only sandboxes.** Default is **refuse every DSN** — including ones that look like sandboxes. There is **no** production-name denylist; naming conventions are not trusted.
+
+Tier 3 connects only when **all** of the following hold:
+
+1. `execution.sandbox_dsn` is set  
+2. Explicit confirmation: `execution.sandbox_confirmed: true` **and/or** CLI `--sandbox-confirm`  
+3. Non-empty `execution.allowed_hosts` and the DSN matches an entry (full DSN, hostname, path, or `:memory:`)
 
 Uses **EXPLAIN / dry-run only** — never executes writes against the sandbox.
 
@@ -139,12 +147,26 @@ Uses **EXPLAIN / dry-run only** — never executes writes against the sandbox.
 |----|----------|--------|
 | SQL201 | review | EXPLAIN cost budget exceeded |
 | SQL202 | review | Estimated rows ≫ LIMIT |
-| SQL203 | block | Dry-run wall-clock timeout / production DSN refusal |
+| SQL203 | block | Dry-run timeout **or** DSN not allowlisted / not confirmed |
 | SQL204 | review | Result shape mismatch vs question (needs `question`) |
 
-If `sandbox_dsn` is absent: Tier 3 **silently skipped** (`tier_activation["3"]=false`) with a one-line notice.
+If DSN / confirmation / allowlist is incomplete: Tier 3 **skipped** (`tier_activation["3"]=false`) with a notice. A policy DSN that fails allowlist validation at run time emits **SQL203 block**.
 
-Local default: `sqlite:///:memory:` (no Docker). Unit tests also use a mock EXPLAIN backend for deterministic cost/timeout cases.
+```yaml
+execution:
+  sandbox_dsn: "sqlite:///:memory:"
+  sandbox_confirmed: true          # required (or pass --sandbox-confirm)
+  allowed_hosts:                   # required non-empty allowlist
+    - ":memory:"
+    - "localhost"
+    - "sqlite:///:memory:"
+  cost_budget: 1000000
+  timeout_ms: 5000
+```
+
+```bash
+agenteval sql scan queries.jsonl --policy sql-policy.yml --sandbox-confirm
+```
 
 ## Tier 4 — session (SQL301–SQL304)
 

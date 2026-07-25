@@ -30,6 +30,7 @@ def activate_tiers(
     *,
     policy_path: str | Path | None = None,
     sandbox_dsn_override: str | None = None,
+    sandbox_confirm: bool = False,
     has_session_ids: bool = False,
     has_questions: bool = False,
 ) -> TierState:
@@ -66,15 +67,28 @@ def activate_tiers(
             else:
                 state.activation["2"] = False
 
-            # Tier 3: sandbox DSN
+            # Tier 3: requires DSN + confirmation + non-empty allowlist
             dsn = sandbox_dsn_override or (policy.sandbox_dsn if policy else None)
-            if dsn:
+            confirmed = bool(sandbox_confirm or policy.sandbox_confirmed)
+            hosts = list(policy.allowed_hosts or [])
+            if dsn and confirmed and hosts:
                 state.activation["3"] = True
             else:
-                state.notices.append(
-                    "Tier 3 skipped: no execution.sandbox_dsn in policy"
-                )
                 state.activation["3"] = False
+                if not dsn:
+                    state.notices.append(
+                        "Tier 3 skipped: no execution.sandbox_dsn in policy"
+                    )
+                elif not confirmed:
+                    state.notices.append(
+                        "Tier 3 skipped: set execution.sandbox_confirmed: true "
+                        "or pass --sandbox-confirm"
+                    )
+                elif not hosts:
+                    state.notices.append(
+                        "Tier 3 skipped: execution.allowed_hosts is empty "
+                        "(default is refuse-all; list sandbox hosts explicitly)"
+                    )
     else:
         state.notices.append("Tier 2 inactive: no --policy provided")
 
@@ -96,6 +110,7 @@ def scan_query(
     state: TierState | None = None,
     question: str | None = None,
     session_id: str | None = None,
+    sandbox_confirm: bool = False,
 ) -> tuple[bool, list[Finding]]:
     """Run all active tiers for one SQL string."""
     state = state or TierState()
@@ -120,7 +135,13 @@ def scan_query(
         from agenteval.sql.execution import run_execution_rules
 
         findings.extend(
-            run_execution_rules(sql, dialect=dialect, policy=state.policy, question=question)
+            run_execution_rules(
+                sql,
+                dialect=dialect,
+                policy=state.policy,
+                question=question,
+                sandbox_confirm=sandbox_confirm,
+            )
         )
 
     # Tier 4/5 applied at corpus level in cli (session needs multi-query)

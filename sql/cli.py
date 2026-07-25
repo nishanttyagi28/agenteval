@@ -86,6 +86,7 @@ def run_scan(
     dialect: str = "postgres",
     policy: str | None = None,
     report_path: str | Path = "scan-report.json",
+    sandbox_confirm: bool = False,
     stream=None,
 ) -> int:
     """Scan a JSONL corpus; print Section 11 output; write provenance report.
@@ -105,6 +106,7 @@ def run_scan(
         policy_path=policy,
         has_session_ids=has_sessions,
         has_questions=has_questions,
+        sandbox_confirm=sandbox_confirm,
     )
     for notice in state.notices:
         print(f"notice: {notice}", file=sys.stderr)
@@ -123,6 +125,7 @@ def run_scan(
             dialect=dialect,
             state=state,
             question=question if state.activation.get("5") else None,
+            sandbox_confirm=sandbox_confirm,
         )
         per_query_findings[qid] = list(findings)
         results.append(
@@ -239,7 +242,15 @@ def register_sql_parser(subparsers: argparse._SubParsersAction) -> None:
     scan_p.add_argument(
         "--policy",
         default=None,
-        help="Policy file for Tier 2 (not yet implemented; warns if set)",
+        help="sql-policy.yml (Tier 2+; schema_file required for Tier 2)",
+    )
+    scan_p.add_argument(
+        "--sandbox-confirm",
+        action="store_true",
+        help=(
+            "Confirm intentional Tier 3 sandbox use (also set "
+            "execution.sandbox_confirmed: true). Required with allowed_hosts."
+        ),
     )
     scan_p.add_argument(
         "--report",
@@ -312,6 +323,7 @@ def _cmd_sql_scan(args: argparse.Namespace) -> int:
         dialect=args.dialect,
         policy=args.policy,
         report_path=args.report,
+        sandbox_confirm=bool(getattr(args, "sandbox_confirm", False)),
     )
 
 

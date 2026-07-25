@@ -34,6 +34,8 @@ class Policy:
     rule_overrides: dict[str, str] = field(default_factory=dict)
     # Tier 3
     sandbox_dsn: str | None = None
+    sandbox_confirmed: bool = False
+    allowed_hosts: list[str] = field(default_factory=list)
     explain_cost_budget: float = 1_000_000.0
     explain_timeout_ms: int = 5_000
     # Tier 4
@@ -271,6 +273,13 @@ def load_policy(path: Path | str) -> Policy:
     sandbox_dsn = execution.get("sandbox_dsn") or data.get("sandbox_dsn")
     if sandbox_dsn is not None and not isinstance(sandbox_dsn, str):
         raise PolicyError("execution.sandbox_dsn must be a string")
+    sandbox_confirmed = bool(
+        execution.get("sandbox_confirmed", data.get("sandbox_confirmed", False))
+    )
+    allowed_hosts = _as_str_list(
+        execution.get("allowed_hosts", data.get("allowed_hosts")),
+        "execution.allowed_hosts",
+    )
     cost_budget = execution.get("cost_budget", execution.get("explain_cost_budget", 1_000_000))
     try:
         cost_budget_f = float(cost_budget)
@@ -308,6 +317,8 @@ def load_policy(path: Path | str) -> Policy:
         categories=categories,
         rule_overrides=rule_overrides,
         sandbox_dsn=sandbox_dsn,
+        sandbox_confirmed=sandbox_confirmed,
+        allowed_hosts=list(allowed_hosts),
         explain_cost_budget=cost_budget_f,
         explain_timeout_ms=timeout_ms_i,
         session_max_queries=max_q_i,

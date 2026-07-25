@@ -1,26 +1,25 @@
-"""Tier 3 execution checks — EXPLAIN/dry-run against sandbox DSNs only."""
+"""Tier 3 execution checks — EXPLAIN/dry-run against **allowlisted** sandbox DSNs only."""
 
 from __future__ import annotations
 
 import re
 import sqlite3
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 from urllib.parse import urlparse
 
 from agenteval.sql.policy import Policy
 from agenteval.sql.rules.structural import Finding
 
-# Host/path substrings that look like production — refuse to connect.
-_PROD_DSN_PATTERNS = re.compile(
-    r"(prod|production|live|master)",
-    re.I,
-)
+
+class SandboxDSNError(RuntimeError):
+    """Raised when a DSN is not explicitly allowlisted for Tier 3."""
 
 
-class ProductionDSNError(RuntimeError):
-    """Raised when a DSN looks like production."""
+# Back-compat alias (older tests/docs may reference the denylist name).
+ProductionDSNError = SandboxDSNError
 
 
 @dataclass
@@ -39,39 +38,92 @@ class ExplainBackend(Protocol):
     def explain(self, sql: str, *, timeout_ms: int) -> ExplainResult: ...
 
 
-def validate_sandbox_dsn(dsn: str) -> None:
-    """Refuse DSNs whose host/path looks like production.
+def _dsn_candidates(dsn: str) -> set[str]:
+    """Normalized tokens derived from a DSN for allowlist matching."""
+    raw = dsn.strip()
+    parsed = urlparse(raw)
+    out: set[str] = {raw.lower()}
+    if parsed.hostname:
+        out.add(parsed.hostname.lower())
+    if parsed.netloc:
+        out.add(parsed.netloc.lower().split("@")[-1])  # drop userinfo
+    if parsed.path:
+        path = parsed.path
+        out.add(path.lower())
+        out.add(path.lstrip("/").lower())
+    if ":memory:" in raw.lower():
+        out.add(":memory:")
+        out.add("sqlite:///:memory:")
+    return {c for c in out if c}
 
-    Raises :class:`ProductionDSNError` with a clear message.
+
+def dsn_matches_allowlist(dsn: str, allowed_hosts: Sequence[str]) -> bool:
+    """True if DSN exactly matches an allowlist entry (host, path, :memory:, or full DSN)."""
+    candidates = _dsn_candidates(dsn)
+    for entry in allowed_hosts:
+        e = (entry or "").strip().lower()
+        if not e:
+            continue
+        if e in candidates:
+            return True
+        # full-string equality already covered; also allow entry == raw
+        if e == dsn.strip().lower():
+            return True
+    return False
+
+
+def validate_sandbox_dsn(
+    dsn: str,
+    *,
+    allowed_hosts: Sequence[str] | None = None,
+    sandbox_confirmed: bool = False,
+) -> None:
+    """Allowlist-only gate: refuse every DSN unless explicitly authorized.
+
+    Requirements (all must hold):
+    1. Non-empty DSN
+    2. ``sandbox_confirmed`` is True (policy ``execution.sandbox_confirmed``
+       and/or CLI ``--sandbox-confirm``)
+    3. ``allowed_hosts`` is non-empty and the DSN matches an entry
+
+    Default (no confirmation / empty allowlist): **refuse to connect** —
+    including DSNs that look like sandboxes. A denylist of production-ish
+    names is intentionally **not** used.
     """
     if not dsn or not str(dsn).strip():
-        raise ProductionDSNError("sandbox_dsn is empty")
+        raise SandboxDSNError(
+            "sandbox_dsn is empty — Tier 3 refuses to connect"
+        )
     raw = str(dsn).strip()
-    # sqlite special-cases
-    if raw.startswith("sqlite:"):
-        # allow :memory: and local files; still block if path contains prod markers
-        rest = raw.split("sqlite:", 1)[-1]
-        if _PROD_DSN_PATTERNS.search(rest.replace(":memory:", "")):
-            raise ProductionDSNError(
-                f"sandbox_dsn looks like a production database path ({raw!r}). "
-                "Tier 3 only runs against sandboxes — refusing to connect."
-            )
-        return
+    hosts = [h for h in (allowed_hosts or []) if (h or "").strip()]
 
-    parsed = urlparse(raw)
-    haystacks = [
-        parsed.hostname or "",
-        parsed.path or "",
-        parsed.netloc or "",
-        raw,
-    ]
-    for h in haystacks:
-        if h and _PROD_DSN_PATTERNS.search(h):
-            raise ProductionDSNError(
-                f"sandbox_dsn looks like a production database ({raw!r}). "
-                "Matched production-like pattern in host/path. "
-                "Tier 3 only runs against sandboxes — refusing to connect."
-            )
+    if not sandbox_confirmed:
+        raise SandboxDSNError(
+            "Tier 3 refused: sandbox not confirmed. Set "
+            "execution.sandbox_confirmed: true in sql-policy.yml and/or pass "
+            f"--sandbox-confirm (dsn={raw!r})."
+        )
+    if not hosts:
+        raise SandboxDSNError(
+            "Tier 3 refused: execution.allowed_hosts is empty. Populate an "
+            "explicit allowlist of sandbox hosts/paths/DSNs "
+            f"(e.g. [':memory:', 'localhost']) — default is refuse-all (dsn={raw!r})."
+        )
+    if not dsn_matches_allowlist(raw, hosts):
+        raise SandboxDSNError(
+            f"Tier 3 refused: DSN {raw!r} is not in execution.allowed_hosts "
+            f"{list(hosts)!r}. Explicitly allowlist this sandbox host/path/DSN."
+        )
+
+
+def _auth_from_policy(
+    policy: Policy | None,
+    *,
+    sandbox_confirm: bool = False,
+) -> tuple[list[str], bool]:
+    hosts = list(policy.allowed_hosts) if policy else []
+    confirmed = bool(sandbox_confirm or (policy.sandbox_confirmed if policy else False))
+    return hosts, confirmed
 
 
 class SqliteExplainBackend:
@@ -80,8 +132,20 @@ class SqliteExplainBackend:
     Cost is a heuristic derived from plan complexity (not Postgres cost units).
     """
 
-    def __init__(self, dsn: str = "sqlite:///:memory:") -> None:
-        validate_sandbox_dsn(dsn)
+    def __init__(
+        self,
+        dsn: str = "sqlite:///:memory:",
+        *,
+        allowed_hosts: Sequence[str] | None = None,
+        sandbox_confirmed: bool = False,
+        skip_validate: bool = False,
+    ) -> None:
+        if not skip_validate:
+            validate_sandbox_dsn(
+                dsn,
+                allowed_hosts=allowed_hosts,
+                sandbox_confirmed=sandbox_confirmed,
+            )
         self.dsn = dsn
         if ":memory:" in dsn:
             self._conn = sqlite3.connect(":memory:")
@@ -181,15 +245,30 @@ class MockExplainBackend:
         )
 
 
-def open_explain_backend(dsn: str) -> ExplainBackend:
-    """Create a backend after production-DSN validation."""
-    validate_sandbox_dsn(dsn)
+def open_explain_backend(
+    dsn: str,
+    *,
+    allowed_hosts: Sequence[str] | None = None,
+    sandbox_confirmed: bool = False,
+) -> ExplainBackend:
+    """Create a backend only after allowlist validation succeeds."""
+    validate_sandbox_dsn(
+        dsn,
+        allowed_hosts=allowed_hosts,
+        sandbox_confirmed=sandbox_confirmed,
+    )
     if dsn.startswith("sqlite:"):
-        return SqliteExplainBackend(dsn)
+        return SqliteExplainBackend(
+            dsn,
+            allowed_hosts=allowed_hosts,
+            sandbox_confirmed=sandbox_confirmed,
+            skip_validate=True,  # already validated above
+        )
     # Postgres would use psycopg; not required for suite — fail clearly
-    raise ProductionDSNError(
+    raise SandboxDSNError(
         f"unsupported sandbox_dsn scheme for this environment: {dsn!r}. "
-        "Use sqlite:///:memory: or sqlite:///path/to.db for local Tier 3."
+        "Use sqlite:///:memory: or sqlite:///path/to.db for local Tier 3 "
+        "(and allowlist it under execution.allowed_hosts)."
     )
 
 
@@ -207,22 +286,32 @@ def run_execution_rules(
     policy: Policy,
     question: str | None = None,
     backend: ExplainBackend | None = None,
+    sandbox_confirm: bool = False,
 ) -> list[Finding]:
     """SQL201–SQL204 via EXPLAIN/dry-run only (never execute writes)."""
     dsn = policy.sandbox_dsn
     if not dsn and backend is None:
         return []
 
+    hosts, confirmed = _auth_from_policy(policy, sandbox_confirm=sandbox_confirm)
     findings: list[Finding] = []
     try:
         if backend is None:
             assert dsn is not None
-            backend = open_explain_backend(dsn)
+            backend = open_explain_backend(
+                dsn,
+                allowed_hosts=hosts,
+                sandbox_confirmed=confirmed,
+            )
         else:
-            # Still validate configured DSN if present
+            # Always gate policy DSN even when a mock backend is injected.
             if dsn:
-                validate_sandbox_dsn(dsn)
-    except ProductionDSNError as exc:
+                validate_sandbox_dsn(
+                    dsn,
+                    allowed_hosts=hosts,
+                    sandbox_confirmed=confirmed,
+                )
+    except SandboxDSNError as exc:
         findings.append(
             Finding(
                 "SQL203",
