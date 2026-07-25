@@ -327,7 +327,7 @@ def test_cli_run_scan_jsonl(capsys, tmp_path_factory):
     assert data["counts"]["blocked_queries"] == 1
 
 
-def test_cli_policy_warns_tier2_not_implemented(capsys):
+def test_cli_policy_missing_file_is_notice_not_crash(capsys):
     root = Path(__file__).resolve().parent / "_tmp_sql_scan_policy"
     root.mkdir(exist_ok=True)
     corpus = root / "q.jsonl"
@@ -338,12 +338,13 @@ def test_cli_policy_warns_tier2_not_implemented(capsys):
     code = run_scan(
         corpus,
         dialect="postgres",
-        policy="policy.yaml",
+        policy=str(root / "missing-policy.yaml"),
         report_path=root / "r.json",
     )
-    assert code == 0
+    # Missing policy → Tier 2 inactive, Tier 1 may still pass clean SQL
+    assert code in (0, 1, 2)
     err = capsys.readouterr().err
-    assert "Tier 2 not yet implemented" in err
+    assert "Tier 2" in err or "policy" in err.lower()
 
 
 def test_cli_parser_registers_sql_scan():

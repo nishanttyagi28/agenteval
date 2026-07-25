@@ -48,13 +48,16 @@ class ScanReport:
         return asdict(self)
 
 
-TIER_ACTIVATION_T1_ONLY: dict[str, bool] = {
+DEFAULT_TIER_ACTIVATION: dict[str, bool] = {
     "1": True,
     "2": False,
     "3": False,
     "4": False,
     "5": False,
 }
+
+# Back-compat alias
+TIER_ACTIVATION_T1_ONLY = DEFAULT_TIER_ACTIVATION
 
 
 def corpus_hash_for(path: Path | str, raw: bytes | None = None) -> str:
@@ -71,6 +74,7 @@ def build_report(
     corpus_bytes: bytes | None = None,
     policy_path: str | None = None,
     run_id: str | None = None,
+    tier_activation: dict[str, bool] | None = None,
 ) -> ScanReport:
     """Assemble provenance bundle + per-query findings."""
     n_block_q = n_review_q = n_pass = 0
@@ -101,12 +105,16 @@ def build_report(
     else:
         c_hash = hashlib.sha256(b"").hexdigest()
 
+    activation = dict(DEFAULT_TIER_ACTIVATION)
+    if tier_activation:
+        activation.update({str(k): bool(v) for k, v in tier_activation.items()})
+
     return ScanReport(
         run_id=run_id or uuid.uuid4().hex[:12],
         agenteval_version=__version__,
         corpus_hash=c_hash,
         dialect=dialect,
-        tier_activation=dict(TIER_ACTIVATION_T1_ONLY),
+        tier_activation=activation,
         counts={
             "queries": len(results),
             "blocked_queries": n_block_q,

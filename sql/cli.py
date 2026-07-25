@@ -15,7 +15,7 @@ from agenteval.sql.report import (
     exit_code_for,
     write_report,
 )
-from agenteval.sql.rules.structural import scan_sql
+from agenteval.sql.scanner import activate_tiers, scan_query
 
 
 def _caret(sql: str, evidence: str) -> str | None:
@@ -57,20 +57,26 @@ def _print_human(results: list[QueryScanResult], report_counts: dict) -> None:
     print(f"\nPASS   — {n_pass} queries")
 
 
-def load_jsonl(path: Path) -> tuple[list[tuple[str, str]], bytes]:
-    """Load (query_id, sql) pairs and raw file bytes for hashing."""
+def load_jsonl_records(path: Path) -> tuple[list[dict], bytes]:
+    """Load full JSONL records and raw file bytes for hashing."""
     raw = path.read_bytes()
-    # utf-8-sig strips a BOM if present (common when files are written on Windows).
     text = raw.decode("utf-8-sig")
-    pairs: list[tuple[str, str]] = []
+    records: list[dict] = []
     for i, line in enumerate(text.splitlines(), 1):
         line = line.strip()
         if not line:
             continue
         rec = json.loads(line)
-        qid = rec.get("id") or f"line_{i}"
-        sql = rec.get("sql") or ""
-        pairs.append((qid, sql))
+        if "id" not in rec or rec.get("id") in (None, ""):
+            rec = {**rec, "id": rec.get("id") or f"line_{i}"}
+        records.append(rec)
+    return records, raw
+
+
+def load_jsonl(path: Path) -> tuple[list[tuple[str, str]], bytes]:
+    """Load (query_id, sql) pairs and raw file bytes for hashing."""
+    records, raw = load_jsonl_records(path)
+    pairs = [(str(r.get("id")), r.get("sql") or "") for r in records]
     return pairs, raw
 
 
@@ -91,20 +97,47 @@ def run_scan(
         print(f"error: corpus not found: {path}", file=sys.stderr)
         return 2
 
-    if policy:
-        print(
-            "warning: Tier 2 not yet implemented, running Tier 1 only "
-            f"(--policy {policy!r} ignored for enforcement)",
-            file=sys.stderr,
-        )
+    records, raw = load_jsonl_records(path)
+    has_sessions = any(r.get("session_id") or (r.get("metadata") or {}).get("session") for r in records)
+    has_questions = any(bool(r.get("question")) for r in records)
 
-    pairs, raw = load_jsonl(path)
+    state = activate_tiers(
+        policy_path=policy,
+        has_session_ids=has_sessions,
+        has_questions=has_questions,
+    )
+    for notice in state.notices:
+        print(f"notice: {notice}", file=sys.stderr)
+    if state.policy_error and policy:
+        print(f"warning: policy/schema issue: {state.policy_error}", file=sys.stderr)
+
     results: list[QueryScanResult] = []
-    for qid, sql in pairs:
-        parsed, findings = scan_sql(sql, dialect=dialect)
+    # Per-query scan (tiers 1–3, 5); tier 4 applied after grouping
+    per_query_findings: dict[str, list] = {}
+    for rec in records:
+        qid = str(rec.get("id"))
+        sql = rec.get("sql") or ""
+        question = rec.get("question") or None
+        parsed, findings = scan_query(
+            sql,
+            dialect=dialect,
+            state=state,
+            question=question if state.activation.get("5") else None,
+        )
+        per_query_findings[qid] = list(findings)
         results.append(
             QueryScanResult(query_id=qid, parsed=parsed, findings=findings, sql=sql)
         )
+
+    if state.activation.get("4"):
+        from agenteval.sql.session import run_session_rules
+
+        session_findings = run_session_rules(records, dialect=dialect, policy=state.policy)
+        # Merge session findings into matching query results
+        by_id = {r.query_id: r for r in results}
+        for qid, extra in session_findings.items():
+            if qid in by_id:
+                by_id[qid].findings = list(by_id[qid].findings) + list(extra)
 
     report = build_report(
         results,
@@ -112,6 +145,7 @@ def run_scan(
         corpus_bytes=raw,
         corpus_path=path,
         policy_path=policy,
+        tier_activation=state.activation,
     )
     _print_human(results, report.counts)
     write_report(report, report_path)
