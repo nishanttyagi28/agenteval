@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -143,8 +143,32 @@ CREATE TABLE IF NOT EXISTS fm_exports (
 );
 """
 
+# Version 2 — candidate lineage for immutable approved revisions.
+# Replaces the single-active-cluster unique index so an approved row can
+# coexist with a new pending revision of the same cluster.
+_V2_SQL = """
+ALTER TABLE fm_candidates ADD COLUMN parent_candidate_id TEXT;
+ALTER TABLE fm_candidates ADD COLUMN revision_of TEXT;
+ALTER TABLE fm_candidates ADD COLUMN revision_idempotency_key TEXT;
+
+DROP INDEX IF EXISTS idx_fm_candidates_active_cluster;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fm_candidates_pending_cluster
+    ON fm_candidates(cluster_id)
+    WHERE state = 'pending_review';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fm_candidates_revision_key
+    ON fm_candidates(revision_idempotency_key)
+    WHERE revision_idempotency_key IS NOT NULL;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=1, sql=_V1_SQL, description="initial failure memory schema"),
+    Migration(
+        version=2,
+        sql=_V2_SQL,
+        description="candidate lineage and pending-only unique index for revisions",
+    ),
 )
 
 

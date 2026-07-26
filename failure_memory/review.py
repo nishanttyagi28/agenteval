@@ -1,6 +1,7 @@
 """Human review state machine and candidate lifecycle.
 
 No automatic approvals. Every transition is append-only audited.
+Approved candidates are immutable; revisions create new pending rows.
 """
 
 from __future__ import annotations
@@ -58,11 +59,10 @@ def create_candidate_from_cluster(
     cluster = store.get_cluster(cluster_id)
     if cluster is None:
         raise ReviewError(f"unknown cluster_id {cluster_id}")
-    existing = store.get_active_candidate_for_cluster(cluster_id)
-    if existing is not None:
+    pending = store.get_pending_candidate_for_cluster(cluster_id)
+    if pending is not None:
         raise ReviewError(
-            f"cluster {cluster_id} already has active candidate {existing.candidate_id} "
-            f"in state {existing.state}"
+            f"cluster {cluster_id} already has pending candidate {pending.candidate_id}"
         )
     now = _iso_now()
     cand = CandidateRow(
@@ -172,14 +172,112 @@ def revise_approved_candidate(
     *,
     actor: str | None = None,
     note: str | None = None,
+    idempotency_key: str | None = None,
 ) -> CandidateRow:
-    """Approved rows are immutable; supersede via reject then create."""
+    """Create a new pending revision; original approved/exported row is immutable.
+
+    Lineage is recorded via ``parent_candidate_id`` / ``revision_of``.
+    When ``idempotency_key`` is supplied, a repeated call returns the existing
+    revision without creating a duplicate.
+    """
     cand = store.get_candidate(candidate_id)
     if cand is None:
         raise ReviewError(f"unknown candidate_id {candidate_id}")
-    if cand.state != CandidateState.approved.value:
-        raise ReviewError("only approved candidates can be superseded for revision")
-    raise ReviewError(
-        "approved candidates are immutable; reject with a supersede note, then "
-        f"create a new candidate for cluster {cand.cluster_id} (revision workflow)"
+    if cand.state not in (
+        CandidateState.approved.value,
+        CandidateState.exported.value,
+    ):
+        raise ReviewError(
+            f"only approved or exported candidates can be revised "
+            f"(state={cand.state})"
+        )
+
+    if idempotency_key:
+        existing = store.get_candidate_by_idempotency_key(idempotency_key)
+        if existing is not None:
+            return existing
+
+    pending = store.get_pending_candidate_for_cluster(cand.cluster_id)
+    if pending is not None and not idempotency_key:
+        raise ReviewError(
+            f"cluster {cand.cluster_id} already has pending candidate "
+            f"{pending.candidate_id}; approve/reject it or pass a matching "
+            f"idempotency_key"
+        )
+
+    # Snapshot original fields before insert (must remain unchanged).
+    original_snapshot = (
+        cand.candidate_id,
+        cand.state,
+        cand.revision,
+        cand.stable_case_id,
+        cand.expected_behaviour,
+        cand.approved_at,
+        cand.exported_at,
     )
+
+    next_rev = store.max_revision_for_lineage(cand.candidate_id) + 1
+    now = _iso_now()
+    new = CandidateRow(
+        candidate_id=f"cand_{uuid.uuid4().hex[:16]}",
+        cluster_id=cand.cluster_id,
+        representative_trace_id=cand.representative_trace_id,
+        state=CandidateState.pending_review.value,
+        stable_case_id=None,
+        expected_behaviour=None,
+        created_at=now,
+        updated_at=now,
+        approved_at=None,
+        rejected_at=None,
+        exported_at=None,
+        revision=next_rev,
+        parent_candidate_id=cand.candidate_id,
+        revision_of=cand.candidate_id,
+        revision_idempotency_key=idempotency_key,
+    )
+    try:
+        store.insert_candidate(new)
+    except ValueError as exc:
+        # Race / unique pending: if idempotency key hit concurrent insert.
+        if idempotency_key:
+            existing = store.get_candidate_by_idempotency_key(idempotency_key)
+            if existing is not None:
+                return existing
+        raise ReviewError(str(exc)) from exc
+
+    store.append_review_event(
+        candidate_id=new.candidate_id,
+        action="revise",
+        actor=actor or default_actor(),
+        previous_state=None,
+        new_state=new.state,
+        note=note or f"revision of {cand.candidate_id}",
+        payload_checksum=_checksum(
+            {
+                "parent_candidate_id": cand.candidate_id,
+                "revision": next_rev,
+                "idempotency_key": idempotency_key,
+            }
+        ),
+    )
+
+    # Verify original row was not mutated.
+    still = store.get_candidate(candidate_id)
+    assert still is not None
+    after = (
+        still.candidate_id,
+        still.state,
+        still.revision,
+        still.stable_case_id,
+        still.expected_behaviour,
+        still.approved_at,
+        still.exported_at,
+    )
+    if after != original_snapshot:
+        raise RuntimeError(
+            "revision flow mutated the original approved candidate; this is a bug"
+        )
+
+    refreshed = store.get_candidate(new.candidate_id)
+    assert refreshed is not None
+    return refreshed

@@ -100,5 +100,5 @@ def test_duplicate_active_candidate_blocked(tmp_path: Path):
         _seed_trace(svc.store)
         cid = svc.cluster()[0]["cluster_id"]
         create_candidate_from_cluster(svc.store, cluster_id=cid)
-        with pytest.raises(ReviewError, match="already has active candidate"):
+        with pytest.raises(ReviewError, match="already has pending candidate"):
             create_candidate_from_cluster(svc.store, cluster_id=cid)

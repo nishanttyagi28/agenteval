@@ -175,6 +175,17 @@ def cmd_review(args: argparse.Namespace) -> int:
         try:
             if args.action == "create":
                 data = svc.ensure_candidate(int(args.candidate_id), actor=args.actor)
+            elif args.action == "revise":
+                from agenteval.failure_memory.review import revise_approved_candidate
+
+                row = revise_approved_candidate(
+                    svc.store,
+                    args.candidate_id,
+                    actor=args.actor,
+                    note=args.note,
+                    idempotency_key=getattr(args, "idempotency_key", None),
+                )
+                data = row.__dict__
             else:
                 data = svc.review(
                     args.candidate_id,
@@ -274,14 +285,19 @@ def register_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     p.set_defaults(func=cmd_show)
 
-    p = mem_sub.add_parser("review", help="Create/approve/reject/reopen candidates")
+    p = mem_sub.add_parser("review", help="Create/approve/reject/reopen/revise candidates")
     _add_db_arg(p)
     _json_flag(p)
     p.add_argument("candidate_id", help="Candidate id, or cluster id with action=create")
     p.add_argument(
         "action",
-        choices=["create", "approve", "reject", "reopen", "export"],
+        choices=["create", "approve", "reject", "reopen", "export", "revise"],
         help="Review action",
+    )
+    p.add_argument(
+        "--idempotency-key",
+        default=None,
+        help="Idempotency key for revise (repeat returns same revision)",
     )
     p.add_argument("--actor", default=None)
     p.add_argument("--note", default=None)

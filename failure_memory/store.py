@@ -89,6 +89,9 @@ class CandidateRow:
     rejected_at: str | None
     exported_at: str | None
     revision: int
+    parent_candidate_id: str | None = None
+    revision_of: str | None = None
+    revision_idempotency_key: str | None = None
 
 
 class FailureMemoryStore(ABC):
@@ -582,8 +585,9 @@ class SQLiteFailureMemoryStore(FailureMemoryStore):
                 INSERT INTO fm_candidates (
                     candidate_id, cluster_id, representative_trace_id, state,
                     stable_case_id, expected_behaviour_json, created_at, updated_at,
-                    approved_at, rejected_at, exported_at, revision
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    approved_at, rejected_at, exported_at, revision,
+                    parent_candidate_id, revision_of, revision_idempotency_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row.candidate_id,
@@ -598,21 +602,20 @@ class SQLiteFailureMemoryStore(FailureMemoryStore):
                     row.rejected_at,
                     row.exported_at,
                     row.revision,
+                    row.parent_candidate_id,
+                    row.revision_of,
+                    row.revision_idempotency_key,
                 ),
             )
             conn.commit()
         except sqlite3.IntegrityError as exc:
             conn.rollback()
             raise ValueError(
-                f"duplicate active candidate for cluster {row.cluster_id}: {exc}"
+                f"candidate insert conflict for cluster {row.cluster_id}: {exc}"
             ) from exc
 
-    def get_candidate(self, candidate_id: str) -> CandidateRow | None:
-        row = self._conn().execute(
-            "SELECT * FROM fm_candidates WHERE candidate_id = ?", (candidate_id,)
-        ).fetchone()
-        if row is None:
-            return None
+    def _candidate_from_row(self, row: sqlite3.Row) -> CandidateRow:
+        keys = set(row.keys())
         return CandidateRow(
             candidate_id=str(row["candidate_id"]),
             cluster_id=int(row["cluster_id"]),
@@ -628,20 +631,91 @@ class SQLiteFailureMemoryStore(FailureMemoryStore):
             rejected_at=row["rejected_at"],
             exported_at=row["exported_at"],
             revision=int(row["revision"]),
+            parent_candidate_id=row["parent_candidate_id"]
+            if "parent_candidate_id" in keys
+            else None,
+            revision_of=row["revision_of"] if "revision_of" in keys else None,
+            revision_idempotency_key=row["revision_idempotency_key"]
+            if "revision_idempotency_key" in keys
+            else None,
         )
 
-    def get_active_candidate_for_cluster(self, cluster_id: int) -> CandidateRow | None:
+    def get_candidate(self, candidate_id: str) -> CandidateRow | None:
+        row = self._conn().execute(
+            "SELECT * FROM fm_candidates WHERE candidate_id = ?", (candidate_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return self._candidate_from_row(row)
+
+    def get_candidate_by_idempotency_key(self, key: str) -> CandidateRow | None:
+        if not key:
+            return None
+        row = self._conn().execute(
+            "SELECT * FROM fm_candidates WHERE revision_idempotency_key = ?",
+            (key,),
+        ).fetchone()
+        return self._candidate_from_row(row) if row else None
+
+    def get_pending_candidate_for_cluster(self, cluster_id: int) -> CandidateRow | None:
         row = self._conn().execute(
             """
             SELECT * FROM fm_candidates
-            WHERE cluster_id = ? AND state IN ('pending_review', 'approved', 'exported')
+            WHERE cluster_id = ? AND state = 'pending_review'
             ORDER BY revision DESC LIMIT 1
             """,
             (cluster_id,),
         ).fetchone()
-        if row is None:
-            return None
-        return self.get_candidate(str(row["candidate_id"]))
+        return self._candidate_from_row(row) if row else None
+
+    def get_active_candidate_for_cluster(self, cluster_id: int) -> CandidateRow | None:
+        """Prefer pending revision, else highest-revision approved/exported."""
+        pending = self.get_pending_candidate_for_cluster(cluster_id)
+        if pending is not None:
+            return pending
+        row = self._conn().execute(
+            """
+            SELECT * FROM fm_candidates
+            WHERE cluster_id = ? AND state IN ('approved', 'exported')
+            ORDER BY revision DESC LIMIT 1
+            """,
+            (cluster_id,),
+        ).fetchone()
+        return self._candidate_from_row(row) if row else None
+
+    def max_revision_for_lineage(self, root_candidate_id: str) -> int:
+        """Highest revision number among candidates in the same lineage root."""
+        rows = self._conn().execute(
+            """
+            SELECT revision, candidate_id, parent_candidate_id, revision_of
+            FROM fm_candidates
+            """
+        ).fetchall()
+        if not rows:
+            return 0
+        # Walk parents to resolve roots, then take max revision sharing root.
+        by_id = {str(r["candidate_id"]): r for r in rows}
+
+        def root_of(cid: str) -> str:
+            seen: set[str] = set()
+            cur = cid
+            while cur in by_id:
+                if cur in seen:
+                    break
+                seen.add(cur)
+                parent = by_id[cur]["parent_candidate_id"] or by_id[cur]["revision_of"]
+                if not parent:
+                    return cur
+                cur = str(parent)
+            return cur
+
+        target_root = root_of(root_candidate_id)
+        revs = [
+            int(r["revision"])
+            for cid, r in by_id.items()
+            if root_of(cid) == target_root
+        ]
+        return max(revs) if revs else 0
 
     def list_candidates(self, *, state: str | None = None, limit: int = 100) -> list[CandidateRow]:
         if state:
@@ -668,7 +742,8 @@ class SQLiteFailureMemoryStore(FailureMemoryStore):
             UPDATE fm_candidates SET
                 state = ?, stable_case_id = ?, expected_behaviour_json = ?,
                 updated_at = ?, approved_at = ?, rejected_at = ?, exported_at = ?,
-                revision = ?
+                revision = ?,
+                parent_candidate_id = ?, revision_of = ?, revision_idempotency_key = ?
             WHERE candidate_id = ?
             """,
             (
@@ -680,6 +755,9 @@ class SQLiteFailureMemoryStore(FailureMemoryStore):
                 row.rejected_at,
                 row.exported_at,
                 row.revision,
+                row.parent_candidate_id,
+                row.revision_of,
+                row.revision_idempotency_key,
                 row.candidate_id,
             ),
         )
