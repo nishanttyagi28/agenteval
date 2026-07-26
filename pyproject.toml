@@ -59,6 +59,7 @@ packages = [
   "agenteval.core",
   "agenteval.dashboard",
   "agenteval.evaluators",
+  "agenteval.failure_memory",
   "agenteval.sql",
   "agenteval.sql.rules",
   "agenteval.templates",
