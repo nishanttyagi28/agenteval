@@ -99,9 +99,17 @@ GitHub Action input: `production-cases-file` (unset = unchanged behaviour).
 agenteval memory init|doctor|stats|ingest|cluster|list|show|review|export|prune
 ```
 
-## V2.1: Replay, minimization, recurrence
+## AgentEval V2.1 (product) — database schema v3
 
-Database schema version **3** (product V2.1) adds:
+**Product version:** AgentEval V2.1 (Production Failure Replay, Minimization, Recurrence).
+
+**Database schema version:** v5 (V2.1 product features landed in schema v3; v4/v5 add concurrency and delivery-key hardening).
+
+**Upgrade path:** schema v1 → v2 (candidate lineage) → v3 (occurrences, replay, minimized cases) → v4 (unique fingerprint) → v5 (occurrence delivery keys).
+
+Do not confuse **product AgentEval V2.1** with a single SQLite version number. Current `CURRENT_SCHEMA_VERSION` is **5**.
+
+### Schema v3+ tables (V2.1 product)
 
 | Table | Purpose |
 |-------|---------|
@@ -129,7 +137,11 @@ agenteval memory coverage [--gate --fail-on-resurfaced]
 agenteval memory novel
 agenteval memory replay <candidate-id>
 agenteval memory minimize <candidate-id>
+agenteval memory approve-minimization <minimization-id>
+agenteval memory export-minimized <minimization-id>
 ```
+
+Minimized golden export never falls back to the original candidate payload. Human approval of the minimization is mandatory and independent of original-candidate export.
 
 ### OTel-compatible interchange
 

@@ -559,7 +559,11 @@ agenteval run --production-cases .agenteval/production-regressions.yaml
 
 ### V2.1 Production Failure Replay & Minimization
 
-Extends Failure Memory with deterministic local **replay**, automatic **delta-debug minimization**, **recurrence** analytics, and an opt-in **CI coverage gate**. Schema DB v3 upgrades safely from v1/v2. No new runtime dependencies.
+Extends Failure Memory with deterministic local **replay**, automatic **delta-debug minimization**, **recurrence** analytics, and an opt-in **CI coverage gate**.
+
+- **Product:** AgentEval V2.1
+- **Database schema:** v3 (upgrade path schema v1 → v2 → v3)
+- No new runtime dependencies
 
 ## Regression suites from production failures
 
