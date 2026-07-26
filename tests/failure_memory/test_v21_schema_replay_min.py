@@ -42,7 +42,7 @@ def test_schema_v3_fresh_and_upgrade(tmp_path: Path):
     db = tmp_path / "fresh.db"
     store = SQLiteFailureMemoryStore(db)
     assert store.doctor()["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert CURRENT_SCHEMA_VERSION == 3
+    assert CURRENT_SCHEMA_VERSION >= 3
     assert "fm_occurrences" in store.doctor()["tables"]
     store.close()
 
@@ -64,8 +64,8 @@ def test_schema_v3_fresh_and_upgrade(tmp_path: Path):
         """
     )
     conn.commit()
-    applied = apply_migrations(conn, db_path=db2, target_version=3, migrations=MIGRATIONS)
-    assert applied == [2, 3]
+    applied = apply_migrations(conn, db_path=db2, target_version=5, migrations=MIGRATIONS)
+    assert applied == [2, 3, 4, 5]
     # data preserved
     n = conn.execute("SELECT COUNT(*) AS c FROM fm_traces").fetchone()["c"]
     assert int(n) == 1

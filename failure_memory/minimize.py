@@ -13,9 +13,9 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from agenteval.failure_memory.cancel import CancellationToken
 from agenteval.failure_memory.redaction import redact_mapping
 from agenteval.failure_memory.replay import (
-    FakeReplayAdapter,
     ReplayCase,
     ReplayOutcome,
     run_replay,
@@ -97,6 +97,7 @@ class MinimizeResult:
     reproduction_ratio: float
     algorithm_version: str = ALGORITHM_VERSION
     budget_exhausted: bool = False
+    cancelled: bool = False
 
 
 def minimize_payload(
@@ -114,6 +115,7 @@ def minimize_payload(
     threshold: float = 0.8,
     time_budget_s: float = 30.0,
     idempotency_key: str | None = None,
+    cancellation_token: CancellationToken | None = None,
 ) -> MinimizeResult:
     """Delta-debug structured payload while preserving failure fingerprint/category."""
     redacted, _ = redact_mapping(payload)
@@ -204,15 +206,23 @@ def minimize_payload(
         return result
 
     budget_exhausted = False
+    cancelled = False
     progress = True
     while progress:
         progress = False
+        if cancellation_token is not None and cancellation_token.is_cancelled:
+            cancelled = True
+            removed.append(f"cancelled:{cancellation_token.reason}")
+            break
         if attempts >= max_attempts or (time.perf_counter() - t0) > time_budget_s:
             budget_exhausted = True
             break
 
         # Drop optional keys
         for variant in _drop_optional_keys(current):
+            if cancellation_token is not None and cancellation_token.is_cancelled:
+                cancelled = True
+                break
             if attempts >= max_attempts:
                 budget_exhausted = True
                 break
@@ -222,49 +232,58 @@ def minimize_payload(
                 current = variant
                 progress = True
                 break
+        if cancelled:
+            break
         if progress:
             continue
 
         # Delta-debug lists (messages, tool_trace, context_blocks)
         list_sites = _deep_get_lists(current)
         for path, lst in list_sites:
+            if cancellation_token is not None and cancellation_token.is_cancelled:
+                cancelled = True
+                break
             if attempts >= max_attempts:
                 budget_exhausted = True
                 break
             n = len(lst)
             if n <= 1:
                 continue
-            # Try removing half chunks
             for start in range(0, n):
-                # try remove single element first (more precise)
+                if cancellation_token is not None and cancellation_token.is_cancelled:
+                    cancelled = True
+                    break
                 variant = _remove_list_slice(current, path, start, start + 1)
                 if still_reproduces(variant):
                     removed.append(f"removed {path}[{start}]")
                     current = variant
                     progress = True
                     break
-            if progress:
+            if cancelled or progress:
                 break
-            # try remove half
             mid = n // 2
             for start, end in ((0, mid), (mid, n)):
                 if end <= start:
                     continue
+                if cancellation_token is not None and cancellation_token.is_cancelled:
+                    cancelled = True
+                    break
                 variant = _remove_list_slice(current, path, start, end)
                 if still_reproduces(variant):
                     removed.append(f"removed {path}[{start}:{end}]")
                     current = variant
                     progress = True
                     break
-            if progress:
+            if cancelled or progress:
                 break
+        if cancelled:
+            break
 
     minimized_size = _size_of(current)
     reduction = (
         100.0 * (original_size - minimized_size) / original_size if original_size else 0.0
     )
     mid = f"min_{uuid.uuid4().hex[:16]}"
-    # Final confirmation ratio
     final_case = ReplayCase(
         candidate_id=source_candidate_id,
         fingerprint=expected_fingerprint,
@@ -288,7 +307,11 @@ def minimize_payload(
         attempts=replay_attempts,
         threshold=threshold,
         case_override=final_case,
+        cancellation_token=cancellation_token,
     )
+    approval_state = "pending_review"
+    if cancelled:
+        approval_state = "cancelled"
     result = MinimizeResult(
         minimization_id=mid,
         original_size=original_size,
@@ -299,6 +322,7 @@ def minimize_payload(
         replay_attempts=attempts,
         reproduction_ratio=final_report.reproducibility_ratio,
         budget_exhausted=budget_exhausted,
+        cancelled=cancelled,
     )
     store.insert_minimized_case(
         {
@@ -316,7 +340,10 @@ def minimize_payload(
             "lineage": {
                 "source_candidate_id": source_candidate_id,
                 "algorithm_version": ALGORITHM_VERSION,
+                "cancelled": cancelled,
+                "budget_exhausted": budget_exhausted,
             },
+            "approval_state": approval_state,
             "idempotency_key": idempotency_key,
         }
     )

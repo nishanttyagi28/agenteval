@@ -12,7 +12,8 @@ from typing import Callable, Iterable
 
 # DB schema version 3 = product V2.1 (occurrences, replay, minimization).
 # Version 2 remains candidate lineage from V2 Failure Memory.
-CURRENT_SCHEMA_VERSION = 3
+# Product AgentEval V2.1 uses database schema v3+ (v4 unique fingerprint, v5 delivery keys).
+CURRENT_SCHEMA_VERSION = 5
 
 
 @dataclass(frozen=True)
@@ -254,6 +255,41 @@ MIGRATIONS: tuple[Migration, ...] = (
         version=3,
         sql=_V3_SQL,
         description="V2.1 occurrences, replay runs, and minimized cases",
+    ),
+    Migration(
+        version=4,
+        sql="""
+-- Ensure one occurrence row per fingerprint for concurrent writers.
+-- Collapse any accidental duplicate fingerprints before unique index.
+DELETE FROM fm_occurrences
+WHERE occurrence_id NOT IN (
+  SELECT occurrence_id FROM (
+    SELECT occurrence_id,
+           ROW_NUMBER() OVER (
+             PARTITION BY fingerprint
+             ORDER BY recurrence_count DESC, last_seen DESC
+           ) AS rn
+    FROM fm_occurrences
+  ) ranked WHERE rn = 1
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fm_occ_fingerprint_unique
+    ON fm_occurrences(fingerprint);
+""",
+        description="unique fingerprint for concurrent occurrence upserts",
+    ),
+    Migration(
+        version=5,
+        sql="""
+CREATE TABLE IF NOT EXISTS fm_occurrence_deliveries (
+    idempotency_key TEXT PRIMARY KEY,
+    occurrence_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fm_occ_del_fp ON fm_occurrence_deliveries(fingerprint);
+""",
+        description="idempotent occurrence delivery keys independent of row updates",
     ),
 )
 

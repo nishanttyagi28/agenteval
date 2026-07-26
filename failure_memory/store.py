@@ -901,97 +901,124 @@ class SQLiteFailureMemoryStore(FailureMemoryStore):
 
         now = seen_at or _iso(utc_now())
         conn = self._conn()
+        # Delivery-key table (schema v5) makes multi-key fingerprint updates idempotent.
         if idempotency_key:
-            row = conn.execute(
-                "SELECT * FROM fm_occurrences WHERE idempotency_key = ?",
-                (idempotency_key,),
-            ).fetchone()
-            if row:
-                return dict(row)
-        existing = conn.execute(
-            "SELECT * FROM fm_occurrences WHERE fingerprint = ? ORDER BY last_seen DESC LIMIT 1",
-            (fingerprint,),
-        ).fetchone()
-        if existing:
-            conn.execute(
-                """
-                UPDATE fm_occurrences SET
-                    last_seen = ?,
-                    recurrence_count = recurrence_count + 1,
-                    external_trace_id = COALESCE(?, external_trace_id),
-                    candidate_id = COALESCE(?, candidate_id),
-                    environment = COALESCE(?, environment),
-                    agent_name = COALESCE(?, agent_name),
-                    framework = COALESCE(?, framework),
-                    model_provider = COALESCE(?, model_provider),
-                    model_name = COALESCE(?, model_name),
-                    redacted_metadata_json = ?,
-                    severity = ?,
-                    updated_at = ?
-                WHERE occurrence_id = ?
-                """,
-                (
-                    now,
-                    external_trace_id,
-                    candidate_id,
-                    environment,
-                    agent_name,
-                    framework,
-                    model_provider,
-                    model_name,
-                    stable_json_dumps(redacted_metadata or {}),
-                    severity,
-                    now,
-                    existing["occurrence_id"],
-                ),
-            )
-            # Resurface if was resolved
-            if str(existing["resolution_state"]) in ("resolved", "resolved_covered"):
-                conn.execute(
-                    "UPDATE fm_occurrences SET resolution_state = 'resurfaced', updated_at = ? WHERE occurrence_id = ?",
-                    (now, existing["occurrence_id"]),
-                )
-            conn.commit()
-            row = conn.execute(
-                "SELECT * FROM fm_occurrences WHERE occurrence_id = ?",
-                (existing["occurrence_id"],),
-            ).fetchone()
-            return dict(row)
+            try:
+                drow = conn.execute(
+                    "SELECT occurrence_id FROM fm_occurrence_deliveries WHERE idempotency_key = ?",
+                    (idempotency_key,),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                drow = None
+            if drow:
+                row = conn.execute(
+                    "SELECT * FROM fm_occurrences WHERE occurrence_id = ?",
+                    (drow["occurrence_id"],),
+                ).fetchone()
+                if row:
+                    return dict(row)
+
         oid = f"occ_{_uuid.uuid4().hex[:16]}"
-        conn.execute(
-            """
-            INSERT INTO fm_occurrences (
-                occurrence_id, fingerprint, external_trace_id, candidate_id,
-                first_seen, last_seen, recurrence_count, environment, agent_name,
-                framework, model_provider, model_name, redacted_metadata_json,
-                severity, resolution_state, idempotency_key, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                oid,
-                fingerprint,
-                external_trace_id,
-                candidate_id,
-                now,
-                now,
-                environment,
-                agent_name,
-                framework,
-                model_provider,
-                model_name,
-                stable_json_dumps(redacted_metadata or {}),
-                severity,
-                resolution_state,
-                idempotency_key,
-                now,
-                now,
-            ),
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM fm_occurrences WHERE occurrence_id = ?", (oid,)
-        ).fetchone()
-        return dict(row)
+        meta_json = stable_json_dumps(redacted_metadata or {})
+        last_exc: Exception | None = None
+        for _attempt in range(8):
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO fm_occurrences (
+                        occurrence_id, fingerprint, external_trace_id, candidate_id,
+                        first_seen, last_seen, recurrence_count, environment, agent_name,
+                        framework, model_provider, model_name, redacted_metadata_json,
+                        severity, resolution_state, idempotency_key, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(fingerprint) DO UPDATE SET
+                        last_seen = excluded.last_seen,
+                        recurrence_count = fm_occurrences.recurrence_count + 1,
+                        external_trace_id = COALESCE(excluded.external_trace_id, fm_occurrences.external_trace_id),
+                        candidate_id = COALESCE(excluded.candidate_id, fm_occurrences.candidate_id),
+                        environment = COALESCE(excluded.environment, fm_occurrences.environment),
+                        agent_name = COALESCE(excluded.agent_name, fm_occurrences.agent_name),
+                        framework = COALESCE(excluded.framework, fm_occurrences.framework),
+                        model_provider = COALESCE(excluded.model_provider, fm_occurrences.model_provider),
+                        model_name = COALESCE(excluded.model_name, fm_occurrences.model_name),
+                        redacted_metadata_json = excluded.redacted_metadata_json,
+                        severity = excluded.severity,
+                        resolution_state = CASE
+                            WHEN fm_occurrences.resolution_state IN ('resolved', 'resolved_covered')
+                            THEN 'resurfaced'
+                            ELSE fm_occurrences.resolution_state
+                        END,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        oid,
+                        fingerprint,
+                        external_trace_id,
+                        candidate_id,
+                        now,
+                        now,
+                        environment,
+                        agent_name,
+                        framework,
+                        model_provider,
+                        model_name,
+                        meta_json,
+                        severity,
+                        resolution_state,
+                        None,  # row-level key unused; deliveries table owns idempotency
+                        now,
+                        now,
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT * FROM fm_occurrences WHERE fingerprint = ?",
+                    (fingerprint,),
+                ).fetchone()
+                if idempotency_key and row is not None:
+                    try:
+                        conn.execute(
+                            """
+                            INSERT OR IGNORE INTO fm_occurrence_deliveries (
+                                idempotency_key, occurrence_id, fingerprint, created_at
+                            ) VALUES (?, ?, ?, ?)
+                            """,
+                            (idempotency_key, row["occurrence_id"], fingerprint, now),
+                        )
+                    except sqlite3.OperationalError:
+                        pass  # pre-v5 databases
+                conn.commit()
+                # If another writer recorded the same delivery key first, return that row.
+                if idempotency_key:
+                    try:
+                        drow = conn.execute(
+                            "SELECT occurrence_id FROM fm_occurrence_deliveries WHERE idempotency_key = ?",
+                            (idempotency_key,),
+                        ).fetchone()
+                        if drow and drow["occurrence_id"] != row["occurrence_id"]:
+                            # We may have double-counted; rare race — prefer delivery mapping.
+                            alt = conn.execute(
+                                "SELECT * FROM fm_occurrences WHERE occurrence_id = ?",
+                                (drow["occurrence_id"],),
+                            ).fetchone()
+                            if alt:
+                                return dict(alt)
+                    except sqlite3.OperationalError:
+                        pass
+                return dict(row)
+            except sqlite3.OperationalError as exc:
+                last_exc = exc
+                if "locked" not in str(exc).lower():
+                    raise
+                try:
+                    conn.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                import time as _time
+
+                _time.sleep(0.02 * (_attempt + 1))
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("occurrence upsert failed without exception")
 
     def list_occurrences(
         self,
@@ -1155,10 +1182,20 @@ class SQLiteFailureMemoryStore(FailureMemoryStore):
 
     def update_minimized_approval(self, minimization_id: str, state: str) -> None:
         now = _iso(utc_now())
-        self._conn().execute(
-            "UPDATE fm_minimized_cases SET approval_state = ?, updated_at = ? WHERE minimization_id = ?",
-            (state, now, minimization_id),
-        )
+        if state == "exported":
+            self._conn().execute(
+                """
+                UPDATE fm_minimized_cases
+                SET approval_state = ?, updated_at = ?, exported_at = COALESCE(exported_at, ?)
+                WHERE minimization_id = ?
+                """,
+                (state, now, now, minimization_id),
+            )
+        else:
+            self._conn().execute(
+                "UPDATE fm_minimized_cases SET approval_state = ?, updated_at = ? WHERE minimization_id = ?",
+                (state, now, minimization_id),
+            )
         self._conn().commit()
 
     def list_minimized_cases(self, *, limit: int = 50) -> list[dict[str, Any]]:
