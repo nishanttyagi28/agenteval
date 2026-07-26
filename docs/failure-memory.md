@@ -99,21 +99,61 @@ GitHub Action input: `production-cases-file` (unset = unchanged behaviour).
 agenteval memory init|doctor|stats|ingest|cluster|list|show|review|export|prune
 ```
 
+## V2.1: Replay, minimization, recurrence
+
+Database schema version **3** (product V2.1) adds:
+
+| Table | Purpose |
+|-------|---------|
+| `fm_occurrences` | Fingerprint-level recurrence, severity, resolution/resurfaced |
+| `fm_replay_runs` | Replay attempts, outcomes, reproducibility ratio |
+| `fm_minimized_cases` | Delta-debug reductions with lineage |
+
+### Replay adapter contract
+
+Adapters implement `replay(case: ReplayCase) -> ReplayAttemptResult` and are loaded only via validated `module:attr` imports (no shell, no arbitrary code paths). Default local adapter: `agenteval.failure_memory.replay:FakeReplayAdapter`.
+
+Outcomes: `reproduced`, `not_reproduced`, `flaky`, `infrastructure_error`, `evaluator_error`, `invalid_config`, `budget_exhausted`, `cancelled`.
+
+Infra/evaluator failures are **never** counted as genuine agent regressions.
+
+### Minimizer
+
+Deterministic delta-debugging over structured redacted payloads (`messages`, `tool_trace`, optional metadata). Confirms reductions via the replay threshold. Never mutates the original candidate.
+
+### Recurrence / coverage CLI
+
+```text
+agenteval memory recurring
+agenteval memory coverage [--gate --fail-on-resurfaced]
+agenteval memory novel
+agenteval memory replay <candidate-id>
+agenteval memory minimize <candidate-id>
+```
+
+### OTel-compatible interchange
+
+`failure_memory.otel_compat` maps envelopes ↔ a small documented OTel-style JSON shape. This is **format compatibility only** — not an OpenTelemetry collector or hosted pipeline.
+
 ## Demo
 
-Zero-network demo from a clean temporary directory (default):
+V2 (capture → cluster → approve → export):
 
 ```bash
 python examples/failure_memory_demo/run_demo.py
 ```
 
+V2.1 flagship (replay → minimize → recurrence → CI coverage + secret scan):
+
+```bash
+python examples/failure_memory_demo_v21/run_demo.py
+```
+
 Keep artifacts:
 
 ```bash
-python examples/failure_memory_demo/run_demo.py --workdir /tmp/fm-demo --keep
+python examples/failure_memory_demo_v21/run_demo.py --workdir /tmp/fm-v21 --keep
 ```
-
-The demo records failures (with deliberate fake secrets), redacts before persistence, clusters, human-approves, exports golden YAML, then shows broken-agent FAIL and fixed-agent PASS.
 
 ## Limitations
 

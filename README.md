@@ -554,7 +554,12 @@ agenteval run --production-cases .agenteval/production-regressions.yaml
 - Deterministic taxonomy/clustering (no embeddings required)
 - No automatic approvals
 - Demo: `python examples/failure_memory_demo/run_demo.py`
+- V2.1 flagship (replay/minimize/recurrence): `python examples/failure_memory_demo_v21/run_demo.py`
 - Full docs: [`docs/failure-memory.md`](docs/failure-memory.md)
+
+### V2.1 Production Failure Replay & Minimization
+
+Extends Failure Memory with deterministic local **replay**, automatic **delta-debug minimization**, **recurrence** analytics, and an opt-in **CI coverage gate**. Schema DB v3 upgrades safely from v1/v2. No new runtime dependencies.
 
 ## Regression suites from production failures
 
