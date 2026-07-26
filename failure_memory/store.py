@@ -852,6 +852,13 @@ class SQLiteFailureMemoryStore(FailureMemoryStore):
                 "SELECT failure_category, COUNT(*) AS c FROM fm_traces GROUP BY failure_category"
             ).fetchall()
         }
+        extra: dict[str, Any] = {}
+        try:
+            extra["occurrences"] = count("fm_occurrences")
+            extra["replay_runs"] = count("fm_replay_runs")
+            extra["minimized_cases"] = count("fm_minimized_cases")
+        except Exception:  # noqa: BLE001 — pre-v3 databases
+            pass
         return {
             "traces": count("fm_traces"),
             "spans": count("fm_spans"),
@@ -863,12 +870,303 @@ class SQLiteFailureMemoryStore(FailureMemoryStore):
             "traces_by_category": by_category,
             "schema_version": CURRENT_SCHEMA_VERSION,
             "db_path": str(self.db_path.resolve()),
+            **extra,
         }
 
     def doctor(self) -> dict[str, Any]:
         report = doctor_report(self._conn())
         report["db_path"] = str(self.db_path.resolve())
         return report
+
+    # ── V2.1: occurrences / replay / minimization ───────────────────────────
+
+    def upsert_occurrence(
+        self,
+        *,
+        fingerprint: str,
+        external_trace_id: str | None = None,
+        candidate_id: str | None = None,
+        environment: str | None = None,
+        agent_name: str | None = None,
+        framework: str | None = None,
+        model_provider: str | None = None,
+        model_name: str | None = None,
+        redacted_metadata: dict[str, Any] | None = None,
+        severity: str = "medium",
+        resolution_state: str = "open",
+        idempotency_key: str | None = None,
+        seen_at: str | None = None,
+    ) -> dict[str, Any]:
+        import uuid as _uuid
+
+        now = seen_at or _iso(utc_now())
+        conn = self._conn()
+        if idempotency_key:
+            row = conn.execute(
+                "SELECT * FROM fm_occurrences WHERE idempotency_key = ?",
+                (idempotency_key,),
+            ).fetchone()
+            if row:
+                return dict(row)
+        existing = conn.execute(
+            "SELECT * FROM fm_occurrences WHERE fingerprint = ? ORDER BY last_seen DESC LIMIT 1",
+            (fingerprint,),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE fm_occurrences SET
+                    last_seen = ?,
+                    recurrence_count = recurrence_count + 1,
+                    external_trace_id = COALESCE(?, external_trace_id),
+                    candidate_id = COALESCE(?, candidate_id),
+                    environment = COALESCE(?, environment),
+                    agent_name = COALESCE(?, agent_name),
+                    framework = COALESCE(?, framework),
+                    model_provider = COALESCE(?, model_provider),
+                    model_name = COALESCE(?, model_name),
+                    redacted_metadata_json = ?,
+                    severity = ?,
+                    updated_at = ?
+                WHERE occurrence_id = ?
+                """,
+                (
+                    now,
+                    external_trace_id,
+                    candidate_id,
+                    environment,
+                    agent_name,
+                    framework,
+                    model_provider,
+                    model_name,
+                    stable_json_dumps(redacted_metadata or {}),
+                    severity,
+                    now,
+                    existing["occurrence_id"],
+                ),
+            )
+            # Resurface if was resolved
+            if str(existing["resolution_state"]) in ("resolved", "resolved_covered"):
+                conn.execute(
+                    "UPDATE fm_occurrences SET resolution_state = 'resurfaced', updated_at = ? WHERE occurrence_id = ?",
+                    (now, existing["occurrence_id"]),
+                )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM fm_occurrences WHERE occurrence_id = ?",
+                (existing["occurrence_id"],),
+            ).fetchone()
+            return dict(row)
+        oid = f"occ_{_uuid.uuid4().hex[:16]}"
+        conn.execute(
+            """
+            INSERT INTO fm_occurrences (
+                occurrence_id, fingerprint, external_trace_id, candidate_id,
+                first_seen, last_seen, recurrence_count, environment, agent_name,
+                framework, model_provider, model_name, redacted_metadata_json,
+                severity, resolution_state, idempotency_key, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                oid,
+                fingerprint,
+                external_trace_id,
+                candidate_id,
+                now,
+                now,
+                environment,
+                agent_name,
+                framework,
+                model_provider,
+                model_name,
+                stable_json_dumps(redacted_metadata or {}),
+                severity,
+                resolution_state,
+                idempotency_key,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM fm_occurrences WHERE occurrence_id = ?", (oid,)
+        ).fetchone()
+        return dict(row)
+
+    def list_occurrences(
+        self,
+        *,
+        fingerprint: str | None = None,
+        resolution_state: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if fingerprint:
+            clauses.append("fingerprint = ?")
+            params.append(fingerprint)
+        if resolution_state:
+            clauses.append("resolution_state = ?")
+            params.append(resolution_state)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(int(limit))
+        rows = self._conn().execute(
+            f"SELECT * FROM fm_occurrences {where} ORDER BY recurrence_count DESC, last_seen DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_occurrence_by_fingerprint(self, fingerprint: str) -> dict[str, Any] | None:
+        row = self._conn().execute(
+            "SELECT * FROM fm_occurrences WHERE fingerprint = ? ORDER BY last_seen DESC LIMIT 1",
+            (fingerprint,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def set_occurrence_resolution(self, fingerprint: str, state: str) -> None:
+        now = _iso(utc_now())
+        self._conn().execute(
+            "UPDATE fm_occurrences SET resolution_state = ?, updated_at = ? WHERE fingerprint = ?",
+            (state, now, fingerprint),
+        )
+        self._conn().commit()
+
+    def insert_replay_run(self, row: dict[str, Any]) -> dict[str, Any]:
+        conn = self._conn()
+        key = row.get("idempotency_key")
+        if key:
+            existing = conn.execute(
+                "SELECT * FROM fm_replay_runs WHERE idempotency_key = ?", (key,)
+            ).fetchone()
+            if existing:
+                return dict(existing)
+        conn.execute(
+            """
+            INSERT INTO fm_replay_runs (
+                replay_id, candidate_id, fingerprint, adapter_ref, input_snapshot_json,
+                started_at, ended_at, outcome, failure_category, expected_fingerprint,
+                actual_fingerprint, attempt_count, success_count, reproducibility_ratio,
+                diagnostics_json, config_json, git_sha, idempotency_key, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row["replay_id"],
+                row.get("candidate_id"),
+                row.get("fingerprint"),
+                row["adapter_ref"],
+                stable_json_dumps(row.get("input_snapshot") or {}),
+                row["started_at"],
+                row.get("ended_at"),
+                row["outcome"],
+                row.get("failure_category"),
+                row.get("expected_fingerprint"),
+                row.get("actual_fingerprint"),
+                int(row.get("attempt_count") or 0),
+                int(row.get("success_count") or 0),
+                row.get("reproducibility_ratio"),
+                stable_json_dumps(row.get("diagnostics") or {}),
+                stable_json_dumps(row.get("config") or {}),
+                row.get("git_sha"),
+                key,
+                row.get("created_at") or _iso(utc_now()),
+            ),
+        )
+        conn.commit()
+        return dict(
+            conn.execute(
+                "SELECT * FROM fm_replay_runs WHERE replay_id = ?", (row["replay_id"],)
+            ).fetchone()
+        )
+
+    def get_replay_run(self, replay_id: str) -> dict[str, Any] | None:
+        row = self._conn().execute(
+            "SELECT * FROM fm_replay_runs WHERE replay_id = ?", (replay_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def list_replay_runs(
+        self, *, candidate_id: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        if candidate_id:
+            rows = self._conn().execute(
+                "SELECT * FROM fm_replay_runs WHERE candidate_id = ? ORDER BY started_at DESC LIMIT ?",
+                (candidate_id, int(limit)),
+            ).fetchall()
+        else:
+            rows = self._conn().execute(
+                "SELECT * FROM fm_replay_runs ORDER BY started_at DESC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def insert_minimized_case(self, row: dict[str, Any]) -> dict[str, Any]:
+        conn = self._conn()
+        key = row.get("idempotency_key")
+        if key:
+            existing = conn.execute(
+                "SELECT * FROM fm_minimized_cases WHERE idempotency_key = ?", (key,)
+            ).fetchone()
+            if existing:
+                return dict(existing)
+        conn.execute(
+            """
+            INSERT INTO fm_minimized_cases (
+                minimization_id, source_candidate_id, source_replay_id,
+                original_size, minimized_size, reduction_pct, algorithm_version,
+                replay_attempts, reproduction_ratio, minimized_payload_json,
+                removed_summary_json, lineage_json, approval_state, exported_at,
+                idempotency_key, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row["minimization_id"],
+                row["source_candidate_id"],
+                row.get("source_replay_id"),
+                int(row["original_size"]),
+                int(row["minimized_size"]),
+                float(row["reduction_pct"]),
+                row["algorithm_version"],
+                int(row.get("replay_attempts") or 0),
+                row.get("reproduction_ratio"),
+                stable_json_dumps(row.get("minimized_payload") or {}),
+                stable_json_dumps(row.get("removed_summary") or []),
+                stable_json_dumps(row.get("lineage") or {}),
+                row.get("approval_state") or "pending_review",
+                row.get("exported_at"),
+                key,
+                row.get("created_at") or _iso(utc_now()),
+                row.get("updated_at") or _iso(utc_now()),
+            ),
+        )
+        conn.commit()
+        return dict(
+            conn.execute(
+                "SELECT * FROM fm_minimized_cases WHERE minimization_id = ?",
+                (row["minimization_id"],),
+            ).fetchone()
+        )
+
+    def get_minimized_case(self, minimization_id: str) -> dict[str, Any] | None:
+        row = self._conn().execute(
+            "SELECT * FROM fm_minimized_cases WHERE minimization_id = ?",
+            (minimization_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def update_minimized_approval(self, minimization_id: str, state: str) -> None:
+        now = _iso(utc_now())
+        self._conn().execute(
+            "UPDATE fm_minimized_cases SET approval_state = ?, updated_at = ? WHERE minimization_id = ?",
+            (state, now, minimization_id),
+        )
+        self._conn().commit()
+
+    def list_minimized_cases(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        rows = self._conn().execute(
+            "SELECT * FROM fm_minimized_cases ORDER BY created_at DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def prune_traces(self, *, older_than_days: int, dry_run: bool = True) -> int:
         """Delete traces older than N days that are not cluster representatives with candidates."""

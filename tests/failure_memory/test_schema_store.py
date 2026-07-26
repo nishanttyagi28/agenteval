@@ -135,7 +135,7 @@ def test_repeat_migration_idempotent(tmp_path: Path):
     configure_connection(conn)
     applied1 = apply_migrations(conn, db_path=db)
     applied2 = apply_migrations(conn, db_path=db)
-    assert applied1 == [1, 2]
+    assert applied1 == [1, 2, 3]
     assert applied2 == []
     conn.close()
 
