@@ -1,12 +1,13 @@
 """Framework-neutral replay engine for Failure Memory candidates.
 
-Adapters implement :class:`ReplayAdapter` and must not execute arbitrary
-stored code. Loading uses a validated ``module:function`` or ``module:Class``
-import path.
+Adapters implement :class:`ReplayAdapter` (sync) or return awaitables from
+``replay()`` (async). Loading uses a validated ``module:function`` or
+``module:Class`` import path — never shell execution.
 """
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import inspect
 import re
@@ -15,19 +16,13 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-from agenteval.failure_memory.fingerprint import build_fingerprint, classify_and_fingerprint
+from agenteval.failure_memory.cancel import CancellationError, CancellationToken
+from agenteval.failure_memory.fingerprint import classify_and_fingerprint
 from agenteval.failure_memory.redaction import redact_mapping
-from agenteval.failure_memory.schema import (
-    FailureCategory,
-    TraceEnvelope,
-    TraceSource,
-    TraceStatus,
-    utc_now,
-)
+from agenteval.failure_memory.schema import TraceEnvelope, TraceStatus, utc_now
 from agenteval.failure_memory.store import FailureMemoryStore
-from agenteval.failure_memory.taxonomy import classify_trace
 
 _ADAPTER_REF_RE = re.compile(
     r"^(?P<module>[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*):(?P<attr>[A-Za-z_][\w]*)$"
@@ -75,10 +70,6 @@ class ReplayAdapter(Protocol):
     def replay(self, case: ReplayCase) -> ReplayAttemptResult: ...
 
 
-class AsyncReplayAdapter(Protocol):
-    async def replay(self, case: ReplayCase) -> ReplayAttemptResult: ...
-
-
 class FakeReplayAdapter:
     """Deterministic local adapter for tests and the zero-network demo."""
 
@@ -122,7 +113,6 @@ class FakeReplayAdapter:
                 tools_called=["lookup_order", "issue_refund"],
             )
         if self.mode == "flaky":
-            # Alternate fail/success
             if self._n % 2 == 0:
                 return ReplayAttemptResult(
                     status="success",
@@ -151,6 +141,27 @@ class FakeReplayAdapter:
         )
 
 
+class AsyncFakeReplayAdapter:
+    """Async counterpart of :class:`FakeReplayAdapter` for async replay tests."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._sync = FakeReplayAdapter(**kwargs)
+
+    async def replay(self, case: ReplayCase) -> ReplayAttemptResult:
+        if self._sync.mode == "timeout":
+            await asyncio.sleep(10.0)
+            return ReplayAttemptResult(status="timeout", error_type="TimeoutError")
+        if self._sync.sleep_ms:
+            await asyncio.sleep(self._sync.sleep_ms / 1000.0)
+        # Run deterministic logic without double-sleep
+        sleep_ms = self._sync.sleep_ms
+        self._sync.sleep_ms = 0.0
+        try:
+            return self._sync.replay(case)
+        finally:
+            self._sync.sleep_ms = sleep_ms
+
+
 def load_adapter(ref: str) -> Any:
     """Load ``module:attr`` safely (no shell, no path injection)."""
     if not ref or not isinstance(ref, str):
@@ -162,7 +173,6 @@ def load_adapter(ref: str) -> Any:
         )
     module_name = m.group("module")
     attr = m.group("attr")
-    # Block clearly dangerous top-level modules
     blocked = {"os", "sys", "subprocess", "shutil", "pathlib", "builtins", "importlib"}
     top = module_name.split(".", 1)[0]
     if top in blocked and not module_name.startswith("agenteval."):
@@ -177,7 +187,7 @@ def load_adapter(ref: str) -> Any:
     if inspect.isclass(obj):
         obj = obj()
     if callable(obj) and not hasattr(obj, "replay"):
-        # Allow bare functions: def replay(case) -> ReplayAttemptResult
+
         class _FnAdapter:
             def replay(self, case: ReplayCase) -> ReplayAttemptResult:
                 return obj(case)
@@ -233,11 +243,148 @@ def _matches_expected(
     if expected_fingerprint and fp.fingerprint == expected_fingerprint:
         return True
     if expected_category and classification.category.value == expected_category:
-        # Also require non-success
         return envelope.status != TraceStatus.success
     if expected_fingerprint is None and expected_category is None:
         return envelope.status != TraceStatus.success
     return False
+
+
+def _invoke_adapter_once(
+    adapter_obj: Any,
+    case: ReplayCase,
+    *,
+    timeout_s: float,
+) -> ReplayAttemptResult:
+    """Invoke sync or async adapter once with a timeout (no nested loop hacks)."""
+    try:
+        raw = adapter_obj.replay(case)
+    except Exception as exc:  # noqa: BLE001
+        return ReplayAttemptResult(
+            status="infrastructure_error",
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:500],
+        )
+
+    if inspect.isawaitable(raw):
+        # Native async path: never nest loops.
+        try:
+            asyncio.get_running_loop()
+            # Already inside an event loop — schedule via dedicated thread+loop.
+            def _run_coro() -> ReplayAttemptResult:
+                return asyncio.run(asyncio.wait_for(raw, timeout=timeout_s))
+
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(_run_coro).result(timeout=timeout_s + 1.0)
+        except RuntimeError:
+            # No running loop — safe to use asyncio.run
+            try:
+                return asyncio.run(asyncio.wait_for(raw, timeout=timeout_s))
+            except asyncio.TimeoutError:
+                return ReplayAttemptResult(
+                    status="timeout",
+                    error_type="TimeoutError",
+                    error_message=f"async adapter exceeded {timeout_s}s",
+                )
+            except Exception as exc:  # noqa: BLE001
+                return ReplayAttemptResult(
+                    status="infrastructure_error",
+                    error_type=type(exc).__name__,
+                    error_message=str(exc)[:500],
+                )
+        except FuturesTimeout:
+            return ReplayAttemptResult(
+                status="timeout",
+                error_type="TimeoutError",
+                error_message=f"async adapter exceeded {timeout_s}s",
+            )
+        except Exception as exc:  # noqa: BLE001
+            if "Timeout" in type(exc).__name__ or isinstance(exc, asyncio.TimeoutError):
+                return ReplayAttemptResult(
+                    status="timeout",
+                    error_type="TimeoutError",
+                    error_message=f"async adapter exceeded {timeout_s}s",
+                )
+            return ReplayAttemptResult(
+                status="infrastructure_error",
+                error_type=type(exc).__name__,
+                error_message=str(exc)[:500],
+            )
+
+    # Sync path
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(lambda: raw if isinstance(raw, ReplayAttemptResult) else raw)
+            # raw is already the result for sync replay()
+            if isinstance(raw, ReplayAttemptResult):
+                return raw
+            return fut.result(timeout=timeout_s)
+    except FuturesTimeout:
+        return ReplayAttemptResult(
+            status="timeout",
+            error_type="TimeoutError",
+            error_message=f"adapter exceeded {timeout_s}s",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return ReplayAttemptResult(
+            status="infrastructure_error",
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:500],
+        )
+
+
+def _run_sync_adapter(
+    adapter_obj: Any, case: ReplayCase, *, timeout_s: float
+) -> ReplayAttemptResult:
+    """Call sync replay() with timeout."""
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(adapter_obj.replay, case)
+            return fut.result(timeout=timeout_s)
+    except FuturesTimeout:
+        return ReplayAttemptResult(
+            status="timeout",
+            error_type="TimeoutError",
+            error_message=f"adapter exceeded {timeout_s}s",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return ReplayAttemptResult(
+            status="infrastructure_error",
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:500],
+        )
+
+
+async def _run_async_adapter(
+    adapter_obj: Any, case: ReplayCase, *, timeout_s: float
+) -> ReplayAttemptResult:
+    try:
+        raw = adapter_obj.replay(case)
+        if not inspect.isawaitable(raw):
+            return raw
+        return await asyncio.wait_for(raw, timeout=timeout_s)
+    except asyncio.TimeoutError:
+        return ReplayAttemptResult(
+            status="timeout",
+            error_type="TimeoutError",
+            error_message=f"async adapter exceeded {timeout_s}s",
+        )
+    except asyncio.CancelledError:
+        return ReplayAttemptResult(
+            status="timeout",
+            error_type="CancelledError",
+            error_message="async adapter cancelled",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return ReplayAttemptResult(
+            status="infrastructure_error",
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:500],
+        )
+
+
+def _is_async_adapter(adapter_obj: Any) -> bool:
+    method = getattr(adapter_obj, "replay", None)
+    return inspect.iscoroutinefunction(method)
 
 
 @dataclass
@@ -253,6 +400,93 @@ class ReplayReport:
     diagnostics: dict[str, Any]
 
 
+def _persist_report(
+    store: FailureMemoryStore,
+    *,
+    rid: str,
+    case: ReplayCase,
+    adapter_ref: str,
+    started: Any,
+    outcome: ReplayOutcome,
+    matches: int,
+    n: int,
+    infra: int,
+    actual_fp: str | None,
+    cat: str | None,
+    ratio: float,
+    threshold: float,
+    timeout_s: float,
+    idempotency_key: str | None,
+    extra_diag: dict[str, Any] | None = None,
+) -> ReplayReport:
+    ended = utc_now()
+    scored = n - infra
+    diagnostics = {
+        "infra_errors": infra,
+        "threshold": threshold,
+        "scored_attempts": scored,
+        **(extra_diag or {}),
+    }
+    store.insert_replay_run(
+        {
+            "replay_id": rid,
+            "candidate_id": case.candidate_id,
+            "fingerprint": case.fingerprint,
+            "adapter_ref": adapter_ref,
+            "input_snapshot": {
+                "agent_name": case.agent_name,
+                "prompt_present": bool(case.prompt),
+                "attributes_keys": sorted(case.attributes.keys()),
+            },
+            "started_at": started.isoformat().replace("+00:00", "Z")
+            if hasattr(started, "isoformat")
+            else str(started),
+            "ended_at": ended.isoformat().replace("+00:00", "Z"),
+            "outcome": outcome.value,
+            "failure_category": cat,
+            "expected_fingerprint": case.expected_fingerprint,
+            "actual_fingerprint": actual_fp,
+            "attempt_count": n,
+            "success_count": matches,
+            "reproducibility_ratio": ratio,
+            "diagnostics": diagnostics,
+            "config": {"attempts": n, "threshold": threshold, "timeout_s": timeout_s},
+            "idempotency_key": idempotency_key,
+        }
+    )
+    return ReplayReport(
+        replay_id=rid,
+        outcome=outcome,
+        attempt_count=n,
+        success_count=matches,
+        reproducibility_ratio=ratio,
+        expected_fingerprint=case.expected_fingerprint,
+        actual_fingerprint=actual_fp,
+        failure_category=cat,
+        diagnostics=diagnostics,
+    )
+
+
+def _score_outcome(
+    *, n: int, matches: int, infra: int, threshold: float, cancelled: bool
+) -> tuple[ReplayOutcome, float]:
+    if cancelled:
+        scored = n - infra
+        ratio = (matches / scored) if scored else 0.0
+        return ReplayOutcome.cancelled, ratio
+    scored = n - infra
+    ratio = (matches / scored) if scored else 0.0
+    if infra == n and n > 0:
+        return ReplayOutcome.infrastructure_error, ratio
+    if scored == 0:
+        return ReplayOutcome.budget_exhausted, ratio
+    if ratio >= threshold:
+        return ReplayOutcome.reproduced, ratio
+    if matches == 0:
+        return ReplayOutcome.not_reproduced, ratio
+    return ReplayOutcome.flaky, ratio
+
+
 def run_replay(
     store: FailureMemoryStore,
     *,
@@ -264,10 +498,15 @@ def run_replay(
     timeout_s: float = 5.0,
     idempotency_key: str | None = None,
     case_override: ReplayCase | None = None,
+    cancellation_token: CancellationToken | None = None,
 ) -> ReplayReport:
-    """Replay a candidate (or override case) repeatedly and record outcome."""
+    """Replay a candidate (or override case) repeatedly and record outcome.
+
+    Supports sync and async adapters. Async adapters are awaited with
+    ``asyncio.wait_for`` (or a dedicated thread when already inside a loop).
+    """
     if idempotency_key:
-        existing = store._conn().execute(  # noqa: SLF001 — internal lookup
+        existing = store._conn().execute(  # noqa: SLF001
             "SELECT * FROM fm_replay_runs WHERE idempotency_key = ?",
             (idempotency_key,),
         ).fetchone()
@@ -310,35 +549,24 @@ def run_replay(
         adapter_obj = adapter if adapter is not None else load_adapter(adapter_ref)
     except ValueError as exc:
         rid = f"rp_{uuid.uuid4().hex[:16]}"
-        started = utc_now().isoformat().replace("+00:00", "Z")
-        store.insert_replay_run(
-            {
-                "replay_id": rid,
-                "candidate_id": case.candidate_id,
-                "fingerprint": case.fingerprint,
-                "adapter_ref": adapter_ref,
-                "input_snapshot": {"agent_name": case.agent_name},
-                "started_at": started,
-                "ended_at": started,
-                "outcome": ReplayOutcome.invalid_config.value,
-                "attempt_count": 0,
-                "success_count": 0,
-                "reproducibility_ratio": 0.0,
-                "diagnostics": {"error": str(exc)},
-                "config": {"attempts": attempts, "threshold": threshold},
-                "idempotency_key": idempotency_key,
-            }
-        )
-        return ReplayReport(
-            replay_id=rid,
+        started = utc_now()
+        return _persist_report(
+            store,
+            rid=rid,
+            case=case,
+            adapter_ref=adapter_ref,
+            started=started,
             outcome=ReplayOutcome.invalid_config,
-            attempt_count=0,
-            success_count=0,
-            reproducibility_ratio=0.0,
-            expected_fingerprint=case.expected_fingerprint,
-            actual_fingerprint=None,
-            failure_category=None,
-            diagnostics={"error": str(exc)},
+            matches=0,
+            n=0,
+            infra=0,
+            actual_fp=None,
+            cat=None,
+            ratio=0.0,
+            threshold=threshold,
+            timeout_s=timeout_s,
+            idempotency_key=idempotency_key,
+            extra_diag={"error": str(exc)},
         )
 
     rid = f"rp_{uuid.uuid4().hex[:16]}"
@@ -347,30 +575,35 @@ def run_replay(
     infra = 0
     actual_fps: list[str] = []
     categories: list[str] = []
-    n = max(1, int(attempts))
+    n_planned = max(1, int(attempts))
+    n_done = 0
+    cancelled = False
+    use_async = _is_async_adapter(adapter_obj)
 
-    for i in range(n):
-        try:
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                fut = pool.submit(adapter_obj.replay, case)
-                result = fut.result(timeout=timeout_s)
-        except FuturesTimeout:
-            result = ReplayAttemptResult(
-                status="timeout",
-                error_type="TimeoutError",
-                error_message=f"adapter exceeded {timeout_s}s",
-            )
-        except Exception as exc:  # noqa: BLE001
-            result = ReplayAttemptResult(
-                status="infrastructure_error",
-                error_type=type(exc).__name__,
-                error_message=str(exc)[:500],
-            )
+    for i in range(n_planned):
+        if cancellation_token is not None and cancellation_token.is_cancelled:
+            cancelled = True
+            break
+        n_done += 1
+        if use_async:
+            # Prefer dedicated loop for async adapters from sync entrypoint
+            try:
+                result = asyncio.run(
+                    _run_async_adapter(adapter_obj, case, timeout_s=timeout_s)
+                )
+            except RuntimeError:
+                # Nested loop: fall back to thread+run
+                def _go() -> ReplayAttemptResult:
+                    return asyncio.run(
+                        _run_async_adapter(adapter_obj, case, timeout_s=timeout_s)
+                    )
 
-        if result.status in ("infrastructure_error", "timeout"):
-            infra += 1
-            continue
-        if result.status == "evaluator_error":
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    result = pool.submit(_go).result(timeout=timeout_s + 2.0)
+        else:
+            result = _run_sync_adapter(adapter_obj, case, timeout_s=timeout_s)
+
+        if result.status in ("infrastructure_error", "timeout", "evaluator_error"):
             infra += 1
             continue
 
@@ -385,65 +618,53 @@ def run_replay(
         ):
             matches += 1
 
-    scored = n - infra
-    ratio = (matches / scored) if scored else 0.0
-    if infra == n:
-        outcome = ReplayOutcome.infrastructure_error
-    elif scored == 0:
-        outcome = ReplayOutcome.budget_exhausted
-    elif ratio >= threshold:
-        outcome = ReplayOutcome.reproduced
-    elif matches == 0:
-        outcome = ReplayOutcome.not_reproduced
-    else:
-        outcome = ReplayOutcome.flaky
-
-    ended = utc_now()
-    actual_fp = actual_fps[0] if actual_fps else None
-    # Prefer most common actual fingerprint
-    if actual_fps:
-        actual_fp = max(set(actual_fps), key=actual_fps.count)
-    cat = categories[0] if categories else None
-    if categories:
-        cat = max(set(categories), key=categories.count)
-
-    store.insert_replay_run(
-        {
-            "replay_id": rid,
-            "candidate_id": case.candidate_id,
-            "fingerprint": case.fingerprint,
-            "adapter_ref": adapter_ref,
-            "input_snapshot": {
-                "agent_name": case.agent_name,
-                "prompt_present": bool(case.prompt),
-                "attributes_keys": sorted(case.attributes.keys()),
-            },
-            "started_at": started.isoformat().replace("+00:00", "Z"),
-            "ended_at": ended.isoformat().replace("+00:00", "Z"),
-            "outcome": outcome.value,
-            "failure_category": cat,
-            "expected_fingerprint": case.expected_fingerprint,
-            "actual_fingerprint": actual_fp,
-            "attempt_count": n,
-            "success_count": matches,
-            "reproducibility_ratio": ratio,
-            "diagnostics": {
-                "infra_errors": infra,
-                "threshold": threshold,
-                "scored_attempts": scored,
-            },
-            "config": {"attempts": n, "threshold": threshold, "timeout_s": timeout_s},
-            "idempotency_key": idempotency_key,
-        }
+    outcome, ratio = _score_outcome(
+        n=n_done,
+        matches=matches,
+        infra=infra,
+        threshold=threshold,
+        cancelled=cancelled,
     )
-    return ReplayReport(
-        replay_id=rid,
+    actual_fp = max(set(actual_fps), key=actual_fps.count) if actual_fps else None
+    cat = max(set(categories), key=categories.count) if categories else None
+    return _persist_report(
+        store,
+        rid=rid,
+        case=case,
+        adapter_ref=adapter_ref,
+        started=started,
         outcome=outcome,
-        attempt_count=n,
-        success_count=matches,
-        reproducibility_ratio=ratio,
-        expected_fingerprint=case.expected_fingerprint,
-        actual_fingerprint=actual_fp,
-        failure_category=cat,
-        diagnostics={"infra_errors": infra, "scored_attempts": scored},
+        matches=matches,
+        n=n_done,
+        infra=infra,
+        actual_fp=actual_fp,
+        cat=cat,
+        ratio=ratio,
+        threshold=threshold,
+        timeout_s=timeout_s,
+        idempotency_key=idempotency_key,
+        extra_diag={"cancelled": cancelled, "async_adapter": use_async},
     )
+
+
+async def run_replay_async(
+    store: FailureMemoryStore,
+    **kwargs: Any,
+) -> ReplayReport:
+    """Async entrypoint: runs async adapters on the current event loop."""
+    # Force adapter path through native async when possible.
+    adapter = kwargs.get("adapter")
+    adapter_ref = kwargs.get(
+        "adapter_ref", "agenteval.failure_memory.replay:FakeReplayAdapter"
+    )
+    if adapter is None:
+        adapter = load_adapter(adapter_ref)
+        kwargs["adapter"] = adapter
+    if _is_async_adapter(adapter):
+        # Reuse shared logic by calling run_replay in executor to avoid blocking
+        # the event loop on SQLite sync IO while still awaiting adapter attempts
+        # via the async path inside run_replay's use_async branch.
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: run_replay(store, **kwargs))
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: run_replay(store, **kwargs))
