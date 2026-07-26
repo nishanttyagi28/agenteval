@@ -213,10 +213,12 @@ def cmd_coverage(args: argparse.Namespace) -> int:
                 warn_uncovered_high_severity=True,
             )
             result = evaluate_gate(svc.store, policy)
-            if args.report_json:
-                write_gate_reports(result, json_path=args.report_json)
-            if args.report_md:
-                write_gate_reports(result, markdown_path=args.report_md)
+            if args.report_json or args.report_md:
+                write_gate_reports(
+                    result,
+                    json_path=args.report_json,
+                    markdown_path=args.report_md,
+                )
             _print(result.to_dict(), as_json=True)
             return result.exit_code
     _print(cov, as_json=args.json or True)
@@ -379,6 +381,51 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export_minimized(args: argparse.Namespace) -> int:
+    from agenteval.failure_memory.export import export_minimized
+
+    with _service(args) as svc:
+        try:
+            result = export_minimized(
+                svc.store,
+                args.minimization_id,
+                suite_path=args.suite,
+                actor=args.actor,
+                overwrite=args.overwrite,
+                case_id=args.case_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+    _print(
+        {
+            "case_id": result.case_id,
+            "suite_path": str(result.suite_path),
+            "manifest_path": str(result.manifest_path),
+            "case_checksum": result.case_checksum,
+            "already_exported": result.already_exported,
+            "export_kind": "minimized",
+        },
+        as_json=args.json or True,
+    )
+    return 0
+
+
+def cmd_approve_minimization(args: argparse.Namespace) -> int:
+    with _service(args) as svc:
+        row = svc.store.get_minimized_case(args.minimization_id)
+        if not row:
+            print(f"error: unknown minimization_id {args.minimization_id}", file=sys.stderr)
+            return 2
+        if str(row.get("approval_state")) == "cancelled":
+            print("error: cannot approve a cancelled minimization", file=sys.stderr)
+            return 2
+        svc.store.update_minimized_approval(args.minimization_id, "approved")
+        row = svc.store.get_minimized_case(args.minimization_id)
+    _print(row, as_json=True)
+    return 0
+
+
 def cmd_prune(args: argparse.Namespace) -> int:
     with _service(args) as svc:
         n = svc.store.prune_traces(
@@ -469,7 +516,7 @@ def register_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--numeric-tolerance", type=float, default=0.01)
     p.set_defaults(func=cmd_review)
 
-    p = mem_sub.add_parser("export", help="Export approved candidate to golden YAML")
+    p = mem_sub.add_parser("export", help="Export approved candidate (original payload) to golden YAML")
     _add_db_arg(p)
     _json_flag(p)
     p.add_argument("candidate_id")
@@ -477,6 +524,27 @@ def register_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--actor", default=None)
     p.add_argument("--overwrite", action="store_true")
     p.set_defaults(func=cmd_export)
+
+    p = mem_sub.add_parser(
+        "approve-minimization",
+        help="Human-approve a minimized case (required before minimized export)",
+    )
+    _add_db_arg(p)
+    p.add_argument("minimization_id")
+    p.set_defaults(func=cmd_approve_minimization)
+
+    p = mem_sub.add_parser(
+        "export-minimized",
+        help="Export an approved minimized payload (never falls back to original)",
+    )
+    _add_db_arg(p)
+    _json_flag(p)
+    p.add_argument("minimization_id")
+    p.add_argument("--suite", default=None, help="Output YAML path")
+    p.add_argument("--case-id", default=None)
+    p.add_argument("--actor", default=None)
+    p.add_argument("--overwrite", action="store_true")
+    p.set_defaults(func=cmd_export_minimized)
 
     p = mem_sub.add_parser("prune", help="Prune old traces (dry-run by default)")
     _add_db_arg(p)
