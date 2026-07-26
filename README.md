@@ -39,7 +39,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Regression alerting](#regression-alerting)
 - [Calibrated LLM-as-judge](#calibrated-llm-as-judge)
 - [Regression suites from production failures](#regression-suites-from-production-failures)
-- [Agent Failure Memory (V2)](#agent-failure-memory-v2)
+- [Agent Failure Memory (V2 / V2.1)](#agent-failure-memory-v2--v21)
 - [Cross-run statistical significance](#cross-run-statistical-significance)
 - [Local dashboard API](#local-dashboard-api)
 - [RBAC (schema and logic)](#rbac-schema-and-logic)
@@ -532,9 +532,9 @@ agreement), and lists every case where the judge and the human disagreed.
 signal, not a certified score, until the set has enough cases (and enough disagreement variety)
 to be representative of the judge's real failure modes.
 
-## Agent Failure Memory (V2)
+## Agent Failure Memory (V2 / V2.1)
 
-Local-first loop that turns **human-approved** production failures into golden regression cases:
+Shipped in **AgentEval 0.3.0**. Local-first loop that turns **human-approved** production failures into golden regression cases:
 
 ```text
 trace → redact → classify → cluster → human review → export YAML → CI
@@ -556,13 +556,14 @@ agenteval run --production-cases .agenteval/production-regressions.yaml
 - Demo: `python examples/failure_memory_demo/run_demo.py`
 - V2.1 flagship (replay/minimize/recurrence): `python examples/failure_memory_demo_v21/run_demo.py`
 - Full docs: [`docs/failure-memory.md`](docs/failure-memory.md)
+- Release notes: [`CHANGELOG.md`](CHANGELOG.md)
 
 ### V2.1 Production Failure Replay & Minimization
 
 Extends Failure Memory with deterministic local **replay**, automatic **delta-debug minimization**, **recurrence** analytics, and an opt-in **CI coverage gate**.
 
-- **Product:** AgentEval V2.1
-- **Database schema:** v3 (upgrade path schema v1 → v2 → v3)
+- **Product:** AgentEval V2.1 (package **0.3.0**)
+- **Database schema:** versioned SQLite migrations (v1 → v2 → v3+; V2.1 replay/minimize/recurrence tables land at schema v3; current store may be higher for concurrency hardening)
 - No new runtime dependencies
 
 ## Regression suites from production failures
