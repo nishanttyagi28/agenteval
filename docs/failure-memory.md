@@ -32,7 +32,8 @@ Not in scope: multi-tenancy, hosted auth, vector DBs, automatic approvals, autom
 - Extensions live under `attributes`
 - Validation errors include full field paths
 
-Default database: `.agenteval/failure-memory.db`  
+Default database: `.agenteval/failure-memory.db`
+
 Override: `--db` or `AGENTEVAL_FAILURE_MEMORY_DB`
 
 ## Privacy model
@@ -61,10 +62,10 @@ Canonical JSON of normalized evidence → SHA-256. UUIDs, request IDs, timestamp
 
 ## Clustering
 
-1. Exact fingerprint groups  
-2. Weighted Jaccard similarity inside compatible hard-field buckets (same category; compatible tool/error type)  
-3. Complete-link style (no transitive chaining)  
-4. Unknown failures stay singletons unless fingerprints match  
+1. Exact fingerprint groups
+2. Weighted Jaccard similarity inside compatible hard-field buckets (same category; compatible tool/error type)
+3. Complete-link style (no transitive chaining)
+4. Unknown failures stay singletons unless fingerprints match
 
 Benchmark: pairwise precision ≥ 0.90, recall ≥ 0.85, order-independent, deterministic.
 
@@ -72,14 +73,15 @@ Benchmark: pairwise precision ≥ 0.90, recall ≥ 0.85, order-independent, dete
 
 States: `pending_review` → `approved` | `rejected` → (reopen) → … → `exported` (immutable).
 
-- No automatic approval  
-- Rejection requires a note  
-- Approval requires AgentEval `Expects` fields and a captured prompt  
-- Append-only `fm_review_events`  
+- No automatic approval
+- Rejection requires a note
+- Approval requires AgentEval `Expects` fields and a captured prompt
+- Append-only `fm_review_events`
+- Revising an **approved** candidate creates a new pending revision with lineage; the original row is never mutated
 
 ## Golden export
 
-Approved candidates export to YAML loadable by `load_test_cases` / `run_golden_suite`. Provenance sidecar: `.agenteval/production-regressions.manifest.json`. Atomic writes; idempotent re-export; duplicate case/fingerprint protection.
+Approved candidates export to YAML loadable by `load_test_cases` / `run_golden_suite`. Provenance sidecar defaults next to the suite file (`*.manifest.json`). Atomic writes; idempotent re-export; duplicate case/fingerprint protection.
 
 ## CI integration
 
@@ -99,15 +101,25 @@ agenteval memory init|doctor|stats|ingest|cluster|list|show|review|export|prune
 
 ## Demo
 
+Zero-network demo from a clean temporary directory (default):
+
 ```bash
 python examples/failure_memory_demo/run_demo.py
 ```
 
+Keep artifacts:
+
+```bash
+python examples/failure_memory_demo/run_demo.py --workdir /tmp/fm-demo --keep
+```
+
+The demo records failures (with deliberate fake secrets), redacts before persistence, clusters, human-approves, exports golden YAML, then shows broken-agent FAIL and fixed-agent PASS.
+
 ## Limitations
 
-- Single-user local SQLite, not a hosted service  
-- Deterministic clustering has known limits (wording drift, multi-cause failures)  
-- Redaction is best-effort  
-- Human approval is mandatory  
-- Content capture off by default — without it, export is impossible  
-- Future multi-tenant hosting is out of scope for V2  
+- Single-user local SQLite, not a hosted service
+- Deterministic clustering has known limits (wording drift, multi-cause failures)
+- Redaction is best-effort (not a complete DLP system)
+- Human approval is mandatory
+- Content capture off by default — without it, export is impossible
+- Future multi-tenant hosting is out of scope for V2
