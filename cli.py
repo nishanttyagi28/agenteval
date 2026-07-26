@@ -1281,7 +1281,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument(
         "--agent-repo",
         default=None,
-        help="Agentic Data Analyst root (or set AGENTIC_ANALYST_PATH)",
+        help=(
+            "Path to the agent repository under test "
+            "(or set the agent registry env var / AGENTIC_ANALYST_PATH)"
+        ),
     )
     run_p.add_argument("--cases", default=None, help="Path to golden YAML")
     run_p.add_argument("--runs-dir", default=None, help="Directory for run JSON")
