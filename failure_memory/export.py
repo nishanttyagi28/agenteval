@@ -12,12 +12,18 @@ import yaml
 
 from agenteval.core._fsutil import atomic_write_text
 from agenteval.core.schema import TestCase, load_test_cases
+from agenteval.failure_memory.redaction import redact_mapping, redact_string
 from agenteval.failure_memory.review import ReviewError, transition_candidate
 from agenteval.failure_memory.schema import CandidateState, stable_json_dumps
 from agenteval.failure_memory.store import FailureMemoryStore
 
 DEFAULT_SUITE_PATH = Path(".agenteval") / "production-regressions.yaml"
-DEFAULT_MANIFEST_PATH = Path(".agenteval") / "production-regressions.manifest.json"
+
+
+def _default_manifest_for_suite(suite: Path) -> Path:
+    return suite.with_suffix(suite.suffix + ".manifest.json") if suite.suffix else Path(
+        str(suite) + ".manifest.json"
+    )
 
 
 @dataclass
@@ -88,10 +94,14 @@ def export_candidate(
     cand = store.get_candidate(candidate_id)
     if cand is None:
         raise ReviewError(f"unknown candidate_id {candidate_id}")
+    suite = Path(suite_path) if suite_path else DEFAULT_SUITE_PATH
+    man = (
+        Path(manifest_path)
+        if manifest_path is not None
+        else _default_manifest_for_suite(suite)
+    )
+
     if cand.state == CandidateState.exported.value:
-        # Idempotent re-export check
-        suite = Path(suite_path) if suite_path else DEFAULT_SUITE_PATH
-        man = Path(manifest_path) if manifest_path else DEFAULT_MANIFEST_PATH
         return ExportResult(
             case_id=cand.stable_case_id or candidate_id,
             suite_path=suite,
@@ -110,14 +120,15 @@ def export_candidate(
     if trace is None or not trace.content_captured or not trace.prompt:
         raise ReviewError("representative trace missing captured prompt")
 
-    suite = Path(suite_path) if suite_path else DEFAULT_SUITE_PATH
-    man = Path(manifest_path) if manifest_path else DEFAULT_MANIFEST_PATH
+    # Defense in depth: re-redact before writing golden YAML.
+    safe_prompt, _ = redact_string(trace.prompt)
+    safe_expects, _ = redact_mapping(dict(cand.expected_behaviour))
 
     case_id = cand.stable_case_id
     case_dict = _case_dict(
         case_id=case_id,
-        prompt=trace.prompt,
-        expected_behaviour=cand.expected_behaviour,
+        prompt=safe_prompt,
+        expected_behaviour=safe_expects,
         tags=["production_regression", f"fm_cluster_{cand.cluster_id}"],
         source="failure_memory",
     )
