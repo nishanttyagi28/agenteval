@@ -229,9 +229,15 @@ def _run_registered_agent(
     )
     print(f"agent={config.name}")
     print(f"cases={cases_path}")
+    production_cases = (
+        Path(args.production_cases) if getattr(args, "production_cases", None) else None
+    )
+    if production_cases is not None:
+        print(f"production_cases={production_cases}")
     report = run_golden_suite(
         adapter,
         cases_path=cases_path,
+        production_cases_path=production_cases,
         case_ids=args.case_id or None,
         tags=args.tag or None,
         adapter_name=config.name,
@@ -1287,6 +1293,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run_p.add_argument("--cases", default=None, help="Path to golden YAML")
+    run_p.add_argument(
+        "--production-cases",
+        default=None,
+        help=(
+            "Optional approved production regression YAML from Failure Memory "
+            "(merged with golden cases; unset preserves prior behaviour)"
+        ),
+    )
     run_p.add_argument("--runs-dir", default=None, help="Directory for run JSON")
     run_p.add_argument("--case-id", action="append", default=None, help="Run one case id")
     run_p.add_argument("--tag", action="append", default=None, help="Run cases matching tag")
@@ -1681,6 +1695,10 @@ def build_parser() -> argparse.ArgumentParser:
     from agenteval.sql.cli import register_sql_parser
 
     register_sql_parser(sub)
+
+    from agenteval.failure_memory.cli import register_memory_parser
+
+    register_memory_parser(sub)
 
     return parser
 

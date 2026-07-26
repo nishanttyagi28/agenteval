@@ -15,7 +15,16 @@ def test_root_action_is_a_well_formed_composite_action():
     action = load_yaml(ROOT / "action.yml")
 
     assert action["runs"]["using"] == "composite"
-    assert {"agent", "config-file", "agent-path", "cases-file"} <= set(action["inputs"])
+    assert {
+        "agent",
+        "config-file",
+        "agent-path",
+        "cases-file",
+        "production-cases-file",
+    } <= set(action["inputs"])
+    assert action["inputs"]["production-cases-file"]["default"] == ""
+    text_probe = (ROOT / "action.yml").read_text(encoding="utf-8")
+    assert "--production-cases" in text_probe
     assert {
         "passed",
         "report-path",

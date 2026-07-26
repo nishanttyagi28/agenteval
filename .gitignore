@@ -57,3 +57,12 @@ terminals/
 
 # AgentEval SQL importer (raw logs may contain PII)
 .agenteval/sql/raw/
+
+# Failure Memory local database and generated exports (keep demo fixtures)
+.agenteval/failure-memory.db
+.agenteval/failure-memory.db-*
+.agenteval/*.bak-*
+.agenteval/production-regressions.yaml
+.agenteval/production-regressions.manifest.json
+.pytest_basetemp/
+.pytest_tmp/

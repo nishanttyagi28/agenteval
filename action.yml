@@ -22,6 +22,12 @@ inputs:
     description: Optional golden-case YAML path overriding the registry.
     required: false
     default: ""
+  production-cases-file:
+    description: >-
+      Optional approved production regression YAML from Failure Memory.
+      When unset, behaviour is unchanged for existing consumers.
+    required: false
+    default: ""
   baseline-file:
     description: Optional baseline JSON path overriding the registry.
     required: false
@@ -116,6 +122,7 @@ runs:
         AGENTEVAL_CONFIG: ${{ inputs.config-file }}
         AGENTEVAL_AGENT_PATH: ${{ inputs.agent-path }}
         AGENTEVAL_CASES: ${{ inputs.cases-file }}
+        AGENTEVAL_PRODUCTION_CASES: ${{ inputs.production-cases-file }}
         AGENTEVAL_BASELINE: ${{ inputs.baseline-file }}
         AGENTEVAL_RUNS_DIR: ${{ inputs.runs-dir }}
         AGENTEVAL_CASE_IDS: ${{ inputs.case-ids }}
@@ -146,6 +153,13 @@ runs:
         fi
         if [[ -n "$AGENTEVAL_CASES" ]]; then
           run_command+=(--cases "$AGENTEVAL_CASES")
+        fi
+        if [[ -n "$AGENTEVAL_PRODUCTION_CASES" ]]; then
+          if [[ ! -f "$AGENTEVAL_PRODUCTION_CASES" ]]; then
+            echo "::error::production-cases-file not found: $AGENTEVAL_PRODUCTION_CASES"
+            exit 2
+          fi
+          run_command+=(--production-cases "$AGENTEVAL_PRODUCTION_CASES")
         fi
         if [[ "$AGENTEVAL_NO_LLM_JUDGE" == "true" ]]; then
           run_command+=(--no-llm-judge)

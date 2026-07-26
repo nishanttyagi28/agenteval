@@ -268,10 +268,30 @@ def run_suite(
     return report
 
 
+def merge_case_suites(
+    primary: Sequence[TestCase],
+    extra: Sequence[TestCase],
+) -> list[TestCase]:
+    """Merge golden + production suites, rejecting duplicate case ids."""
+    by_id: dict[str, TestCase] = {}
+    for case in primary:
+        if case.id in by_id:
+            raise ValueError(f"duplicate case id in primary suite: {case.id!r}")
+        by_id[case.id] = case
+    for case in extra:
+        if case.id in by_id:
+            raise ValueError(
+                f"duplicate case id between golden and production suites: {case.id!r}"
+            )
+        by_id[case.id] = case
+    return list(by_id.values())
+
+
 def run_golden_suite(
     adapter: AgentAdapter,
     cases_path: str | Path | None = None,
     *,
+    production_cases_path: str | Path | None = None,
     case_ids: Iterable[str] | None = None,
     tags: Iterable[str] | None = None,
     adapter_name: str = DEFAULT_ADAPTER_NAME,
@@ -286,9 +306,20 @@ def run_golden_suite(
     Optional filters:
       case_ids — only these case ids
       tags — keep cases that include any of the given tags
+
+    When ``production_cases_path`` is set, approved production regression cases
+    are merged with the golden suite (duplicate ids rejected).
     """
     path = Path(cases_path) if cases_path else DEFAULT_GOLDEN_PATH
     cases = load_test_cases(path)
+    if production_cases_path is not None:
+        prod_path = Path(production_cases_path)
+        if not prod_path.is_file():
+            raise FileNotFoundError(
+                f"production cases file not found: {prod_path}"
+            )
+        production_cases = load_test_cases(prod_path)
+        cases = merge_case_suites(cases, production_cases)
 
     if case_ids is not None:
         wanted = set(case_ids)
