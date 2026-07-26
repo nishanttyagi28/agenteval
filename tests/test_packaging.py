@@ -21,7 +21,7 @@ def test_packaging_uses_init_version_as_single_source_of_truth():
     assert config["tool"]["setuptools"]["dynamic"]["version"] == {
         "attr": "agenteval.__version__"
     }
-    assert __version__ == "0.2.0"
+    assert __version__ == "0.3.0"
 
 
 def test_console_script_targets_existing_cli_main():

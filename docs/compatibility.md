@@ -1,7 +1,7 @@
 # Compatibility, versioning, and public API
 
 This document defines the candidate compatibility boundary AgentEval is
-preparing for a future v1 release. AgentEval is currently `0.1.0` and classified
+preparing for a future v1 release. AgentEval is currently `0.3.0` and classified
 as Alpha; the guarantees below become binding only when a v1 release is
 explicitly published.
 

@@ -1,0 +1,19 @@
+# Source distribution extras (not installed into site-packages unless also package-data).
+include CHANGELOG.md
+include LICENSE
+include README.md
+include pyproject.toml
+include action.yml
+include requirements.txt
+include requirements-dev.txt
+recursive-include docs *.md
+recursive-include examples *
+global-exclude *.py[cod] __pycache__ *.so
+global-exclude *.db *.db-* *.bak-*
+global-exclude .env .env.*
+global-exclude *.egg-info
+prune examples/**/__pycache__
+prune examples/**/build
+prune examples/**/*.egg-info
+prune examples/plugins/**/build
+prune examples/plugins/**/*.egg-info
