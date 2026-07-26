@@ -12,7 +12,14 @@ import yaml
 
 from agenteval.adapters.base import AgentAdapter
 from agenteval.core.config import AgentDependencyNotFound
-from agenteval.core.schema import AgentConfig, AlertConfig, AuditConfig, GateConfig, RepositoryConfig
+from agenteval.core.schema import (
+    AgentConfig,
+    AlertConfig,
+    AuditConfig,
+    GateConfig,
+    RepositoryConfig,
+    strict_bool,
+)
 
 REGISTRY_VERSION = 1
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "agents.yaml"
@@ -160,8 +167,16 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
             gates_raw.get("min_tool_accuracy", 0.90),
             f"agents.{name}.gates.min_tool_accuracy",
         ),
-        fail_on_evaluator_error=bool(gates_raw.get("fail_on_evaluator_error", True)),
-        fail_on_agent_error=bool(gates_raw.get("fail_on_agent_error", True)),
+        fail_on_evaluator_error=strict_bool(
+            gates_raw.get("fail_on_evaluator_error"),
+            f"agents.{name}.gates.fail_on_evaluator_error",
+            default=True,
+        ),
+        fail_on_agent_error=strict_bool(
+            gates_raw.get("fail_on_agent_error"),
+            f"agents.{name}.gates.fail_on_agent_error",
+            default=True,
+        ),
         max_cost_increase_pct=_positive_or_none(
             gates_raw.get("max_cost_increase_pct"),
             f"agents.{name}.gates.max_cost_increase_pct",
@@ -199,7 +214,11 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
     alert_kind = alerting_raw.get("kind", "slack")
     if alert_kind not in ("slack", "discord"):
         raise ValueError(f"agents.{name}.alerting.kind must be 'slack' or 'discord'")
-    alerting_enabled = bool(alerting_raw.get("enabled", False))
+    alerting_enabled = strict_bool(
+        alerting_raw.get("enabled"),
+        f"agents.{name}.alerting.enabled",
+        default=False,
+    )
     if alerting_enabled and not webhook_url_env:
         raise ValueError(
             f"agents.{name}.alerting.webhook_url_env is required when alerting.enabled is true"
@@ -218,7 +237,11 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
         else None
     )
     audit = AuditConfig(
-        enabled=bool(audit_raw.get("enabled", False)),
+        enabled=strict_bool(
+            audit_raw.get("enabled"),
+            f"agents.{name}.audit.enabled",
+            default=False,
+        ),
         log_path=audit_log_path,
     )
 
@@ -245,7 +268,11 @@ def _parse_agent(name: str, raw: Any) -> AgentConfig:
         golden_suite=_safe_artifact_path(data.get("golden_suite"), f"agents.{name}.golden_suite"),
         baseline=_safe_artifact_path(data.get("baseline"), f"agents.{name}.baseline"),
         runs_dir=_safe_artifact_path(data.get("runs_dir"), f"agents.{name}.runs_dir"),
-        enabled=bool(data.get("enabled", True)),
+        enabled=strict_bool(
+            data.get("enabled"),
+            f"agents.{name}.enabled",
+            default=True,
+        ),
         adapter_options=dict(options),
         gates=gates,
         smoke_case_ids=tuple(smoke_raw),
