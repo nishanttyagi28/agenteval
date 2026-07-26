@@ -268,7 +268,147 @@ def dashboard_tab_labels(flakiness_report: Any | None) -> list[str]:
     ]
     if flakiness_report is not None:
         labels.append("5 · Flakiness")
+    labels.append(f"{len(labels) + 1} · Failure Memory")
     return labels
+
+
+def render_failure_memory() -> None:
+    """Local single-user Failure Memory view (no auth, no recompute clustering)."""
+    st.subheader("Failure Memory (local)")
+    st.caption(
+        "Production failures → human-approved regression tests. "
+        "Single-user local workflow — not a hosted service."
+    )
+    default_db = Path(".agenteval") / "failure-memory.db"
+    db_path = Path(
+        st.text_input("Failure Memory database", value=str(default_db), key="fm_db_path")
+    )
+    if not db_path.is_file():
+        st.info(
+            f"No Failure Memory database at `{db_path}`. "
+            "Create one with `agenteval memory init` and ingest traces."
+        )
+        return
+    try:
+        from agenteval.failure_memory.service import FailureMemoryService
+
+        svc = FailureMemoryService(db_path)
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Unable to open Failure Memory database: {exc}")
+        return
+    try:
+        stats = svc.stats()
+        doctor = svc.doctor()
+        if not doctor.get("healthy"):
+            st.warning("Schema doctor reported issues: " + "; ".join(doctor.get("issues") or []))
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Traces", stats.get("traces", 0))
+        c2.metric("Clusters", stats.get("clusters", 0))
+        c3.metric("Candidates", stats.get("candidates", 0))
+        c4.metric("Exports", stats.get("exports", 0))
+        clusters = svc.list_clusters(limit=100)
+        categories = sorted({c.get("failure_category") or "" for c in clusters})
+        cat_filter = st.multiselect("Category filter", options=categories, default=categories)
+        filtered = [c for c in clusters if (c.get("failure_category") or "") in set(cat_filter)]
+        if not filtered:
+            st.write("No clusters yet. Run `agenteval memory cluster`.")
+            return
+        labels = [
+            f"[{c['cluster_id']}] n={c['occurrence_count']} {c['failure_category']} — {c['title']}"
+            for c in filtered
+        ]
+        idx = st.selectbox("Cluster", options=list(range(len(filtered))), format_func=lambda i: labels[i])
+        chosen = filtered[idx]
+        st.json(
+            {
+                "cluster_id": chosen["cluster_id"],
+                "failure_category": chosen["failure_category"],
+                "occurrence_count": chosen["occurrence_count"],
+                "first_seen": chosen["first_seen"],
+                "last_seen": chosen["last_seen"],
+                "representative_trace_id": chosen["representative_trace_id"],
+                "explanation": chosen.get("explanation"),
+                "members": chosen.get("members"),
+            }
+        )
+        reveal = st.checkbox("Reveal captured content (sensitive)", value=False)
+        if reveal:
+            st.warning("Captured prompts/outputs may contain secrets or PII.")
+        detail = svc.show(str(chosen["cluster_id"]), reveal=reveal)
+        rep = detail.get("representative") or {}
+        st.markdown("#### Representative trace")
+        st.write(
+            {
+                "trace_id": rep.get("trace_id"),
+                "status": rep.get("status"),
+                "error_type": rep.get("error_type"),
+                "error_message": rep.get("error_message"),
+                "fingerprint": rep.get("fingerprint"),
+                "failure_category": rep.get("failure_category"),
+            }
+        )
+        if reveal:
+            st.text_area("prompt", rep.get("prompt") or "", height=80)
+            st.text_area("output", rep.get("output") or "", height=80)
+
+        st.markdown("#### Review actions (local)")
+        cand = detail.get("candidate")
+        if cand:
+            st.write(f"Active candidate: `{cand.get('candidate_id')}` state=`{cand.get('state')}`")
+        actor = st.text_input("Actor", value="local", key="fm_actor")
+        note = st.text_input("Note / rejection reason", key="fm_note")
+        col_a, col_b, col_c = st.columns(3)
+        if col_a.button("Create pending candidate", key="fm_create"):
+            try:
+                created = svc.ensure_candidate(int(chosen["cluster_id"]), actor=actor)
+                st.success(f"Candidate {created['candidate_id']}")
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(str(exc))
+        if cand and cand.get("state") == "pending_review":
+            gt = st.text_input("Approve ground_truth", key="fm_gt")
+            ctype = st.selectbox(
+                "correctness_type",
+                ["exact", "contains", "numeric", "numeric_table", "llm_judge"],
+                key="fm_ct",
+            )
+            tools = st.text_input("must_call_tools (comma-separated)", key="fm_tools")
+            if col_b.button("Approve", key="fm_approve"):
+                if not st.session_state.get("fm_confirm_approve"):
+                    st.session_state["fm_confirm_approve"] = True
+                    st.warning("Click Approve again to confirm.")
+                else:
+                    try:
+                        svc.review(
+                            cand["candidate_id"],
+                            "approve",
+                            actor=actor,
+                            note=note,
+                            expected_behaviour={
+                                "correctness_type": ctype,
+                                "ground_truth": gt,
+                                "must_call_tools": [t.strip() for t in tools.split(",") if t.strip()],
+                            },
+                        )
+                        st.session_state["fm_confirm_approve"] = False
+                        st.success("Approved")
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(str(exc))
+            if col_c.button("Reject", key="fm_reject"):
+                try:
+                    svc.review(cand["candidate_id"], "reject", actor=actor, note=note or "rejected")
+                    st.success("Rejected")
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.error(str(exc))
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Failure Memory error: {exc}")
+    finally:
+        try:
+            svc.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def run_label(path: Path, data: dict[str, Any] | None = None) -> str:
@@ -934,9 +1074,13 @@ def main() -> None:
         render_drilldown(current, latest_path, golden)
     with tab4:
         render_adversarial(current)
+    next_idx = 4
     if flakiness_report is not None:
-        with tabs[4]:
+        with tabs[next_idx]:
             render_flakiness(flakiness_report)
+        next_idx += 1
+    with tabs[next_idx]:
+        render_failure_memory()
 
 
 if __name__ == "__main__":

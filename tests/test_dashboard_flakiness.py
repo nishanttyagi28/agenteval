@@ -72,13 +72,20 @@ def test_agent_without_flakiness_data_has_no_report(tmp_path):
         "2 · Regression",
         "3 · Case drill-down",
         "4 · Adversarial robustness",
+        "5 · Failure Memory",
     ]
 
 
 def test_flakiness_report_adds_only_the_fifth_tab():
     labels = dashboard_tab_labels(report("20260721T120000Z_alpha"))
-    assert labels[:4] == dashboard_tab_labels(None)
-    assert labels[4:] == ["5 · Flakiness"]
+    assert labels[:4] == [
+        "1 · Latest summary",
+        "2 · Regression",
+        "3 · Case drill-down",
+        "4 · Adversarial robustness",
+    ]
+    assert labels[4] == "5 · Flakiness"
+    assert labels[5] == "6 · Failure Memory"
 
 
 def test_corrupt_sidecar_is_silently_ignored(tmp_path):
