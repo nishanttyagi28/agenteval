@@ -72,6 +72,49 @@ inputs:
       grant `permissions: pull-requests: write`.
     required: false
     default: "false"
+  # ── Failure Memory coverage gate (AgentEval V2.1 product, opt-in) ──────────
+  failure-memory-db:
+    description: >-
+      Optional path to a local Failure Memory SQLite database (schema v3).
+      When empty, Failure Memory coverage policies are skipped (unchanged behaviour).
+    required: false
+    default: ""
+  fail-on-resurfaced:
+    description: >-
+      When true and failure-memory-db is set, fail if a previously resolved
+      production failure fingerprint has resurfaced.
+    required: false
+    default: "false"
+  fail-on-approved-regression:
+    description: >-
+      Reserved for pairing with fail-on-regression when production golden cases fail.
+      Default true preserves existing regression-gate severity for approved production cases.
+    required: false
+    default: "true"
+  uncovered-high-severity:
+    description: >-
+      How to treat uncovered high-severity recurring failures when failure-memory-db is set.
+      One of ignore, warn, fail. Default ignore (no behaviour change for existing users).
+    required: false
+    default: "ignore"
+  max-uncovered-failures:
+    description: >-
+      Optional integer ceiling for uncovered high-severity failures when
+      uncovered-high-severity is fail. Empty disables the numeric ceiling.
+    required: false
+    default: ""
+  severity-threshold:
+    description: Severity label treated as high for coverage policies (default high).
+    required: false
+    default: "high"
+  failure-memory-report-path:
+    description: Optional directory for Failure Memory gate Markdown/JSON reports.
+    required: false
+    default: ""
+  failure-memory-json-report:
+    description: When true, write a machine-readable Failure Memory gate JSON report.
+    required: false
+    default: "false"
 
 outputs:
   passed:
@@ -246,6 +289,76 @@ runs:
         if [[ "$AGENTEVAL_FAIL_ON_REGRESSION" != "true" && "$AGENTEVAL_FAIL_ON_REGRESSION" != "false" ]]; then
           echo "::error::fail-on-regression must be true or false"
           exit 2
+        fi
+
+    - name: Failure Memory coverage gate (opt-in)
+      if: inputs.failure-memory-db != ''
+      shell: bash
+      env:
+        AGENTEVAL_FM_DB: ${{ inputs.failure-memory-db }}
+        AGENTEVAL_FM_FAIL_RESURFACED: ${{ inputs.fail-on-resurfaced }}
+        AGENTEVAL_FM_UNCOVERED: ${{ inputs.uncovered-high-severity }}
+        AGENTEVAL_FM_MAX_UNCOVERED: ${{ inputs.max-uncovered-failures }}
+        AGENTEVAL_FM_SEVERITY: ${{ inputs.severity-threshold }}
+        AGENTEVAL_FM_REPORT_DIR: ${{ inputs.failure-memory-report-path }}
+        AGENTEVAL_FM_JSON: ${{ inputs.failure-memory-json-report }}
+      run: |
+        set -euo pipefail
+        if [[ ! -f "$AGENTEVAL_FM_DB" ]]; then
+          echo "::error::failure-memory-db not found: $AGENTEVAL_FM_DB"
+          exit 2
+        fi
+        case "$AGENTEVAL_FM_UNCOVERED" in
+          ignore|warn|fail) ;;
+          *)
+            echo "::error::uncovered-high-severity must be ignore, warn, or fail"
+            exit 2
+            ;;
+        esac
+        case "$AGENTEVAL_FM_FAIL_RESURFACED" in
+          true|false) ;;
+          *)
+            echo "::error::fail-on-resurfaced must be true or false"
+            exit 2
+            ;;
+        esac
+        case "$AGENTEVAL_FM_JSON" in
+          true|false) ;;
+          *)
+            echo "::error::failure-memory-json-report must be true or false"
+            exit 2
+            ;;
+        esac
+        report_args=()
+        if [[ -n "$AGENTEVAL_FM_REPORT_DIR" ]]; then
+          mkdir -p "$AGENTEVAL_FM_REPORT_DIR"
+          report_args+=(--report-md "$AGENTEVAL_FM_REPORT_DIR/failure-memory-gate.md")
+          if [[ "$AGENTEVAL_FM_JSON" == "true" ]]; then
+            report_args+=(--report-json "$AGENTEVAL_FM_REPORT_DIR/failure-memory-gate.json")
+          fi
+        elif [[ "$AGENTEVAL_FM_JSON" == "true" ]]; then
+          echo "::error::failure-memory-json-report requires failure-memory-report-path"
+          exit 2
+        fi
+        gate_args=(python -m agenteval memory coverage --db "$AGENTEVAL_FM_DB" --gate --json)
+        if [[ "$AGENTEVAL_FM_FAIL_RESURFACED" == "true" ]]; then
+          gate_args+=(--fail-on-resurfaced)
+        fi
+        if [[ "$AGENTEVAL_FM_UNCOVERED" == "fail" ]]; then
+          if [[ -n "$AGENTEVAL_FM_MAX_UNCOVERED" ]]; then
+            if ! [[ "$AGENTEVAL_FM_MAX_UNCOVERED" =~ ^[0-9]+$ ]]; then
+              echo "::error::max-uncovered-failures must be a non-negative integer"
+              exit 2
+            fi
+            gate_args+=(--max-uncovered-high-severity "$AGENTEVAL_FM_MAX_UNCOVERED")
+          else
+            gate_args+=(--max-uncovered-high-severity 0)
+          fi
+        fi
+        # severity-threshold is accepted for forward compatibility; high is the active bucket.
+        "${gate_args[@]}" "${report_args[@]+"${report_args[@]}"}"
+        if [[ -n "$AGENTEVAL_FM_REPORT_DIR" && -f "$AGENTEVAL_FM_REPORT_DIR/failure-memory-gate.md" ]]; then
+          cat "$AGENTEVAL_FM_REPORT_DIR/failure-memory-gate.md" >> "$GITHUB_STEP_SUMMARY"
         fi
 
     - name: Generate HTML report

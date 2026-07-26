@@ -10,7 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-CURRENT_SCHEMA_VERSION = 2
+# DB schema version 3 = product V2.1 (occurrences, replay, minimization).
+# Version 2 remains candidate lineage from V2 Failure Memory.
+# Product AgentEval V2.1 uses database schema v3+ (v4 unique fingerprint, v5 delivery keys).
+CURRENT_SCHEMA_VERSION = 5
 
 
 @dataclass(frozen=True)
@@ -162,12 +165,131 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_fm_candidates_revision_key
     WHERE revision_idempotency_key IS NOT NULL;
 """
 
+# Version 3 — V2.1: occurrences, replay runs, minimized cases.
+_V3_SQL = """
+CREATE TABLE IF NOT EXISTS fm_occurrences (
+    occurrence_id TEXT PRIMARY KEY,
+    fingerprint TEXT NOT NULL,
+    external_trace_id TEXT,
+    candidate_id TEXT,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    recurrence_count INTEGER NOT NULL DEFAULT 1,
+    environment TEXT,
+    agent_name TEXT,
+    framework TEXT,
+    model_provider TEXT,
+    model_name TEXT,
+    redacted_metadata_json TEXT NOT NULL DEFAULT '{}',
+    severity TEXT NOT NULL DEFAULT 'medium',
+    resolution_state TEXT NOT NULL DEFAULT 'open',
+    idempotency_key TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fm_occ_fingerprint ON fm_occurrences(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_fm_occ_last_seen ON fm_occurrences(last_seen);
+CREATE INDEX IF NOT EXISTS idx_fm_occ_resolution ON fm_occurrences(resolution_state);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fm_occ_idempotency
+    ON fm_occurrences(idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS fm_replay_runs (
+    replay_id TEXT PRIMARY KEY,
+    candidate_id TEXT,
+    fingerprint TEXT,
+    adapter_ref TEXT NOT NULL,
+    input_snapshot_json TEXT NOT NULL DEFAULT '{}',
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    outcome TEXT NOT NULL,
+    failure_category TEXT,
+    expected_fingerprint TEXT,
+    actual_fingerprint TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    reproducibility_ratio REAL,
+    diagnostics_json TEXT NOT NULL DEFAULT '{}',
+    config_json TEXT NOT NULL DEFAULT '{}',
+    git_sha TEXT,
+    idempotency_key TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fm_replay_candidate ON fm_replay_runs(candidate_id);
+CREATE INDEX IF NOT EXISTS idx_fm_replay_fingerprint ON fm_replay_runs(fingerprint);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fm_replay_idempotency
+    ON fm_replay_runs(idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS fm_minimized_cases (
+    minimization_id TEXT PRIMARY KEY,
+    source_candidate_id TEXT NOT NULL,
+    source_replay_id TEXT,
+    original_size INTEGER NOT NULL,
+    minimized_size INTEGER NOT NULL,
+    reduction_pct REAL NOT NULL,
+    algorithm_version TEXT NOT NULL,
+    replay_attempts INTEGER NOT NULL DEFAULT 0,
+    reproduction_ratio REAL,
+    minimized_payload_json TEXT NOT NULL,
+    removed_summary_json TEXT NOT NULL DEFAULT '[]',
+    lineage_json TEXT NOT NULL DEFAULT '{}',
+    approval_state TEXT NOT NULL DEFAULT 'pending_review',
+    exported_at TEXT,
+    idempotency_key TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fm_min_candidate ON fm_minimized_cases(source_candidate_id);
+CREATE INDEX IF NOT EXISTS idx_fm_min_approval ON fm_minimized_cases(approval_state);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fm_min_idempotency
+    ON fm_minimized_cases(idempotency_key) WHERE idempotency_key IS NOT NULL;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=1, sql=_V1_SQL, description="initial failure memory schema"),
     Migration(
         version=2,
         sql=_V2_SQL,
         description="candidate lineage and pending-only unique index for revisions",
+    ),
+    Migration(
+        version=3,
+        sql=_V3_SQL,
+        description="V2.1 occurrences, replay runs, and minimized cases",
+    ),
+    Migration(
+        version=4,
+        sql="""
+-- Ensure one occurrence row per fingerprint for concurrent writers.
+-- Collapse any accidental duplicate fingerprints before unique index.
+DELETE FROM fm_occurrences
+WHERE occurrence_id NOT IN (
+  SELECT occurrence_id FROM (
+    SELECT occurrence_id,
+           ROW_NUMBER() OVER (
+             PARTITION BY fingerprint
+             ORDER BY recurrence_count DESC, last_seen DESC
+           ) AS rn
+    FROM fm_occurrences
+  ) ranked WHERE rn = 1
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fm_occ_fingerprint_unique
+    ON fm_occurrences(fingerprint);
+""",
+        description="unique fingerprint for concurrent occurrence upserts",
+    ),
+    Migration(
+        version=5,
+        sql="""
+CREATE TABLE IF NOT EXISTS fm_occurrence_deliveries (
+    idempotency_key TEXT PRIMARY KEY,
+    occurrence_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fm_occ_del_fp ON fm_occurrence_deliveries(fingerprint);
+""",
+        description="idempotent occurrence delivery keys independent of row updates",
     ),
 )
 
@@ -347,6 +469,12 @@ def doctor_report(conn: sqlite3.Connection) -> dict:
         "fm_review_events",
         "fm_exports",
     }
+    if version >= 3:
+        expected_tables |= {
+            "fm_occurrences",
+            "fm_replay_runs",
+            "fm_minimized_cases",
+        }
     missing_tables = sorted(expected_tables - tables) if version >= 1 else []
     if missing_tables:
         issues.append(f"missing tables: {', '.join(missing_tables)}")

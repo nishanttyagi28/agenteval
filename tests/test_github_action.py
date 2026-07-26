@@ -39,6 +39,39 @@ def test_root_action_is_a_well_formed_composite_action():
     assert re.search(r"(?m)^\s*eval\s", text) is None
 
 
+def test_failure_memory_action_inputs_are_opt_in_and_documented():
+    action = load_yaml(ROOT / "action.yml")
+    inputs = action["inputs"]
+    for key in (
+        "failure-memory-db",
+        "fail-on-resurfaced",
+        "fail-on-approved-regression",
+        "uncovered-high-severity",
+        "max-uncovered-failures",
+        "severity-threshold",
+        "failure-memory-report-path",
+        "failure-memory-json-report",
+    ):
+        assert key in inputs, key
+        assert inputs[key].get("required") in (False, None) or inputs[key]["required"] is False
+    # Defaults preserve existing behaviour
+    assert inputs["failure-memory-db"]["default"] == ""
+    assert inputs["fail-on-resurfaced"]["default"] == "false"
+    assert inputs["uncovered-high-severity"]["default"] == "ignore"
+    assert inputs["failure-memory-json-report"]["default"] == "false"
+    text = (ROOT / "action.yml").read_text(encoding="utf-8")
+    assert "Failure Memory coverage gate" in text
+    assert "agenteval memory coverage" in text
+    assert "uncovered-high-severity must be ignore, warn, or fail" in text
+
+
+def test_failure_memory_workflow_example_exists():
+    path = ROOT / ".github" / "workflows" / "failure-memory.yml"
+    assert path.is_file()
+    wf = load_yaml(path)
+    assert "jobs" in wf
+
+
 def test_root_action_supports_opt_in_html_report_and_pr_comment():
     action = load_yaml(ROOT / "action.yml")
     inputs = action["inputs"]

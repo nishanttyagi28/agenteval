@@ -6,6 +6,9 @@ original agent exception. Content capture is off by default.
 
 from __future__ import annotations
 
+import contextvars
+import functools
+import inspect
 import json
 import time
 import warnings
@@ -13,7 +16,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterator, TextIO
+from typing import Any, Callable, Iterator, TextIO, TypeVar
+
+F = TypeVar("F", bound=Callable[..., Any])
+_current_trace: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "fm_current_trace", default=None
+)
 
 from agenteval.failure_memory.redaction import REDACTION_VERSION, redact_mapping, redact_value
 from agenteval.failure_memory.schema import (
@@ -116,6 +124,7 @@ class TraceContext:
         self._t0 = 0.0
         self._occurred_at = utc_now()
         self.last_status: RecordStatus | None = None
+        self._token: contextvars.Token[Any] | None = None
 
     def span(
         self,
@@ -189,6 +198,7 @@ class TraceContext:
     def __enter__(self) -> TraceContext:
         self._t0 = time.perf_counter()
         self._occurred_at = utc_now()
+        self._token = _current_trace.set(self)
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -200,6 +210,11 @@ class TraceContext:
             if self._status == TraceStatus.success:
                 self._status = TraceStatus.agent_error
         self.last_status = self._recorder._persist(self)
+        if self._token is not None:
+            try:
+                _current_trace.reset(self._token)
+            except Exception:  # noqa: BLE001
+                _current_trace.set(None)
         # Never swallow the original exception.
         return False
 
@@ -284,6 +299,74 @@ class FailureMemoryRecorder:
             source=src,
         )
 
+    def trace_agent(
+        self,
+        agent_name: str,
+        *,
+        capture_prompt_arg: str | None = "prompt",
+        attributes: dict[str, Any] | None = None,
+        source: TraceSource | str = TraceSource.sdk,
+    ) -> Callable[[F], F]:
+        """Sync/async decorator preserving signatures; fail-open on persist."""
+
+        def decorator(fn: F) -> F:
+            if inspect.iscoroutinefunction(fn):
+
+                @functools.wraps(fn)
+                async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                    prompt = None
+                    if self.capture_content and capture_prompt_arg:
+                        prompt = kwargs.get(capture_prompt_arg)
+                        if prompt is None and args:
+                            # best-effort first str arg
+                            for a in args:
+                                if isinstance(a, str):
+                                    prompt = a
+                                    break
+                    with self.trace(
+                        agent_name=agent_name,
+                        prompt=prompt if isinstance(prompt, str) else None,
+                        attributes=attributes,
+                        source=source,
+                    ) as tr:
+                        try:
+                            result = await fn(*args, **kwargs)
+                            if self.capture_content and result is not None:
+                                tr.set_output(str(result)[:MAX_STRING_LEN])
+                            return result
+                        except Exception:
+                            raise
+
+                return async_wrapper  # type: ignore[return-value]
+
+            @functools.wraps(fn)
+            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+                prompt = None
+                if self.capture_content and capture_prompt_arg:
+                    prompt = kwargs.get(capture_prompt_arg)
+                    if prompt is None and args:
+                        for a in args:
+                            if isinstance(a, str):
+                                prompt = a
+                                break
+                with self.trace(
+                    agent_name=agent_name,
+                    prompt=prompt if isinstance(prompt, str) else None,
+                    attributes=attributes,
+                    source=source,
+                ) as tr:
+                    try:
+                        result = fn(*args, **kwargs)
+                        if self.capture_content and result is not None:
+                            tr.set_output(str(result)[:MAX_STRING_LEN])
+                        return result
+                    except Exception:
+                        raise
+
+            return sync_wrapper  # type: ignore[return-value]
+
+        return decorator
+
     def _persist(self, ctx: TraceContext) -> RecordStatus:
         try:
             envelope = ctx.to_envelope()
@@ -292,6 +375,35 @@ class FailureMemoryRecorder:
                 with self.jsonl_path.open("a", encoding="utf-8") as fh:
                     fh.write(envelope.to_json() + "\n")
             result = self._get_store().insert_trace(envelope)
+            # Best-effort occurrence bookkeeping (never fails open path).
+            try:
+                if envelope.fingerprint or envelope.status.value != "success":
+                    from agenteval.failure_memory.fingerprint import classify_and_fingerprint
+
+                    if not envelope.fingerprint:
+                        classification, fp = classify_and_fingerprint(envelope)
+                        envelope.failure_category = classification.category
+                        envelope.fingerprint = fp.fingerprint
+                        self._get_store().update_trace_classification(
+                            envelope.trace_id,
+                            failure_category=classification.category.value,
+                            fingerprint=fp.fingerprint,
+                        )
+                    if envelope.fingerprint:
+                        self._get_store().upsert_occurrence(
+                            fingerprint=envelope.fingerprint,
+                            external_trace_id=envelope.trace_id,
+                            agent_name=envelope.agent_name,
+                            redacted_metadata={
+                                "status": envelope.status.value,
+                                "error_type": envelope.error_type,
+                            },
+                            severity="high"
+                            if envelope.status.value == "agent_error"
+                            else "medium",
+                        )
+            except Exception:  # noqa: BLE001
+                pass
             return RecordStatus(
                 ok=True,
                 message="duplicate" if result.duplicate else "inserted",

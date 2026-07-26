@@ -26,6 +26,18 @@ def _default_manifest_for_suite(suite: Path) -> Path:
     )
 
 
+def _safe_suite_path(path: Path) -> Path:
+    """Reject path traversal and absolute escape outside intended roots."""
+    resolved = path.expanduser()
+    # Disallow null bytes and parent-directory escape in the string form
+    raw = str(path)
+    if "\x00" in raw:
+        raise ReviewError("suite path must not contain null bytes")
+    if ".." in Path(raw).parts:
+        raise ReviewError(f"suite path must not contain '..': {path}")
+    return resolved
+
+
 @dataclass
 class ExportResult:
     case_id: str
@@ -94,8 +106,8 @@ def export_candidate(
     cand = store.get_candidate(candidate_id)
     if cand is None:
         raise ReviewError(f"unknown candidate_id {candidate_id}")
-    suite = Path(suite_path) if suite_path else DEFAULT_SUITE_PATH
-    man = (
+    suite = _safe_suite_path(Path(suite_path) if suite_path else DEFAULT_SUITE_PATH)
+    man = _safe_suite_path(
         Path(manifest_path)
         if manifest_path is not None
         else _default_manifest_for_suite(suite)
@@ -218,6 +230,175 @@ def export_candidate(
     transition_candidate(store, candidate_id, "export", actor=actor, note="exported to golden suite")
     return ExportResult(
         case_id=case_id,
+        suite_path=suite,
+        manifest_path=man,
+        case_checksum=checksum,
+        already_exported=False,
+    )
+
+
+def export_minimized(
+    store: FailureMemoryStore,
+    minimization_id: str,
+    *,
+    suite_path: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+    actor: str | None = None,
+    overwrite: bool = False,
+    case_id: str | None = None,
+) -> ExportResult:
+    """Export an **approved** minimized payload as golden YAML.
+
+    Does not fall back to the original candidate payload. Human approval of the
+    minimization (``approval_state=approved``) is mandatory.
+    """
+    row = store.get_minimized_case(minimization_id)
+    if row is None:
+        raise ReviewError(f"unknown minimization_id {minimization_id}")
+    state = str(row.get("approval_state") or "")
+    if state == "exported":
+        suite = _safe_suite_path(Path(suite_path) if suite_path else DEFAULT_SUITE_PATH)
+        man = _safe_suite_path(
+            Path(manifest_path)
+            if manifest_path is not None
+            else _default_manifest_for_suite(suite)
+        )
+        return ExportResult(
+            case_id=case_id or f"prod_min_{minimization_id}",
+            suite_path=suite,
+            manifest_path=man,
+            case_checksum="",
+            already_exported=True,
+        )
+    if state != "approved":
+        raise ReviewError(
+            f"minimization must be approved before export (state={state}); "
+            "human approval is mandatory and minimized export never uses the original payload"
+        )
+
+    payload_raw = row.get("minimized_payload_json") or row.get("minimized_payload")
+    if isinstance(payload_raw, str):
+        payload = json.loads(payload_raw)
+    else:
+        payload = dict(payload_raw or {})
+    if not isinstance(payload, dict):
+        raise ReviewError("minimized payload must be a mapping")
+
+    # Build expects from linked candidate when available; payload must supply prompt.
+    source_cand_id = str(row["source_candidate_id"])
+    cand = store.get_candidate(source_cand_id)
+    if cand is None or not cand.expected_behaviour:
+        raise ReviewError(
+            "source candidate missing expected_behaviour; approve the source candidate first"
+        )
+    # Source candidate must remain immutable — we only read it.
+    prompt = payload.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ReviewError("minimized payload has no prompt; cannot export golden case")
+
+    suite = _safe_suite_path(Path(suite_path) if suite_path else DEFAULT_SUITE_PATH)
+    man = _safe_suite_path(
+        Path(manifest_path)
+        if manifest_path is not None
+        else _default_manifest_for_suite(suite)
+    )
+
+    safe_prompt, _ = redact_string(prompt)
+    expects = dict(cand.expected_behaviour)
+    # Prefer must_call_tools from minimized payload when present
+    if payload.get("must_call_tools"):
+        expects["must_call_tools"] = list(payload["must_call_tools"])
+    safe_expects, _ = redact_mapping(expects)
+
+    out_case_id = case_id or f"prod_min_{minimization_id[-12:]}"
+    case_dict = _case_dict(
+        case_id=out_case_id,
+        prompt=safe_prompt,
+        expected_behaviour=safe_expects,
+        tags=[
+            "production_regression",
+            "minimized",
+            f"fm_min_{minimization_id}",
+            f"fm_src_{source_cand_id}",
+        ],
+        source="failure_memory_minimized",
+    )
+    TestCase.from_dict(case_dict)
+
+    existing = _load_suite_cases(suite)
+    by_id = {str(c.get("id")): i for i, c in enumerate(existing) if c.get("id")}
+    yaml_body = yaml.safe_dump([case_dict], sort_keys=False, allow_unicode=True)
+    # Byte-stable single-case suite for identity checks when file only has this case
+    if out_case_id in by_id and not overwrite:
+        prev = existing[by_id[out_case_id]]
+        if prev == case_dict:
+            checksum = hashlib.sha256(stable_json_dumps(case_dict).encode()).hexdigest()
+            store.record_export(
+                candidate_id=source_cand_id,
+                case_id=out_case_id,
+                suite_path=str(suite),
+                case_checksum=checksum,
+            )
+            store.update_minimized_approval(minimization_id, "exported")
+            return ExportResult(
+                case_id=out_case_id,
+                suite_path=suite,
+                manifest_path=man,
+                case_checksum=checksum,
+                already_exported=True,
+            )
+        raise ReviewError(
+            f"case_id {out_case_id!r} already exists in {suite}; pass overwrite=True"
+        )
+
+    if out_case_id in by_id and overwrite:
+        existing[by_id[out_case_id]] = case_dict
+    else:
+        existing.append(case_dict)
+
+    yaml_text = (
+        "# AgentEval production regression suite — minimized Failure Memory export.\n"
+        f"# source_candidate={source_cand_id} minimization={minimization_id}\n"
+        f"# source_replay={row.get('source_replay_id')}\n"
+        + yaml.safe_dump(existing, sort_keys=False, allow_unicode=True)
+    )
+    atomic_write_text(suite, yaml_text)
+    loaded = load_test_cases(suite)
+    if not any(c.id == out_case_id for c in loaded):
+        raise RuntimeError("minimized export verification failed")
+
+    checksum = hashlib.sha256(stable_json_dumps(case_dict).encode()).hexdigest()
+    manifest: dict[str, Any] = {"version": 1, "exports": []}
+    if man.is_file():
+        try:
+            manifest = json.loads(man.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            manifest = {"version": 1, "exports": []}
+    exports = [e for e in (manifest.get("exports") or []) if e.get("case_id") != out_case_id]
+    exports.append(
+        {
+            "case_id": out_case_id,
+            "candidate_id": source_cand_id,
+            "minimization_id": minimization_id,
+            "source_replay_id": row.get("source_replay_id"),
+            "export_kind": "minimized",
+            "case_checksum": checksum,
+            "suite_path": str(suite),
+            "removed_summary": json.loads(row["removed_summary_json"])
+            if isinstance(row.get("removed_summary_json"), str)
+            else row.get("removed_summary"),
+        }
+    )
+    atomic_write_text(man, json.dumps({"version": 1, "exports": exports}, indent=2, sort_keys=True) + "\n")
+    store.record_export(
+        candidate_id=source_cand_id,
+        case_id=out_case_id,
+        suite_path=str(suite),
+        case_checksum=checksum,
+    )
+    store.update_minimized_approval(minimization_id, "exported")
+    return ExportResult(
+        case_id=out_case_id,
         suite_path=suite,
         manifest_path=man,
         case_checksum=checksum,

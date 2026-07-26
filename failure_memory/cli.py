@@ -69,7 +69,168 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 def cmd_stats(args: argparse.Namespace) -> int:
     with _service(args) as svc:
         stats = svc.stats()
+        try:
+            from agenteval.failure_memory.recurrence import recurrence_stats
+
+            stats["recurrence"] = recurrence_stats(svc.store)
+        except Exception:  # noqa: BLE001
+            pass
     _print(stats, as_json=args.json)
+    return 0
+
+
+def cmd_replay(args: argparse.Namespace) -> int:
+    from agenteval.failure_memory.replay import run_replay
+
+    with _service(args) as svc:
+        try:
+            report = run_replay(
+                svc.store,
+                candidate_id=args.candidate_id,
+                adapter_ref=args.adapter,
+                attempts=args.attempts,
+                threshold=args.threshold,
+                timeout_s=args.timeout,
+                idempotency_key=args.idempotency_key,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+    payload = {
+        "replay_id": report.replay_id,
+        "outcome": report.outcome.value,
+        "attempt_count": report.attempt_count,
+        "success_count": report.success_count,
+        "reproducibility_ratio": report.reproducibility_ratio,
+        "expected_fingerprint": report.expected_fingerprint,
+        "actual_fingerprint": report.actual_fingerprint,
+        "failure_category": report.failure_category,
+        "diagnostics": report.diagnostics,
+    }
+    _print(payload, as_json=args.json or True)
+    return 0 if report.outcome.value not in ("invalid_config",) else 2
+
+
+def cmd_replay_status(args: argparse.Namespace) -> int:
+    with _service(args) as svc:
+        row = svc.store.get_replay_run(args.replay_id)
+    if not row:
+        print(f"error: unknown replay_id {args.replay_id}", file=sys.stderr)
+        return 2
+    _print(row, as_json=True)
+    return 0
+
+
+def cmd_minimize(args: argparse.Namespace) -> int:
+    from agenteval.failure_memory.minimize import minimize_payload, payload_from_candidate
+
+    with _service(args) as svc:
+        try:
+            payload = payload_from_candidate(svc.store, args.candidate_id)
+            cand = svc.store.get_candidate(args.candidate_id)
+            trace = (
+                svc.store.get_trace_by_external_id(cand.representative_trace_id)
+                if cand
+                else None
+            )
+            result = minimize_payload(
+                svc.store,
+                source_candidate_id=args.candidate_id,
+                payload=payload,
+                expected_category=trace.failure_category.value
+                if trace and trace.failure_category
+                else None,
+                expected_fingerprint=trace.fingerprint if trace else None,
+                agent_name=trace.agent_name if trace else "agent",
+                adapter_ref=args.adapter,
+                max_attempts=args.max_attempts,
+                replay_attempts=args.replay_attempts,
+                threshold=args.threshold,
+                idempotency_key=args.idempotency_key,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+    _print(
+        {
+            "minimization_id": result.minimization_id,
+            "original_size": result.original_size,
+            "minimized_size": result.minimized_size,
+            "reduction_pct": result.reduction_pct,
+            "replay_attempts": result.replay_attempts,
+            "reproduction_ratio": result.reproduction_ratio,
+            "removed_summary": result.removed_summary,
+            "budget_exhausted": result.budget_exhausted,
+        },
+        as_json=True,
+    )
+    return 0
+
+
+def cmd_minimize_status(args: argparse.Namespace) -> int:
+    with _service(args) as svc:
+        row = svc.store.get_minimized_case(args.minimization_id)
+    if not row:
+        print(f"error: unknown minimization_id {args.minimization_id}", file=sys.stderr)
+        return 2
+    _print(row, as_json=True)
+    return 0
+
+
+def cmd_recurring(args: argparse.Namespace) -> int:
+    from agenteval.failure_memory.recurrence import recurring_failures
+
+    with _service(args) as svc:
+        rows = recurring_failures(
+            svc.store,
+            min_count=args.min_count,
+            severity=args.severity,
+            environment=args.environment,
+            limit=args.limit,
+        )
+    if args.json:
+        _print(rows, as_json=True)
+    else:
+        print(f"{'fingerprint':64} count severity state")
+        for r in rows:
+            print(
+                f"{r['fingerprint'][:64]:64} {r['recurrence_count']:5} "
+                f"{r.get('severity') or '-':8} {r.get('resolution_state')}"
+            )
+    return 0
+
+
+def cmd_coverage(args: argparse.Namespace) -> int:
+    from agenteval.failure_memory.recurrence import coverage_report
+    from agenteval.failure_memory.ci_gate import GatePolicy, evaluate_gate, write_gate_reports
+
+    with _service(args) as svc:
+        cov = coverage_report(svc.store)
+        if args.gate:
+            policy = GatePolicy(
+                fail_on_resurfaced=args.fail_on_resurfaced,
+                max_uncovered_high_severity=args.max_uncovered_high_severity,
+                warn_uncovered_high_severity=True,
+            )
+            result = evaluate_gate(svc.store, policy)
+            if args.report_json or args.report_md:
+                write_gate_reports(
+                    result,
+                    json_path=args.report_json,
+                    markdown_path=args.report_md,
+                )
+            _print(result.to_dict(), as_json=True)
+            return result.exit_code
+    _print(cov, as_json=args.json or True)
+    return 0
+
+
+def cmd_novel(args: argparse.Namespace) -> int:
+    from agenteval.failure_memory.recurrence import novel_fingerprints
+
+    with _service(args) as svc:
+        rows = novel_fingerprints(svc.store, since=args.since, limit=args.limit)
+    _print(rows, as_json=args.json or True)
     return 0
 
 
@@ -220,6 +381,51 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export_minimized(args: argparse.Namespace) -> int:
+    from agenteval.failure_memory.export import export_minimized
+
+    with _service(args) as svc:
+        try:
+            result = export_minimized(
+                svc.store,
+                args.minimization_id,
+                suite_path=args.suite,
+                actor=args.actor,
+                overwrite=args.overwrite,
+                case_id=args.case_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+    _print(
+        {
+            "case_id": result.case_id,
+            "suite_path": str(result.suite_path),
+            "manifest_path": str(result.manifest_path),
+            "case_checksum": result.case_checksum,
+            "already_exported": result.already_exported,
+            "export_kind": "minimized",
+        },
+        as_json=args.json or True,
+    )
+    return 0
+
+
+def cmd_approve_minimization(args: argparse.Namespace) -> int:
+    with _service(args) as svc:
+        row = svc.store.get_minimized_case(args.minimization_id)
+        if not row:
+            print(f"error: unknown minimization_id {args.minimization_id}", file=sys.stderr)
+            return 2
+        if str(row.get("approval_state")) == "cancelled":
+            print("error: cannot approve a cancelled minimization", file=sys.stderr)
+            return 2
+        svc.store.update_minimized_approval(args.minimization_id, "approved")
+        row = svc.store.get_minimized_case(args.minimization_id)
+    _print(row, as_json=True)
+    return 0
+
+
 def cmd_prune(args: argparse.Namespace) -> int:
     with _service(args) as svc:
         n = svc.store.prune_traces(
@@ -310,7 +516,7 @@ def register_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--numeric-tolerance", type=float, default=0.01)
     p.set_defaults(func=cmd_review)
 
-    p = mem_sub.add_parser("export", help="Export approved candidate to golden YAML")
+    p = mem_sub.add_parser("export", help="Export approved candidate (original payload) to golden YAML")
     _add_db_arg(p)
     _json_flag(p)
     p.add_argument("candidate_id")
@@ -319,8 +525,93 @@ def register_memory_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--overwrite", action="store_true")
     p.set_defaults(func=cmd_export)
 
+    p = mem_sub.add_parser(
+        "approve-minimization",
+        help="Human-approve a minimized case (required before minimized export)",
+    )
+    _add_db_arg(p)
+    p.add_argument("minimization_id")
+    p.set_defaults(func=cmd_approve_minimization)
+
+    p = mem_sub.add_parser(
+        "export-minimized",
+        help="Export an approved minimized payload (never falls back to original)",
+    )
+    _add_db_arg(p)
+    _json_flag(p)
+    p.add_argument("minimization_id")
+    p.add_argument("--suite", default=None, help="Output YAML path")
+    p.add_argument("--case-id", default=None)
+    p.add_argument("--actor", default=None)
+    p.add_argument("--overwrite", action="store_true")
+    p.set_defaults(func=cmd_export_minimized)
+
     p = mem_sub.add_parser("prune", help="Prune old traces (dry-run by default)")
     _add_db_arg(p)
     p.add_argument("--older-than-days", type=int, required=True)
     p.add_argument("--execute", action="store_true", help="Actually delete (default dry-run)")
     p.set_defaults(func=cmd_prune)
+
+    p = mem_sub.add_parser("replay", help="Replay a candidate against an adapter")
+    _add_db_arg(p)
+    _json_flag(p)
+    p.add_argument("candidate_id")
+    p.add_argument(
+        "--adapter",
+        default="agenteval.failure_memory.replay:FakeReplayAdapter",
+        help="module:attr adapter (default: local FakeReplayAdapter)",
+    )
+    p.add_argument("--attempts", type=int, default=5)
+    p.add_argument("--threshold", type=float, default=0.8)
+    p.add_argument("--timeout", type=float, default=5.0)
+    p.add_argument("--idempotency-key", default=None)
+    p.set_defaults(func=cmd_replay)
+
+    p = mem_sub.add_parser("replay-status", help="Show a replay run")
+    _add_db_arg(p)
+    p.add_argument("replay_id")
+    p.set_defaults(func=cmd_replay_status)
+
+    p = mem_sub.add_parser("minimize", help="Minimize a candidate payload (delta-debug)")
+    _add_db_arg(p)
+    p.add_argument("candidate_id")
+    p.add_argument(
+        "--adapter",
+        default="agenteval.failure_memory.replay:FakeReplayAdapter",
+    )
+    p.add_argument("--max-attempts", type=int, default=100)
+    p.add_argument("--replay-attempts", type=int, default=3)
+    p.add_argument("--threshold", type=float, default=0.8)
+    p.add_argument("--idempotency-key", default=None)
+    p.set_defaults(func=cmd_minimize)
+
+    p = mem_sub.add_parser("minimize-status", help="Show a minimization result")
+    _add_db_arg(p)
+    p.add_argument("minimization_id")
+    p.set_defaults(func=cmd_minimize_status)
+
+    p = mem_sub.add_parser("recurring", help="List recurring production failures")
+    _add_db_arg(p)
+    _json_flag(p)
+    p.add_argument("--min-count", type=int, default=2)
+    p.add_argument("--severity", default=None)
+    p.add_argument("--environment", default=None)
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(func=cmd_recurring)
+
+    p = mem_sub.add_parser("coverage", help="Production failure coverage report / CI gate")
+    _add_db_arg(p)
+    _json_flag(p)
+    p.add_argument("--gate", action="store_true", help="Evaluate opt-in CI gate policies")
+    p.add_argument("--fail-on-resurfaced", action="store_true")
+    p.add_argument("--max-uncovered-high-severity", type=int, default=None)
+    p.add_argument("--report-json", default=None)
+    p.add_argument("--report-md", default=None)
+    p.set_defaults(func=cmd_coverage)
+
+    p = mem_sub.add_parser("novel", help="List novel single-occurrence fingerprints")
+    _add_db_arg(p)
+    _json_flag(p)
+    p.add_argument("--since", default=None, help="ISO timestamp lower bound on first_seen")
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(func=cmd_novel)
