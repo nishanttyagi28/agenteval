@@ -696,8 +696,54 @@ def score_report(
     return aggregate_report(replace(report, case_results=scored))
 
 
+def cost_provenance_label(report: RunReport) -> str:
+    """Describe how suite cost was derived without overclaiming estimation.
+
+    Distinguishes provider-reported tokens (priced via configured rates),
+    character-estimate tokens, mixed suites, missing cost, and legacy runs
+    that lack per-case metrics provenance.
+    """
+    if report.total_cost_usd is None and not report.case_results:
+        return "missing or unknown"
+
+    estimated_flags: list[bool] = []
+    provider_cost_flags: list[bool] = []
+    for case in report.case_results:
+        raw = case.raw or {}
+        metrics = raw.get("_metrics") if isinstance(raw, dict) else None
+        if isinstance(metrics, dict) and "tokens_estimated" in metrics:
+            estimated_flags.append(bool(metrics["tokens_estimated"]))
+        if isinstance(raw, dict) and raw.get("provider_cost_usd") is not None:
+            provider_cost_flags.append(True)
+
+    if provider_cost_flags and all(provider_cost_flags) and len(provider_cost_flags) == len(
+        report.case_results
+    ):
+        return "provider reported cost"
+
+    prov = report.provenance or {}
+    token_source = prov.get("token_source")
+
+    if not estimated_flags:
+        # Legacy reports / unscored runs — do not invent an estimate claim.
+        if token_source == "provider_usage":
+            return "provider reported tokens with configured pricing"
+        if token_source == "character_estimate":
+            return "estimated token usage"
+        if report.total_cost_usd is None:
+            return "missing or unknown"
+        return "legacy report without cost provenance"
+
+    if all(not flag for flag in estimated_flags):
+        return "provider reported tokens with configured pricing"
+    if all(estimated_flags):
+        return "estimated token usage"
+    return "mixed provider tokens and estimated token usage"
+
+
 def format_report_summary(report: RunReport) -> str:
     """Human-readable suite summary for CLI."""
+    cost_note = cost_provenance_label(report)
     lines = [
         "=== AgentEval metrics summary ===",
         f"run_id:              {report.run_id}",
@@ -707,7 +753,7 @@ def format_report_summary(report: RunReport) -> str:
         f"tool_call_accuracy:  {_pct(report.tool_call_accuracy)}",
         f"latency_p50_ms:      {_num(report.latency_p50_ms)}",
         f"latency_p95_ms:      {_num(report.latency_p95_ms)}",
-        f"total_cost_usd:      {_money(report.total_cost_usd)}  (tokens estimated from chars if unset)",
+        f"total_cost_usd:      {_money(report.total_cost_usd)}  ({cost_note})",
         "--- per case ---",
     ]
     for c in report.case_results:
