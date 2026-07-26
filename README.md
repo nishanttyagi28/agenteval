@@ -21,10 +21,19 @@ AgentEval is a **git-native, CLI-first, local-first** evaluation harness for mul
 
 AgentEval is open source (MIT). It does not replace hosted observability platforms; it focuses on **repeatable evaluation and regression gates** you can run in pull requests.
 
+## See Failure Memory in action
+
+A production-style failure is redacted, replayed, minimized, approved as a golden test, and protected by CI.
+
+[![AgentEval v0.3.0 Failure Memory demo](assets/agenteval-v0.3.0-demo.gif)](https://github.com/nishanttyagi28/agenteval/releases/download/v0.3.0/agenteval-v0.3.0-demo.mp4)
+
+[Watch the full 69-second demo](https://github.com/nishanttyagi28/agenteval/releases/download/v0.3.0/agenteval-v0.3.0-demo.mp4)
+
 ---
 
 ## Table of contents
 
+- [See Failure Memory in action](#see-failure-memory-in-action)
 - [Five-minute quick start](#five-minute-quick-start)
 - [Failure Memory flagship workflow](#failure-memory-flagship-workflow)
 - [What AgentEval evaluates](#what-agenteval-evaluates)
