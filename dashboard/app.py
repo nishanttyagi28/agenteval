@@ -301,11 +301,31 @@ def render_failure_memory() -> None:
         doctor = svc.doctor()
         if not doctor.get("healthy"):
             st.warning("Schema doctor reported issues: " + "; ".join(doctor.get("issues") or []))
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Traces", stats.get("traces", 0))
         c2.metric("Clusters", stats.get("clusters", 0))
         c3.metric("Candidates", stats.get("candidates", 0))
         c4.metric("Exports", stats.get("exports", 0))
+        c5.metric("Occurrences", stats.get("occurrences", 0))
+        try:
+            from agenteval.failure_memory.recurrence import recurring_failures, coverage_report
+
+            with st.expander("V2.1 recurrence / coverage", expanded=False):
+                rec = recurring_failures(svc.store, min_count=2, limit=20)
+                cov = coverage_report(svc.store)
+                st.write(
+                    {
+                        "coverage_pct": cov.get("coverage_pct"),
+                        "resurfaced": cov.get("resurfaced"),
+                        "recurring_top": rec[:5],
+                    }
+                )
+            replays = svc.store.list_replay_runs(limit=10)
+            mins = svc.store.list_minimized_cases(limit=10)
+            with st.expander("V2.1 replay / minimization history", expanded=False):
+                st.write({"recent_replays": replays, "recent_minimizations": mins})
+        except Exception as exc:  # noqa: BLE001
+            st.caption(f"V2.1 analytics unavailable: {exc}")
         clusters = svc.list_clusters(limit=100)
         categories = sorted({c.get("failure_category") or "" for c in clusters})
         cat_filter = st.multiselect("Category filter", options=categories, default=categories)
