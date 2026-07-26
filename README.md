@@ -2,1480 +2,393 @@
 
 [![AgentEval regression gate](https://github.com/nishanttyagi28/agenteval/actions/workflows/eval.yml/badge.svg?branch=main)](https://github.com/nishanttyagi28/agenteval/actions/workflows/eval.yml)
 [![PyPI version](https://img.shields.io/pypi/v/nishanttyagi-agenteval.svg)](https://pypi.org/project/nishanttyagi-agenteval/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/nishanttyagi-agenteval.svg)](https://pypi.org/project/nishanttyagi-agenteval/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://agenteval-6honbe24hradazngswxkrq.streamlit.app/)
 
-**CI for AI agents — pytest and GitHub Actions style evaluation for LLM systems.**
+**CI for AI agents that turns production failures into minimized regression tests.**
 
-AgentEval runs an agent against YAML golden suites, scores five reliability metrics, compares results with a versioned baseline, and turns regressions into a reviewable CI decision.
+AgentEval is a **git-native, CLI-first, local-first** evaluation harness for multi-step LLM agents. It runs YAML golden suites, scores reliability metrics, compares results to a versioned baseline, and fails CI when agent behavior regresses.
 
-**Catch broken answers, wrong tool choices, flaky behavior, and regressions before your AI agent reaches production.**
+**v0.3.0** adds **Agent Failure Memory**: secure capture → redaction → clustering → replay → minimization → human approval → golden YAML → CI — so the same production failure cannot silently return.
 
-**[Explore the static AgentEval demo](https://nishanttyagi28.github.io/agenteval/)**
+| | |
+|---|---|
+| **Install** | `pip install nishanttyagi-agenteval==0.3.0` |
+| **Import / CLI** | `agenteval` |
+| **Distribution** | [`nishanttyagi-agenteval`](https://pypi.org/project/nishanttyagi-agenteval/0.3.0/) |
+| **Release** | [v0.3.0 on GitHub](https://github.com/nishanttyagi28/agenteval/releases/tag/v0.3.0) |
+| **Live demo** | [Static site](https://nishanttyagi28.github.io/agenteval/) · [Streamlit dashboard](https://agenteval-6honbe24hradazngswxkrq.streamlit.app/) |
 
-**[Open the live dashboard](https://agenteval-6honbe24hradazngswxkrq.streamlit.app/)**
+AgentEval is open source (MIT). It does not replace hosted observability platforms; it focuses on **repeatable evaluation and regression gates** you can run in pull requests.
 
-The static demo explains the workflow without executing an agent or making API calls. The Streamlit dashboard presents stored evaluation evidence and historical runs.
+---
 
 ## Table of contents
 
-- [Why AgentEval](#why-agenteval)
-- [Evaluation flow](#evaluation-flow)
+- [Five-minute quick start](#five-minute-quick-start)
+- [Failure Memory flagship workflow](#failure-memory-flagship-workflow)
+- [What AgentEval evaluates](#what-agenteval-evaluates)
+- [v0.3.0 highlights](#v030-highlights)
+- [Zero-network demo](#zero-network-demo)
 - [Architecture](#architecture)
-- [Five metrics](#five-metrics)
-- [Failure taxonomy and gate integrity](#failure-taxonomy-and-gate-integrity)
-- [Budget and latency gates](#budget-and-latency-gates)
-- [Flakiness detection](#flakiness-detection)
-- [Trajectory scoring](#trajectory-scoring)
-- [Trajectory diff](#trajectory-diff)
-- [Optional flakiness and trajectory gates](#optional-flakiness-and-trajectory-gates)
-- [RAG evaluation mode](#rag-evaluation-mode)
-- [Multi-turn conversation evaluation](#multi-turn-conversation-evaluation)
-- [Trace viewer](#trace-viewer)
-- [Tool-use efficiency scoring](#tool-use-efficiency-scoring)
-- [Cost attribution](#cost-attribution)
-- [Regression alerting](#regression-alerting)
-- [Calibrated LLM-as-judge](#calibrated-llm-as-judge)
-- [Regression suites from production failures](#regression-suites-from-production-failures)
-- [Agent Failure Memory (V2 / V2.1)](#agent-failure-memory-v2--v21)
-- [Cross-run statistical significance](#cross-run-statistical-significance)
-- [Local dashboard API](#local-dashboard-api)
-- [RBAC (schema and logic)](#rbac-schema-and-logic)
-- [Audit logs](#audit-logs)
-- [Deployment (Coming Soon)](#deployment-coming-soon)
-- [Golden case example](#golden-case-example)
-- [Dashboard evidence](#dashboard-evidence)
-- [SQL agent safety scanner](#sql-agent-safety-scanner)
-- [Installation](#installation)
-- [Try it in 30 seconds](#try-it-in-30-seconds)
-- [Getting started with `agenteval init`](#getting-started-with-agenteval-init)
-- [Quickstart with Agentic Data Analyst](#quickstart-with-agentic-data-analyst)
-- [CLI reference](#cli-reference)
-- [Supported frameworks](#supported-frameworks)
-- [CrewAI adapter](#crewai-adapter)
-- [Microsoft AutoGen adapter](#microsoft-autogen-adapter)
-- [OpenAI Agents SDK adapter](#openai-agents-sdk-adapter)
-- [LangGraph adapter](#langgraph-adapter)
-- [GitHub Actions](#github-actions)
-- [Adversarial robustness](#adversarial-robustness)
-- [Dataset import and case generation](#dataset-import-and-case-generation)
-- [HTML reports and regression trend tracking](#html-reports-and-regression-trend-tracking)
-- [Model/provider comparison](#modelprovider-comparison)
-- [VS Code extension](#vs-code-extension)
-- [Documentation site (scaffold, not deployed)](#documentation-site-scaffold-not-deployed)
-- [Project structure](#project-structure)
-- [Testing](#testing)
-- [Current limitations](#current-limitations)
-- [How AgentEval compares](#how-agenteval-compares)
+- [Framework and integration support](#framework-and-integration-support)
+- [CI and GitHub Action](#ci-and-github-action)
+- [Security and privacy defaults](#security-and-privacy-defaults)
+- [Installation and development](#installation-and-development)
+- [Documentation and links](#documentation-and-links)
+- [Limitations and non-goals](#limitations-and-non-goals)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Why AgentEval
+---
 
-LLM agents are probabilistic. A prompt, model, or tool change can improve one answer while silently reducing correctness elsewhere, increasing hallucinations, or raising latency and cost. Traditional unit tests remain useful for deterministic code, but they do not fully cover model outputs, tool routing, or quality drift across versions.
+## Five-minute quick start
 
-AgentEval adds the missing evaluation layer:
+### Install from PyPI
 
-- YAML-defined golden test cases
-- deterministic-first scoring with an LLM judge only for open-ended answers
-- baseline comparison and configurable regression gates
-- explicit agent, evaluator, missing-case, and skipped-case failures
-- opt-in repeat consistency evidence for flaky outputs
-- optional LCS-based trajectory evidence for expected agent steps
-- a Streamlit dashboard for summary, regression, and case-level inspection
-- GitHub Actions automation with a six-case smoke suite and optional 21-case full suite
-- reviewable adversarial variants that remain outside blocking CI until approved
-- optional RAG evaluation (context relevance, faithfulness, citation correctness) for
-  retrieval-augmented agents
-- a calibrated LLM-as-judge (Cohen's kappa against human labels) with opt-in
-  statistical-significance gating (McNemar's test, bootstrap confidence intervals)
-- a local dashboard API, RBAC, and structured audit logs for team deployments
-- a plugin system for third-party correctness evaluators, plus a bundled template catalog for
-  common agent types (RAG, coding, customer support)
-- optional multi-turn conversation scoring, tool-use efficiency scoring, and deterministic,
-  LLM-free red-team case generation
-
-| Capability | AgentEval | Manual spot checks | Custom eval scripts |
-|---|:---:|:---:|:---:|
-| Versioned golden cases | ✅ | ❌ | ⚠️ You build it |
-| Correctness and hallucination scoring | ✅ | Subjective | ⚠️ You build it |
-| Tool-call and trajectory evidence | ✅ | Easy to miss | ⚠️ Framework-specific |
-| Flakiness detection | ✅ | Impractical | ⚠️ You build it |
-| Cost and latency tracking | ✅ | Rarely captured | ⚠️ Provider-specific |
-| Baseline regression gate | ✅ | ❌ | ⚠️ You maintain it |
-| JSON and Markdown reports | ✅ | ❌ | ⚠️ You build it |
-| Reusable GitHub Action | ✅ | ❌ | ⚠️ You maintain it |
-| Extensible correctness evaluators (plugins) | ✅ | ❌ | ⚠️ You build it |
-| RAG-specific metrics | ✅ | Rarely captured | ⚠️ You build it |
-| Multi-turn conversation scoring | ✅ | Impractical | ⚠️ You build it |
-
-## Evaluation flow
-
-```mermaid
-flowchart TD
-    Cases["YAML golden cases"] --> Runner["Agent runner"]
-    Runner --> Metrics["Five metrics"]
-    Metrics --> Gate["Baseline regression gate"]
-    Gate --> CI["GitHub Actions report"]
-    Gate --> Dashboard["Streamlit dashboard"]
+```bash
+pip install nishanttyagi-agenteval==0.3.0
+agenteval --version
+agenteval --help
+agenteval memory --help
 ```
 
-1. Define the prompt, ground truth, required tools, and tolerance in YAML.
-2. Run each case through an adapter for the agent under test.
-3. Score the output and store a provenance-linked JSON run.
-4. Compare the current report with a versioned baseline.
-5. Fail CI when configured quality gates or case-integrity checks are violated.
-6. Inspect suite and case-level evidence in the dashboard.
+Expected version line: `agenteval 0.3.0`.
 
-## Architecture
+### Flagship demo (zero network, no API key)
+
+Clone the repository so example scripts are available, then from the repo root:
+
+```bash
+pip install -e ".[dev]"
+python examples/failure_memory_demo_v21/run_demo.py
+```
+
+This offline demo captures synthetic production failures, redacts secrets, clusters them, replays, minimizes, exports a golden case, fails a broken agent, passes a fixed agent, and checks coverage. Sample output:
+
+```text
+clusters=1
+recurring=1
+replay_outcome=reproduced ratio=1.00
+minimization_id=min_… size 701->516 (-26.39%)
+[1/1] prod_v21_refund_min FAIL  tools=cancel_order
+[1/1] prod_v21_refund_min PASS  tools=lookup_order,issue_refund
+coverage_pct=100.0 resurfaced=1
+ci_gate_passed=True errors=[]
+redaction_scan=clean
+demo V2.1 OK
+```
+
+### Evaluate a mock agent (no provider)
+
+From a clone of this repository (after `pip install -e .`):
+
+```bash
+agenteval run --agent mock_agent --registry examples/mock_agent/agents.yaml
+agenteval compare --agent mock_agent --registry examples/mock_agent/agents.yaml
+```
+
+Scaffold a new project:
+
+```bash
+agenteval init
+```
+
+---
+
+## Failure Memory flagship workflow
+
+**Agent Failure Memory** turns a real production failure into a human-approved, versioned regression case.
+
+```text
+Production failure
+  → secure redaction
+  → ingestion
+  → deterministic clustering
+  → replay
+  → automatic minimization
+  → human approval
+  → golden YAML
+  → CI regression gate
+  → recurrence detection
+```
 
 ```mermaid
 flowchart LR
-    Action["Composite GitHub Action"] --> CLI["AgentEval CLI"]
-    Developer["Developer or CI"] --> CLI
-    Registry["agents.yaml registry"] --> CLI
-    CLI --> Loader["Adapter loader"]
-
-    subgraph AdapterLayer["Framework adapter layer"]
-        Contract["AgentAdapter.run contract"]
-        CrewAI["CrewAI adapter"]
-        AutoGen["AutoGen adapter"]
-        OpenAIAgents["OpenAI Agents SDK adapter"]
-        Custom["LangGraph or custom adapter"]
-        CrewAI --> Contract
-        AutoGen --> Contract
-        OpenAIAgents --> Contract
-        Custom --> Contract
-    end
-
-    Loader --> Contract
-    Contract --> Response["Normalized AgentResponse"]
-    Cases["YAML golden cases"] --> Runner["Suite runner"]
-    Response --> Runner
-    Plugins["Third-party evaluator plugins"] --> Scoring
-    Runner --> Scoring["Correctness, tools, trajectory & RAG evidence, flakiness, cost/latency"]
-    Scoring --> Reports["JSON and Markdown reports"]
-    Reports --> Gate["Baseline regression gate"]
-    Gate --> CI["Pull request status"]
-    Reports --> Dashboard["Dashboard and artifacts"]
+  Fail["Production failure"] --> Redact["Redact secrets"]
+  Redact --> Ingest["Ingest / store"]
+  Ingest --> Cluster["Classify + cluster"]
+  Cluster --> Replay["Replay"]
+  Replay --> Min["Minimize"]
+  Min --> Human["Human approve"]
+  Human --> Golden["Golden YAML"]
+  Golden --> CI["CI regression gate"]
+  CI --> Recur["Recurrence / coverage"]
 ```
 
-Every framework adapter returns the same `AgentResponse` fields: output, tool calls, fired nodes, token usage, cost, latency, retrieved context/citations (for [RAG evaluation](#rag-evaluation-mode)), and JSON-safe raw evidence. The runner, scoring, comparison, and reporting layers therefore remain framework-independent.
-
-## Five metrics
-
-| Metric | What it evaluates | Implementation |
-|---|---|---|
-| **Correctness** | Whether the answer matches the expected result | Exact, contains, numeric, numeric-table, or LLM-judge checks |
-| **Hallucination rate** | Unsupported numeric or factual claims | Deterministic ground-truth comparison |
-| **Tool-call accuracy** | Whether the required tools were invoked | Precision, recall, and suite-level F1 |
-| **Latency** | Response-time distribution | p50 and p95 wall-clock latency |
-| **Cost** | Estimated or provider-reported usage cost | Per-case and suite-level USD estimate |
-
-Correctness uses the exact tolerance configured in YAML. Hallucination detection applies a separate minimum absolute tolerance of 0.01 for harmless numeric formatting noise; that floor cannot convert an incorrect answer into a correctness pass.
-
-Every scored run also aggregates `total_tokens` (prompt + completion tokens summed across cases, `null` when no case reports token usage) alongside `total_cost_usd` — it feeds the opt-in token-spike gate below and appears as a metric delta anywhere the other five do.
-
-## Failure taxonomy and gate integrity
-
-AgentEval distinguishes output quality from execution and evaluation failures:
-
-| Status | Meaning | Quality denominators | Default gate behaviour |
-|---|---|---:|---|
-| `failed` | The agent ran but failed an expectation | Included | Can fail metric gates |
-| `agent_error` | Provider, ingestion, SQL, adapter, or execution failure | Excluded | Fails loudly |
-| `evaluator_error` | The evaluator or LLM judge could not produce a valid decision | Excluded | Fails loudly |
-| `skipped` | A case produced no scored result | Excluded | Fails loudly |
-| `missing` | A baseline case is absent from the current run | Not applicable | Fails loudly |
-
-Infrastructure failures are not counted as incorrect or hallucinated answers, so provider outages do not corrupt quality rates. They remain visible and fail the regression gate by default. Missing and skipped cases are also gated to prevent an incomplete run from appearing healthy.
-
-## Budget and latency gates
-
-Beyond the always-on correctness/hallucination/tool-accuracy gates, three additional safety
-gates extend the same baseline/compare system and are **opt-in** — each defaults to `null`
-(disabled), so existing `agents.yaml` files and `agenteval compare` invocations see no behavior
-change until configured:
-
-```yaml
-gates:
-  max_cost_increase_pct: 20      # fail if total_cost_usd rises more than 20% over baseline
-  max_latency_p95_ms: 3000       # fail if the current run's p95 latency exceeds 3000ms
-  max_token_increase_pct: 50     # fail if total_tokens rises more than 50% over baseline
-```
-
-Or per-invocation via `agenteval compare` flags, which override the registry's configured
-values exactly like the existing `--max-correctness-drop`/`--max-hallucination-rate`/
-`--min-tool-accuracy` overrides:
-
-```bash
-agenteval compare --max-cost-increase-pct 20 --max-latency-p95-ms 3000 --max-token-increase-pct 50
-```
-
-Once a gate is enabled, missing metric data (for example a baseline recorded before
-`total_tokens` was tracked) fails the gate loudly rather than silently passing — the same
-"fail loudly on missing data" principle the existing correctness/hallucination/tool-accuracy
-gates already follow. A zero-cost or zero-token baseline with any positive current value is
-treated as a real increase rather than skipped via division-by-zero avoidance.
-
-## Flakiness detection
-
-LLM agents can produce different answers for the same prompt even when the code and inputs have not changed. AgentEval's opt-in repeat mode separates two different problems: an agent can be **consistently wrong** (the same failing verdict every time) or **flaky** (the verdict or comparable numeric value changes across observations). The report stores both consistency and pass rate so repeatability is never mistaken for correctness.
-
-Run the normal suite once and repeat only explicitly selected cases:
-
-```bash
-agenteval run \
-  --agent agentic_data_analyst \
-  --repeat 5 \
-  --repeat-case total_customers \
-  --repeat-case avg_monthly_charges
-```
-
-`--repeat 5` means five total observations for each selected case: the primary suite result plus four additional invocations. Requiring explicit `--repeat-case` values prevents an accidental N-times increase in API calls across the full suite. The default `--repeat 1` follows the existing single-pass path without creating flakiness evidence.
-
-| Classification | Consistency score |
-|---|---:|
-| `stable` | `1.0` |
-| `flaky` | `0.80` to `<1.0` |
-| `unstable` | `<0.80` |
-
-These labels are documented defaults rather than information-losing buckets: every artifact retains the raw consistency fraction, such as `4/5`, so thresholds can be adjusted later.
-
-Scalar numeric cases use `largest_complete_link_cluster`. Values cluster when the difference between the cluster maximum and minimum remains within the case's existing `numeric_tolerance`; the largest same-verdict cluster wins, and the primary observation receives no special preference. Exact, contains, and LLM-judge cases use verdict consistency. Ambiguous scalar numeric answers and numeric-table cases also fall back to verdict-only consistency.
-
-Flakiness is observability-only by default. It does not affect the regression gate or baseline comparison unless you opt in (see [Optional flakiness and trajectory gates](#optional-flakiness-and-trajectory-gates) below). Evidence is stored separately under `runs/<agent>/flakiness/<run_id>.json`, keeping repeated latency, cost, answers, and verdicts isolated from the primary run report.
-
-## Trajectory scoring
-
-Trajectory scoring adds step-level evidence about how an agent reached its answer. A golden case can optionally declare the expected ordered events alongside its existing output expectations:
-
-```yaml
-- id: total_customers
-  prompt: "How many customers are in the dataset?"
-  expects:
-    correctness_type: numeric
-    ground_truth: 7043
-    expected_trajectory: ["route:sql", "agent:sql"]
-```
-
-AgentEval compares `expected_trajectory` with the adapter's actual `nodes_fired` sequence using a longest common subsequence (LCS). The matched subsequence produces precision (matched steps divided by actual steps), recall (matched steps divided by expected steps), and their F1 score, while preserving evidence about exact match, ordering, missing steps, and extra steps. Duplicate steps retain their multiplicity.
-
-The field is optional and backward compatible: cases without it are scored and serialized exactly as before. Trajectory scoring is observability-only by default and does not affect correctness, existing metrics, baseline comparison, or CI gates unless you opt in (see [Optional flakiness and trajectory gates](#optional-flakiness-and-trajectory-gates) below).
-
-## Trajectory diff
-
-Compare two agent trajectories step-by-step (for example two model versions). This is an
-**additive** CLI utility — it does not change scoring, baselines, or CI gates.
-
-```bash
-# TrajectoryEvaluation-shaped JSON (actual + optional score)
-python -m agenteval diff examples/trajectory_diff/traj_a.json examples/trajectory_diff/traj_b.json
-
-# Machine-readable output
-python -m agenteval diff traj_a.json traj_b.json --json
-```
-
-Accepted input shapes match existing trajectory data: a list of step strings (`nodes_fired` /
-`trajectory.actual`), a `TrajectoryEvaluation` object, `trace_steps` (with optional
-input/output for change detection), or a full run report with `--case-id`.
-
-Text output marks removed (`-`), added (`+`), and changed (`~`) steps, collapses unchanged
-steps by default, and prints a summary such as `3 steps added, 1 removed, 2 changed` plus LCS
-similarity and optional score delta.
-
-## Optional flakiness and trajectory gates
-
-Two additional **opt-in** gates sit next to the existing budget/latency fields. Each defaults
-to `null` (disabled), so existing `agents.yaml` files and CI workflows see **zero behavior
-change** until you set them:
-
-```yaml
-gates:
-  # existing gates...
-  max_correctness_drop: 0.05
-  max_hallucination_rate: 0.10
-  min_tool_accuracy: 0.90
-
-  # NEW (optional) — omit both for prior observability-only behaviour
-  max_flakiness_rate: 0.20   # fail if any case's flakiness rate (1 - consistency) > 0.20
-  min_trajectory_f1: 0.90    # fail if any case's trajectory F1 score < 0.90
-```
-
-Semantics:
-
-| Field | Applies to | Breach condition | When evaluated |
-|---|---|---|---|
-| `max_flakiness_rate` | Per-case flakiness from `--repeat` evidence | `1 - consistency_score` exceeds the threshold | `agenteval run` (with a flakiness sidecar) and `agenteval compare` (when the matching sidecar is present) |
-| `min_trajectory_f1` | Per-case `trajectory.score` (LCS F1) | Score falls below the threshold | `agenteval run` and `agenteval compare` |
-
-CLI overrides (same pattern as the other opt-in compare flags):
-
-```bash
-agenteval compare --max-flakiness-rate 0.20 --min-trajectory-f1 0.90
-```
-
-When a gate is enabled and breached, AgentEval prints which case failed by how much and exits
-non-zero so CI fails. When the fields are unset, flakiness and trajectory remain report-only.
-
-## RAG evaluation mode
-
-For retrieval-augmented agents, AgentEval scores five additional optional metrics whenever an
-adapter response carries retrieved context — **context relevance**, **faithfulness** (is the
-answer grounded in the retrieved context), **citation correctness**, **retrieval precision/
-recall**, and **unsupported-claim detection**. These integrate directly into the existing
-metric system rather than a parallel one: they reuse the same set-based precision/recall
-(`tool_call_precision_recall`) already used for tool-call accuracy, and the same numeric-claim
-extraction already used for hallucination detection — applied against retrieved context instead
-of ground truth. Like flakiness and trajectory scoring, this is **observability-only** and does
-not affect correctness, the five core metrics, or the baseline regression gate.
-
-An adapter opts in simply by populating `retrieved_context`/`citations` on its `AgentResponse`:
-
-```python
-return AgentResponse(
-    output=answer,
-    retrieved_context=[{"id": "doc1", "text": "Tokyo is the capital of Japan."}],
-    citations=["doc1"],
-)
-```
-
-A golden case can optionally declare RAG-specific ground truth alongside its existing
-expectations — all fields are optional and backward compatible; cases without them are scored
-exactly as before:
-
-```yaml
-- id: capital_of_japan
-  prompt: "What is the capital of Japan?"
-  expects:
-    correctness_type: contains
-    ground_truth: "Tokyo"
-    relevant_context_ids: [doc1]      # ground truth for retrieval precision/recall
-    expected_citations: [doc1]        # ground truth for citation correctness
-    reference_context:                # fallback context, used only if the adapter
-      - "Tokyo is the capital of Japan."   # itself returns no retrieved_context
-```
-
-`reference_context` lets a case test faithfulness/context-relevance in isolation from a live
-retriever (e.g. testing the generation step alone). Citation correctness falls back to a
-structural check — is every cited id actually present in retrieved context — when no
-`expected_citations` ground truth is given. Suite-level averages (`context_relevance_avg`,
-`faithfulness_avg`, `unsupported_claim_rate_avg`, `citation_f1_avg`, `retrieval_f1_avg`) appear
-on the run report whenever at least one case produced a RAG evaluation, `null` otherwise.
-
-## Multi-turn conversation evaluation
-
-A golden case can optionally declare a sequence of `turns` instead of a single `prompt`/`expects`
-pair, for agents that hold a back-and-forth conversation. Cases without `turns` (every existing
-case) score exactly as before — this is purely additive.
-
-```yaml
-- id: refund_conversation
-  turns:
-    - prompt: "I want to return an item I bought last week. My order number is 48291."
-      expects:
-        correctness_type: contains
-        ground_truth: "order"
-    - prompt: "It's a blender, and I don't have the receipt."
-      expects:
-        correctness_type: contains
-        ground_truth: "receipt not required"
-        retained_facts: ["48291"]   # must still reference the order number from turn 1
-  expects:
-    correctness_type: contains
-    ground_truth: "return authorization issued"   # judged against the WHOLE conversation
-```
-
-Each turn is scored independently through the same correctness/hallucination/tool-call/RAG/
-third-party-evaluator machinery a single-turn case already uses (`turn.expects` is a full,
-ordinary `expects` block). The case's own top-level `expects` becomes its **goal-completion**
-criterion, judged against the full joined transcript of every turn's prompt and answer — not just
-the last message — so a conversation that resolves the user's request three turns in still passes
-even if turn 3 alone wouldn't contain every keyword.
-
-**Context retention**: a turn's `expects.retained_facts` is a checklist of facts introduced in
-earlier turns that this turn's answer must still reference (a deterministic, case-insensitive
-substring check — the same style as hallucination detection, no NLP dependency). The suite-level
-`context_retention_rate` on the run report is the mean pass rate across every turn in the run that
-declared `retained_facts`; `null` when nothing in the run used it.
-
-Conversation history is delivered to the adapter as plain text prepended to each turn's prompt —
-`adapter.run(prompt)` itself is completely unchanged, so every existing adapter works with
-multi-turn cases with zero code changes. (An agent with its own native session/thread memory will
-simply re-read the injected transcript text rather than using that memory; there is currently no
-separate adapter hook for native session state.)
-
-## Trace viewer
-
-Every run can carry a structured, step-by-step execution trace — tool calls, reasoning steps, or
-graph nodes, each with its input/output, timing, and (optionally) per-step cost. Like flakiness,
-trajectory, and RAG scoring, this is **observability-only** and additive: an adapter that reports
-nothing here scores and serializes exactly as before this existed.
-
-An adapter opts in by populating `trace_steps` on its `AgentResponse`:
-
-```python
-return AgentResponse(
-    output=answer,
-    trace_steps=[
-        {"kind": "tool_call", "name": "search", "input": "capital of Japan", "output": "Tokyo", "duration_ms": 210.5},
-        {"kind": "reasoning", "name": "synthesize", "output": "Tokyo is the capital of Japan."},
-    ],
-)
-```
-
-Replay a case's trace as text, or write a self-contained HTML page:
-
-```bash
-agenteval trace runs/20260723T120000Z_abc1234.json --case-id capital_of_japan
-agenteval trace runs/20260723T120000Z_abc1234.json --case-id capital_of_japan --html trace.html
-```
-
-The replay marks any step that trajectory scoring (`expected_trajectory`) flagged as unexpected,
-and lists any expected steps that never executed — pinpointing the exact step a case diverged at
-rather than just the pass/fail outcome.
-
-## Tool-use efficiency scoring
-
-Beyond simple pass/fail, AgentEval can score "right tool, efficiently": did the agent select the
-correct tools (already measured by tool-call precision/recall), *and* did it avoid redundant
-repeat calls doing so? This builds on the same `trace_steps` an adapter reports for the trace
-viewer above — purely additive and dormant until an adapter populates it (no adapter bundled with
-AgentEval does today, so this scores `null` on every current run until one opts in).
-
-A redundant call is a `trace_steps` entry with `kind: "tool_call"` that repeats an earlier step's
-exact `(name, input)` pair — the first occurrence of any tool call is always free. The score is
-
-```
-tool_efficiency_score = tool_call_f1 * (1 - redundant_calls / total_tool_call_steps)
-```
-
-so a case that calls exactly the right tools with zero repeats keeps its unpenalized F1, one exact
-repeat among three calls scores `f1 * (1 - 1/3)`, and a trace with no `tool_call` steps at all (or
-none repeated) is never penalized. `CaseResult.tool_call_redundancy_count`/`tool_efficiency_score`
-and the suite-level `tool_efficiency_avg` are `null` — not zero — whenever no trace was recorded.
-
-## Cost attribution
-
-Cost estimation now looks up per-model USD/1M-token pricing (`core/pricing.py`) instead of a
-single hardcoded rate, while staying fully backward compatible — omitting the model (as every
-existing caller does) preserves the original Groq-only pricing exactly. The model is read from
-the same `raw["_llm_usage"]["model"]` convention `agentic_data_analyst` already populates, so
-model-aware costing works with zero adapter changes.
-
-When an adapter reports per-step usage via `trace_steps` (see above), the HTML report's
-**Cost breakdown** section shows cost attributed down to an individual tool call; otherwise it
-shows a quiet empty-state message. Whole-run and per-case cost were already in the report and are
-unchanged.
-
-## Regression alerting
-
-An optional webhook alert fires when the regression gate (`agenteval compare`) fails — Slack- and
-Discord-compatible, no new dependency (stdlib `urllib`). It builds directly on the existing gate
-decision (`ComparisonResult`) rather than a parallel notification path, and never touches the CI
-workflow's PR-comment posting.
-
-Opt in per agent in `agents.yaml` — the webhook URL itself is never stored in YAML, only the name
-of an environment variable to read it from:
-
-```yaml
-agents:
-  my_agent:
-    alerting:
-      enabled: true
-      webhook_url_env: MY_AGENT_SLACK_WEBHOOK   # URL comes from this env var, not the file
-      kind: slack                               # or "discord"
-```
-
-An agent that doesn't set `alerting` behaves exactly as before — no output, no webhook calls. A
-failed send is reported (`alert=error: ...`) but never changes the gate's own exit code.
-
-## Calibrated LLM-as-judge
-
-`llm_judge` correctness cases are only as trustworthy as the judge's agreement with a human
-reviewer. `agenteval calibrate` measures that agreement directly, using **Cohen's kappa** — the
-standard statistic for inter-rater agreement, chosen over raw percent-agreement because it
-corrects for the agreement two raters would reach by chance alone (a judge that always says
-"pass" can look 90% accurate on a golden set that's 90% correct answers, with zero real
-agreement). Interpreted against the Landis & Koch (1977) scale (`poor` / `slight` / `fair` /
-`moderate` / `substantial` / `almost perfect`), the same reference most published inter-rater
-agreement studies use.
-
-A calibration set is a distinct, simpler shape than a golden `TestCase` — no agent is invoked.
-Each entry already fixes a candidate answer and a human verdict on it:
-
-```yaml
-- id: calib_wrong_number
-  prompt: "How many customers churned?"
-  ground_truth: 7
-  candidate_answer: "9 customers churned."
-  human_label: false
-```
-
-See `tests/golden/calibration_example.yaml` for a small worked example with a deliberate mix of
-agreements and disagreements — an all-agree fixture can't tell a well-calibrated judge apart from
-one that just says "pass" unconditionally.
-
-```bash
-agenteval calibrate --judge agentic_data_analyst --golden-set tests/golden/calibration_example.yaml
-```
-
-`--judge <name>` is a registered agent name (the same registry every other `--agent` flag uses),
-because the judge implementation is tied to whichever sibling repository's LLM client that agent
-resolves to — there's no separate pluggable judge abstraction. The command exits non-zero and
-prints a warning when kappa falls below `--kappa-threshold` (default 0.6, "substantial"
-agreement), and lists every case where the judge and the human disagreed.
-
-**Limitation:** kappa on a small calibration set is itself noisy — treat it as a directional
-signal, not a certified score, until the set has enough cases (and enough disagreement variety)
-to be representative of the judge's real failure modes.
-
-## Agent Failure Memory (V2 / V2.1)
-
-Shipped in **AgentEval 0.3.0**. Local-first loop that turns **human-approved** production failures into golden regression cases:
-
-```text
-trace → redact → classify → cluster → human review → export YAML → CI
-```
+| Principle | Behavior |
+|-----------|----------|
+| Capture off by default | Content (prompts/outputs) is not stored unless you opt in |
+| Redaction first | Secrets and common PII patterns are redacted before SQLite/JSONL write |
+| Deterministic clustering | Taxonomy + fingerprints; no mandatory embeddings or LLM judge |
+| Replay | Separates reproducible failures from infrastructure noise |
+| Minimization | Delta-debug style reduction while preserving reproduction |
+| Human approval | Required before any golden export; nothing auto-enters blocking CI |
+| CI loop | Approved cases run with `agenteval run --production-cases …` |
+| Resurfacing | Coverage / recurrence signals when a known failure returns |
+
+Typical CLI surface:
 
 ```bash
 agenteval memory init
 agenteval memory ingest traces.jsonl
 agenteval memory cluster
-agenteval memory review <candidate> approve --correctness-type contains --ground-truth "..."
-agenteval memory export <candidate>
-agenteval run --production-cases .agenteval/production-regressions.yaml
+agenteval memory list
+agenteval memory review <candidate_id> approve --correctness-type contains --ground-truth "…"
+agenteval memory replay <candidate_id>
+agenteval memory minimize <candidate_id>
+agenteval memory approve-minimization <minimization_id>
+agenteval memory export-minimized <minimization_id>
+agenteval memory coverage
+agenteval run --agent my_agent --production-cases .agenteval/production-regressions.yaml
 ```
 
-- Single-user SQLite (`.agenteval/failure-memory.db`), not a hosted service
-- Content capture off by default; redaction before persistence (not full DLP)
-- Deterministic taxonomy/clustering (no embeddings required)
-- No automatic approvals
-- Demo: `python examples/failure_memory_demo/run_demo.py`
-- V2.1 flagship (replay/minimize/recurrence): `python examples/failure_memory_demo_v21/run_demo.py`
-- Full docs: [`docs/failure-memory.md`](docs/failure-memory.md)
-- Release notes: [`CHANGELOG.md`](CHANGELOG.md)
+Default database: `.agenteval/failure-memory.db` (override via `--db` or `AGENTEVAL_FAILURE_MEMORY_DB`).
 
-### V2.1 Production Failure Replay & Minimization
+Full operator guide: [`docs/failure-memory.md`](docs/failure-memory.md).
 
-Extends Failure Memory with deterministic local **replay**, automatic **delta-debug minimization**, **recurrence** analytics, and an opt-in **CI coverage gate**.
+---
 
-- **Product:** AgentEval V2.1 (package **0.3.0**)
-- **Database schema:** versioned SQLite migrations (v1 → v2 → v3+; V2.1 replay/minimize/recurrence tables land at schema v3; current store may be higher for concurrency hardening)
-- No new runtime dependencies
+## What AgentEval evaluates
 
-## Regression suites from production failures
+| Capability | What you get |
+|------------|----------------|
+| **YAML golden suites** | Versioned prompts, expectations, tools, tags |
+| **Correctness** | Exact, contains, numeric, numeric-table, optional LLM judge |
+| **Hallucination rate** | Unsupported claims vs ground truth |
+| **Tool-call accuracy** | Required tools: precision / recall / F1 |
+| **Latency & cost** | p50/p95 and suite cost; opt-in budget gates |
+| **Trajectory** | Expected step sequences (LCS F1) and `agenteval diff` |
+| **Flakiness** | Optional repeats and consistency labels |
+| **Baseline regression** | Compare current run to a versioned baseline; CI exit codes |
+| **RAG mode** | Context relevance, faithfulness, citation checks |
+| **SQL Agent Safety Scanner** | Structural, policy, and related SQL safety tiers |
+| **Adapters** | CrewAI, AutoGen, OpenAI Agents SDK, LangGraph, custom |
+| **GitHub Action** | Composite action + regression workflow |
+| **Dashboards & reports** | Streamlit app, HTML reports, local read-only API |
+| **Failure Memory** | Production failure → approved golden regression (v0.3.0) |
 
-`agenteval generate-cases --from-failures` mines *targeted* regression cases from a baseline vs.
-current run pair, instead of trusting an arbitrary log line. Only a case where baseline **passed**
-and current **failed or errored** qualifies — for exactly that case, the baseline's own
-`final_answer` is trustworthy ground truth (it already passed correctness), which is what makes
-this safer than treating any surviving answer as ground truth regardless of whether it was ever
-verified correct.
+<details>
+<summary>Core evaluation flow (pre–Failure Memory)</summary>
 
-```bash
-agenteval generate-cases --from-failures \
-  --baseline runs/baseline.json --current runs/latest.json \
-  --output tests/adversarial/regressions.yaml
+1. Define golden cases in YAML.
+2. Run the agent through a framework adapter.
+3. Score metrics and write a provenance-linked JSON run.
+4. Compare with a versioned baseline.
+5. Fail CI when gates or integrity checks fail.
+6. Inspect evidence in the dashboard or HTML report.
+
+</details>
+
+---
+
+## v0.3.0 highlights
+
+Shipped in package **AgentEval v0.3.0** ([release notes](https://github.com/nishanttyagi28/agenteval/releases/tag/v0.3.0), [CHANGELOG](CHANGELOG.md)):
+
+- **Failure Memory Engine** — local SQLite store and `agenteval memory` CLI
+- **Secure trace ingestion** — JSONL + recorder with redaction before persistence
+- **Deterministic fingerprints and clustering** — explainable, no embeddings required
+- **Sync and async instrumentation** — lightweight recorder paths
+- **Replay adapter contract** — including offline `FakeReplayAdapter`
+- **Deterministic delta-debugging minimizer** — shrink payloads while preserving reproduction
+- **Human-approved minimized golden export** — no fallback to unapproved originals
+- **Recurrence and resurfacing analytics** — recurring/novel fingerprints and coverage
+- **CI Failure Memory coverage policies** — opt-in workflow and `memory coverage` gate
+- **OTel-compatible JSON interchange** — optional interchange helpers
+- **SQLite schema migrations** — versioned upgrades (V2.1 tables from schema v3+)
+- **Zero-network flagship demo** — `examples/failure_memory_demo_v21/run_demo.py`
+
+**Release verification results** (main at release; not a permanent guarantee):
+
+| Suite | Result |
+|-------|--------|
+| Full deterministic suite | **1115 passed, 1 skipped** |
+| Failure Memory suite | **59 passed** |
+| Public package | [`nishanttyagi-agenteval==0.3.0`](https://pypi.org/project/nishanttyagi-agenteval/0.3.0/) on PyPI |
+
+---
+
+## Zero-network demo
+
+| Demo | Command | Covers |
+|------|---------|--------|
+| **V2.1 flagship** | `python examples/failure_memory_demo_v21/run_demo.py` | Replay, minimize, recurrence, CI coverage, redaction scan |
+| **V2 core loop** | `python examples/failure_memory_demo/run_demo.py` | Capture → cluster → approve → export → fail/pass |
+
+Both use a **fresh temporary directory** by default, need **no API keys**, and perform **no network I/O**. Keep artifacts with `--workdir … --keep` (see each demo’s README).
+
+Do not commit `.agenteval/failure-memory.db`, raw traces, or generated golden files that may contain residual sensitive data.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TB
+  subgraph Inputs
+    Agent["Agent / framework adapter"]
+    Cases["Golden YAML suites"]
+    Prod["Production traces / recorder"]
+  end
+
+  subgraph Core
+    Runner["Runner + evaluators"]
+    FM["Failure Memory"]
+    SQLite["Local SQLite + artifacts"]
+  end
+
+  subgraph Outputs
+    Report["JSON / HTML reports"]
+    Gate["Baseline + production CI gates"]
+    Dash["Dashboard / local API"]
+  end
+
+  Agent --> Runner
+  Cases --> Runner
+  Prod --> FM
+  FM --> SQLite
+  FM -->|"human-approved export"| Cases
+  Runner --> Report
+  Report --> Gate
+  Report --> Dash
+  Cases --> Gate
 ```
 
-Near-duplicate failures are clustered by `difflib.SequenceMatcher` similarity over a normalized
-error/answer signature (`--similarity-threshold`, default `0.85`) so ten instances of the same
-underlying outage don't produce ten redundant candidates — one candidate per cluster, tagged with
-`cluster_size:N`. Every candidate carries `review_status: candidate` and is import-compatible with
-`agenteval import`/the existing `generate-cases --logs` output, same as Tier 4.
+Everything above is implemented in-repo: adapters under `adapters/`, evaluation under `core/`, Failure Memory under `failure_memory/`, CLI entry `agenteval` → `agenteval.cli:main`, optional Streamlit dashboard, and composite GitHub Action (`action.yml`).
 
-## Cross-run statistical significance
+---
 
-A correctness-rate drop between two runs can be a real regression or ordinary run-to-run noise —
-`core/significance.py` answers that question directly for paired binary outcomes (same case,
-baseline vs. current), rather than eyeballing a percentage delta.
+## Framework and integration support
 
-**McNemar's test** is the standard method for this exact shape of data: it looks only at
-*discordant* pairs (cases that flipped from pass to fail, or fail to pass) since agreement pairs
-carry no information about change. Below 25 discordant pairs (the standard rule of thumb) it uses
-the **exact binomial** variant; above that, the continuity-corrected **asymptotic chi-square**
-test. Both are exact closed-form math — no scipy/numpy dependency was needed:
-a chi-square distribution with 1 degree of freedom is *exactly* the distribution of a squared
-standard normal, so its survival function is `math.erfc(sqrt(x/2))`, not an approximation; the
-exact binomial tail uses `math.comb`. A **percentile bootstrap confidence interval** on the
-correctness-rate delta rounds this out for cases where a single p-value is less intuitive than a
-range.
+| Integration | Notes |
+|-------------|--------|
+| **CrewAI** | Optional extra `crewai` |
+| **Microsoft AutoGen** | Optional extra `autogen` |
+| **OpenAI Agents SDK** | Optional extra `openai-agents` |
+| **LangGraph** | Adapter present; install LangGraph in the agent environment |
+| **Custom** | Implement `AgentAdapter.run(prompt) -> AgentResponse` |
+| **Composite Action** | `nishanttyagi28/agenteval@v0.3.0` (or a stable major tag when you pin one) |
+| **Templates** | `agenteval templates` — RAG, coding, customer-support starters |
+| **Plugins** | Entry-point correctness evaluators |
 
-```bash
-agenteval compare --agent my_agent --require-statistical-significance --significance-alpha 0.05
-```
-
-This is fully **opt-in** — every existing `agenteval compare` invocation and `agents.yaml` behaves
-exactly as before. When enabled, a correctness drop that exceeds the normal threshold gate is only
-treated as a real regression if McNemar's test finds it significant; an insignificant drop is
-reported as noise and does not fail the gate. If significance can't be verified at all (e.g. no
-overlapping case IDs between the two runs), the gate **fails safe** — it keeps the original
-threshold-based reason rather than silently passing an unverifiable drop.
-
-`agenteval compare`'s output, `format_markdown`, and the HTML report all show a plain-language
-verdict (e.g. *"not statistically significant (p=0.32 ≥ alpha=0.05): within normal run-to-run
-variation"*), not just the raw statistic.
-
-**Limitations, stated explicitly:**
-- Both McNemar variants need paired cases with a determinate boolean verdict in *both* runs;
-  cases that errored, were skipped, or don't exist in one of the two runs are excluded, not
-  imputed.
-- Statistical power is genuinely low with few discordant pairs — the tool flags this (`< 10`
-  discordant pairs, or `< 10` paired cases for the bootstrap) rather than reporting an
-  overconfident p-value or a misleadingly narrow interval.
-- "Not statistically significant" is not proof of "no real change" — it means the evidence doesn't
-  clear the bar, which is a meaningfully different (and weaker) claim, especially on small suites.
-
-## Local dashboard API
-
-`agenteval serve --local` runs a small, read-only JSON API over data that already exists as run
-JSON files — no database, no new dependency. It's built on Python's standard-library
-`http.server` (`ThreadingHTTPServer` + a small path-dispatch handler), which is enough for the
-actual scope: a handful of GET endpoints, no templating, no request bodies.
-
-```bash
-agenteval serve --local --agent agentic_data_analyst --port 8765
-```
-
-| Endpoint | Returns |
-|---|---|
-| `GET /api/health` | `{"status": "ok"}` liveness check |
-| `GET /api/runs?agent=<name>` | Summaries of every primary run JSON for that agent |
-| `GET /api/trend?agent=<name>&limit=20` | The trend-history ledger (`core.history`) |
-| `GET /api/calibration-history?agent=<name>` | Every persisted `agenteval calibrate` result |
-
-`--local` is a required flag, not just a default — it's a standing reminder that **this server has
-no authentication and no TLS**, and must only be reachable on your own machine. `agenteval
-calibrate` now persists every run under `runs/<agent>/calibration/<timestamp>.json` (mirroring the
-existing flakiness-sidecar convention) specifically so the calibration-history endpoint has real
-data to serve.
-
-## RBAC (schema and logic)
-
-Three roles — `admin`, `contributor`, `viewer` — with a static role → permission mapping
-(`core/rbac.py`): `admin` can do everything; `contributor` can view and trigger runs and read the
-audit log but not change configuration; `viewer` is read-only. This is **pure logic, not an
-authentication system** — `has_permission(role, permission)` answers "can this role do X", never
-"who is this request actually from". No command in AgentEval enforces these permissions
-automatically today; wiring a real identity provider around this is explicitly deferred to the
-hosted deployment.
-
-Roles live in a separate, optional `rbac.yaml` (see `rbac.example.yaml`) rather than
-`agents.yaml`, since they're global and orthogonal to per-agent config:
+Example registry fragment:
 
 ```yaml
 version: 1
-users:
-  alice: admin
-  bob: contributor
-  carol: viewer
-```
-
-## Audit logs
-
-An opt-in, structured audit trail — one JSON line per action (`timestamp`, `actor`, `action`,
-`details`, `outcome`) — written to a local file, no database or remote sink. Enable it per agent,
-the same `enabled: false`-by-default convention as Tier 5's alerting:
-
-```yaml
 agents:
-  my_agent:
-    audit:
-      enabled: true
-      log_path: logs/my_agent_audit.jsonl   # optional; defaults to runs/<agent>/audit.jsonl
+  mock_agent:
+    adapter: examples.mock_agent.adapter:MockAgentAdapter
+    cases: examples/mock_agent/cases.yaml
+    enabled: true
 ```
 
-`run`, `compare`, and `calibrate` each append one entry after completing when audit logging is
-enabled — an agent that never sets `audit` behaves exactly as before. Query the trail with:
+---
 
-```bash
-agenteval audit-log --agent my_agent --since 2026-07-01
-```
+## CI and GitHub Action
 
-A logging failure is reported as a warning and never fails the command it's attached to, the same
-stance alerting takes toward a broken webhook.
+Built-in workflow [`.github/workflows/eval.yml`](.github/workflows/eval.yml): deterministic tests first, optional live evaluation, baseline compare, HTML report artifacts.
 
-## Deployment (Coming Soon)
-
-**Not yet activated.** A dedicated server for hosting AgentEval's dashboard/API isn't provisioned
-yet — everything above (`agenteval serve --local`, RBAC, audit logs) is local-first and fully
-testable today, but none of it is exposed anywhere beyond your own machine. `docker-compose.yml`
-and `.env.example` are prep, not execution:
-
-```bash
-cp .env.example .env   # fill in only what a command you actually run needs
-docker compose up      # runs `agenteval serve --local` in the existing Tier-4 image, on localhost
-```
-
-Once the server is available, real hosting will need its own auth-aware deployment configuration
-(TLS termination, a real identity provider wired to `core.rbac`, secrets management) — not a
-straight `docker compose up` of the file in this repo. Track this section for updates; it will
-stop saying "Coming Soon" once that lands.
-
-## Golden case example
+Composite action ([`action.yml`](action.yml)) for consumer repos:
 
 ```yaml
-- id: avg_tenure_months
-  prompt: "What is the average tenure in months?"
-  expects:
-    correctness_type: numeric
-    must_call_tools: [sql_agent]
-    must_not_hallucinate: true
-    ground_truth: 25.23
-    numeric_tolerance: 0.05
+- uses: nishanttyagi28/agenteval@v0.3.0
+  with:
+    agent: my_agent
+    config-file: agents.yaml
+    agent-path: .
+    cases-file: tests/golden/cases.yaml
+    baseline-file: baselines/my_agent.json
 ```
 
-The current analyst suite contains 21 hand-written cases grounded in the demonstration dataset.
+Optional Failure Memory coverage workflow: [`.github/workflows/failure-memory.yml`](.github/workflows/failure-memory.yml) (path-filtered / `workflow_dispatch`).
 
-## Dashboard evidence
+Consumer example: [`examples/github-actions/agenteval.yml`](examples/github-actions/agenteval.yml).
 
-AgentEval is integrated with [Agentic Data Analyst](https://github.com/nishanttyagi28/agentic-data-analyst), a modular application that routes natural-language questions to SQL, ML, statistics, forecasting, reporting, and RAG components.
+---
 
-### Historical run summary
+## Security and privacy defaults
 
-![AgentEval summary dashboard](assets/summary.png)
+| Default | Meaning |
+|---------|---------|
+| **Content capture off** | Prompts/outputs are not stored unless explicitly enabled |
+| **Redaction before disk** | Applied before SQLite and JSONL persistence/export |
+| **Best-effort DLP** | Common secret/PII patterns only — not a universal guarantee |
+| **Human approval** | Required for golden promotion; no automatic approvals |
+| **Local-first SQLite** | Default DB under `.agenteval/`; no hosted multi-tenant control plane |
+| **No telemetry by default** | Tracing is local; Failure Memory does not phone home |
+| **Keep secrets out of git** | Do not commit DBs, raw traces, or sensitive generated suites |
 
-The screenshot records a specific historical run; it is evidence from that run, not a claim about the current deployment state.
+---
 
-### Regression trade-off
-
-![AgentEval regression dashboard](assets/regression.png)
-
-The comparison view exposes trade-offs instead of collapsing health into one number. In the recorded example, correctness improved from 85.7% to 95.2%, while p95 latency and estimated cost both increased.
-
-### Failure drill-down
-
-![AgentEval failure drill-down](assets/failure.png)
-
-A numeric answer of approximately 25 months failed against a ground truth of 25.23 with a tolerance of 0.05. The ground truth was intentionally preserved rather than loosened to produce a green result.
-
-## SQL agent safety scanner
-
-`agenteval sql` is a multi-tier safety scanner for SQL emitted by text-to-SQL / data agents (Tiers 1–5: structural rules, schema/policy, sandboxed EXPLAIN, session behaviour, and heuristic semantic alignment).
+## Installation and development
 
 ```bash
-agenteval sql scan queries.jsonl --dialect postgres [--policy sql-policy.yml]
-agenteval sql diff-runs baseline.jsonl candidate.jsonl
-agenteval sql import logs.jsonl --question-field q --sql-field sql
-```
+# Users
+pip install nishanttyagi-agenteval==0.3.0
 
-Full command reference, policy format, sandbox allowlist notes, and CI examples: **[docs/sql-scanner.md](docs/sql-scanner.md)**.
-
-## Installation
-
-Install the published package from PyPI:
-
-```bash
-python -m pip install nishanttyagi-agenteval
-agenteval --help
-```
-
-Install only the framework integration you need:
-
-```bash
-python -m pip install "nishanttyagi-agenteval[crewai]"
-python -m pip install "nishanttyagi-agenteval[autogen]"
-python -m pip install "nishanttyagi-agenteval[openai-agents]"
-```
-
-The PyPI distribution is named `nishanttyagi-agenteval`, while the Python package and console command remain `agenteval`:
-
-```python
-import agenteval
-```
-
-Both `agenteval ...` and `python -m agenteval ...` invoke the same CLI. For contributors working from a clone, use an editable install instead:
-
-```bash
-git clone https://github.com/nishanttyagi28/agenteval
-cd agenteval
-python -m pip install -e .
-python -m pip install -r requirements-dev.txt
-```
-
-Alternatively, install the repository's development extra with `python -m pip install -e ".[dev]"`.
-
-### Docker
-
-A minimal `Dockerfile` at the repository root packages the CLI as a runnable container:
-
-```bash
-docker build -t agenteval .
-docker run --rm agenteval --help
-docker run --rm agenteval run --agent action_demo --registry examples/action_demo/agents.yaml
-```
-
-The image is `python:3.12-slim`-based (pandas ships prebuilt wheels for glibc, avoiding a
-compiler toolchain), installs only the package's own runtime dependencies, and runs as a
-non-root user. `scripts/docker_smoke_test.sh` builds the image and verifies both `--help` and a
-fully self-contained sample evaluation (`examples/action_demo` — zero API key, zero external
-repo) succeed inside the container; the `Docker image` GitHub Actions workflow runs the same
-check in CI. Mount a registry and agent repository as volumes to evaluate your own agent:
-
-```bash
-docker run --rm -v "$PWD:/workspace" -w /workspace agenteval run --agent my_agent
-```
-
-## Try it in 30 seconds
-
-No external agent repository, API key, or network calls required. After an editable install from a clone, run the bundled mock-agent demo:
-
-```bash
-python -m agenteval run --agent mock_agent --registry examples/mock_agent/agents.yaml
-```
-
-That command evaluates three deterministic golden cases (exact match, tool call + contains, numeric tool answer) and writes a scored run under `examples/mock_agent/runs/`. See [`examples/mock_agent/README.md`](examples/mock_agent/README.md) for details.
-
-## Getting started with `agenteval init`
-
-For a brand-new project, `agenteval init` scaffolds everything needed for a first evaluation:
-
-```bash
-cd my-agent-project
-agenteval init --agent-name my_agent
-```
-
-It auto-detects the framework in the current directory (CrewAI, LangGraph, Microsoft AutoGen,
-or the OpenAI Agents SDK — checked against `requirements.txt`/`pyproject.toml` and a bounded
-scan of imports) and generates:
-
-- `agents.yaml` — a registry entry wired to the matching first-party adapter, with
-  `adapter_options` placeholders to fill in (e.g. `crew_import`, `agent_import`, `graph_import`)
-- `tests/golden/<agent_name>.yaml` — a small sample golden suite (`exact`, `numeric`, and
-  `contains` cases) ready to edit with real prompts and expectations
-- `.github/workflows/agenteval.yml` — a PR-triggered workflow consuming the reusable
-  `nishanttyagi28/agenteval@v1` composite action
-
-When no supported framework is detected, `init` still scaffolds all three files: the registry
-entry points at the base `agenteval.adapters.base:AgentAdapter` contract and is written as
-`enabled: false` until you subclass it and flip it on — this never fails the scaffold itself.
-
-Useful flags:
-
-```bash
-agenteval init --path ./my-agent-project --agent-name my_agent --framework auto
-agenteval init --framework langgraph          # skip detection, force a framework
-agenteval init --force                        # overwrite a previous scaffold
-agenteval init --run                          # attempt a first `agenteval run` afterward
-```
-
-`--run` is best-effort: a missing dependency, missing API key, or a still-disabled placeholder
-adapter prints a clear `first-run skipped: ...` message instead of failing the scaffold.
-
-## Quickstart with Agentic Data Analyst
-
-Python 3.12 is used by the CI workflow.
-
-```bash
-mkdir agenteval-demo && cd agenteval-demo
-git clone https://github.com/nishanttyagi28/agenteval
-git clone https://github.com/nishanttyagi28/agentic-data-analyst
-python -m pip install -e ./agenteval
-python -m pip install -r agentic-data-analyst/requirements.txt
-
-export AGENTIC_ANALYST_PATH="$PWD/agentic-data-analyst"
-
-# Run all golden cases
-agenteval run
-
-# Compare a current report with the versioned baseline
-agenteval compare \
-  --baseline agenteval/baselines/data_analyst.json \
-  --current agenteval/runs/<run>.json
-
-# Launch the dashboard
-python -m streamlit run agenteval/dashboard/app.py
-```
-
-The repositories may live anywhere when `AGENTIC_ANALYST_PATH` points to the Agentic Data Analyst checkout. Keeping them as siblings also supports the default local discovery path.
-
-## CLI reference
-
-Every command supports `--help` for its full flag list. The table below is a quick lookup; see the
-full [CLI reference](docs-site/cli-reference.html) for command-by-command usage examples, or jump
-to that command's own section in this README (linked below) for context and YAML examples.
-
-| Command | Purpose |
-|---|---|
-| `agenteval init` | Scaffold `agents.yaml`, a sample golden suite, and a CI workflow for a new project |
-| `agenteval run` | Run the golden suite against a registered agent and write a scored report |
-| `agenteval compare` | Compare a run against a baseline and apply the [regression gate](#budget-and-latency-gates) |
-| `agenteval report` | Generate a self-contained [HTML report](#html-reports-and-regression-trend-tracking) |
-| `agenteval generate` | Generate LLM-based [adversarial variants](#adversarial-robustness) of existing cases |
-| `agenteval generate-adversarial` | Generate deterministic, LLM-free [red-team probes](#adversarial-robustness) |
-| `agenteval import` | Convert an external CSV dataset into [golden test cases](#dataset-import-and-case-generation) |
-| `agenteval generate-cases` | Propose candidate cases from [production logs or regressions](#regression-suites-from-production-failures) |
-| `agenteval compare-models` | Run the same suite against multiple registered agents ([model comparison](#modelprovider-comparison)) |
-| `agenteval trace` | Replay a case's step-by-step execution [trace](#trace-viewer) |
-| `agenteval diff` | Step-by-step [trajectory diff](#trajectory-diff) between two runs or trajectory JSON files |
-| `agenteval calibrate` | Score [LLM-judge/human agreement](#calibrated-llm-as-judge) against a labeled calibration set |
-| `agenteval audit-log` | Query the opt-in structured [audit log](#audit-logs) for one agent |
-| `agenteval serve` | Run a local, read-only [dashboard-data API](#local-dashboard-api) |
-| `agenteval plugins list` / `inspect` / `validate` | Discover and validate [evaluator plugins](#evaluator-plugins-and-templates) |
-| `agenteval templates list` / `show` / `install` | Browse and install the [bundled template catalog](#evaluator-plugins-and-templates) |
-
-## Supported frameworks
-
-All framework integrations are optional at import time, so AgentEval's core does not require every agent SDK.
-
-| Framework | Support | Adapter entry point | Captured evidence |
-|---|---|---|---|
-| [CrewAI](https://docs.crewai.com/) | First-party adapter | `agenteval.adapters.crewai:CrewAIAdapter` | Tasks, agents, tools, usage, cost, output |
-| [Microsoft AutoGen](https://microsoft.github.io/autogen/stable/) | First-party adapter | `agenteval.adapters.autogen:AutoGenAdapter` | Agent messages, tools, trajectory, usage, cost, output |
-| [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) | First-party adapter | `agenteval.adapters.openai_agents:OpenAIAgentsAdapter` | Run items, tools, handoffs, usage, cost, output |
-| [LangGraph](https://langchain-ai.github.io/langgraph/) | First-party adapter | `agenteval.adapters.langgraph:LangGraphAdapter` | Node execution path, retries, state transitions, tool calls, usage, output |
-| Any Python agent | Stable public contract | Subclass `agenteval.adapters.base.AgentAdapter` | Any evidence mapped to `AgentResponse` |
-
-## CrewAI adapter
-
-Install the optional CrewAI integration and wrap either an existing crew or a
-factory that creates fresh crew state for each evaluation case:
-
-```bash
-python -m pip install -e ".[crewai,dev]"
-```
-
-```python
-from agenteval.adapters import CrewAIAdapter
-
-adapter = CrewAIAdapter(
-    crew_factory=lambda: LatestAiDevelopmentCrew().crew(),
-    input_key="topic",
-    inputs={"audience": "engineering leaders"},
-)
-response = adapter.run("AI agent reliability")
-```
-
-To use a standard CrewAI `CrewBase` project through `agenteval run`, point a
-registry entry at the adapter and name the importable crew class. AgentEval
-adds both the configured repository root and its conventional `src/` directory
-to the import path:
-
-```yaml
-adapter: agenteval.adapters.crewai:CrewAIAdapter
-repository:
-  env_var: MY_CREW_PATH
-  default_path: ../my-crew
-  required_paths: [src/my_crew/crew.py]
-adapter_options:
-  crew_import: my_crew.crew:MyCrew
-  input_key: topic
-```
-
-The adapter calls `crew.kickoff(inputs=...)` and normalizes the final raw
-output, task and agent trajectory, observed tool calls, token usage, latency,
-and JSON-safe execution evidence into the standard `AgentResponse`. Existing
-crew-level step callbacks are chained and restored. CrewAI remains optional at
-AgentEval import time; pass `crew_factory` when independent state per case is
-important, or `crew` when the same instance should be reused.
-
-## Microsoft AutoGen adapter
-
-AutoGen's AgentChat `run(task=...)` method is asynchronous. The adapter preserves AgentEval's synchronous contract and safely handles ordinary scripts, notebooks, and applications that already have an event loop.
-
-```python
-from agenteval.adapters import AutoGenAdapter
-
-adapter = AutoGenAdapter(
-    agent_factory=build_fresh_autogen_agent,
-    input_cost_per_million=2.50,
-    output_cost_per_million=10.00,
-)
-response = adapter.run("Research the release notes")
-```
-
-Use `agent_factory` or `agent_import` for isolated state per golden case. A direct `agent` instance intentionally retains AutoGen's documented conversation state. Provider and network failures propagate to the runner so they are recorded as `agent_error` rather than successful answers.
-
-For registry-driven CLI runs, configure the adapter with an importable agent or factory:
-
-```yaml
-adapter: agenteval.adapters.autogen:AutoGenAdapter
-adapter_options:
-  agent_import: my_autogen_project.agents:build_research_agent
-  input_cost_per_million: 2.50
-  output_cost_per_million: 10.00
-```
-
-## OpenAI Agents SDK adapter
-
-The OpenAI Agents SDK adapter captures final output, tool calls, handoffs, agent trajectory, token usage, provider-reported or configured cost, latency, interruptions, and bounded JSON-safe run evidence.
-
-```python
-from agenteval.adapters import OpenAIAgentsAdapter
-
-adapter = OpenAIAgentsAdapter(
-    agent_factory=build_fresh_openai_agent,
-    run_options={"max_turns": 8},
-)
-response = adapter.run("Check the deployment evidence")
-```
-
-The adapter uses `Runner.run_sync` in ordinary synchronous code and `Runner.run` through a safe bridge when an event loop is already active. Provider failures propagate to the runner and are recorded as `agent_error`.
-
-For registry-driven CLI runs:
-
-```yaml
-adapter: agenteval.adapters.openai_agents:OpenAIAgentsAdapter
-adapter_options:
-  agent_import: my_agents.support:build_support_agent
-  run_options:
-    max_turns: 8
-```
-
-## LangGraph adapter
-
-LangGraph mutates a shared state object across node executions rather than returning a single
-chat completion, so the adapter drives the compiled graph's `stream(inputs, config=...,
-stream_mode="updates")` contract and reconstructs the evidence AgentEval needs from that update
-stream: node execution order (including repeats, so a node revisited in a cycle reads as a
-retry), a best-effort merged final state, invoked tool names, and token usage summed off any
-LangChain message objects seen in the deltas.
-
-```python
-from agenteval.adapters import LangGraphAdapter
-
-adapter = LangGraphAdapter(
-    graph_factory=build_fresh_graph,
-    output_key="answer",
-    input_cost_per_million=0.50,
-    output_cost_per_million=1.50,
-)
-response = adapter.run("How many customers churned last quarter?")
-```
-
-`output_key` names the state key holding the final answer; without it, the adapter tries
-`output`, `answer`, `response`, `result`, then the last AI-message content, then a stringified
-state as a last resort. `input_key` (default `"messages"`) and `input_builder` control how the
-prompt is shaped into the graph's input state. `raw` evidence includes `node_visit_counts`,
-`retries` (nodes visited more than once), and `execution_path`.
-
-For registry-driven CLI runs:
-
-```yaml
-adapter: agenteval.adapters.langgraph:LangGraphAdapter
-adapter_options:
-  graph_import: my_graph.app:build_graph
-  output_key: answer
-```
-
-LangGraph itself remains optional at AgentEval import time — the adapter only duck-types the
-`stream`/`invoke` surface, so it never imports the `langgraph` package directly.
-
-## GitHub Actions
-
-`.github/workflows/eval.yml` runs on pull requests and manual dispatch:
-
-- deterministic unit tests and CLI validation run first
-- an internal pull request or manual dispatch can run the live evaluation
-- pull requests use six selected smoke cases
-- manual dispatch with `full_suite=true` runs all 21 golden cases
-- the current report is compared with the versioned baseline
-- a self-contained HTML report (`agenteval report`) is generated alongside the JSON/Markdown comparison
-- evidence — the run JSON, comparison JSON/Markdown, and HTML report — is uploaded as one workflow artifact
-- a PR bot comment (PASS/FAIL, metric deltas, regressed cases, and a link to the workflow run holding the HTML report artifact) is created or updated on the pull request — identified by a stable per-agent HTML marker, so reruns update the same comment instead of posting a new one
-- missing `GROQ_API_KEY` produces an explicit skipped-evaluation summary
-- concurrency cancellation and job timeouts prevent stale or runaway runs
-
-### Reusable composite action
-
-The root `action.yml` lets another repository install AgentEval, run a registered agent, compare the report with its baseline, and expose the result to later workflow steps.
-
-After a stable `v1` tag is published, consume the action with:
-
-```yaml
-name: AgentEval
-
-on:
-  pull_request:
-
-permissions:
-  contents: read
-
-jobs:
-  evaluate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Run AgentEval
-        id: agenteval
-        uses: nishanttyagi28/agenteval@v1
-        with:
-          agent: research_crew
-          config-file: agents.yaml
-          agent-path: .
-          cases-file: tests/golden/research.yaml
-          baseline-file: baselines/research_crew.json
-          runs-dir: .agenteval/runs
-          install-extras: crewai
-          no-llm-judge: "true"
-```
-
-Supported inputs include the registered agent, registry path, agent repository path, golden-case and baseline overrides, run directory, case IDs, tags, framework extras, Python version, LLM-judge behavior, and regression-failure behavior. The action exposes `passed`, `report-path`, `comparison-path`, `comparison-markdown-path`, and `html-report-path` outputs. See [the complete consumer workflow](examples/github-actions/agenteval.yml).
-
-Two inputs are opt-in and default to `"false"` — enabling them changes nothing for existing consumers who don't set them:
-
-```yaml
-      - name: Run AgentEval
-        id: agenteval
-        uses: nishanttyagi28/agenteval@v1
-        with:
-          agent: research_crew
-          generate-html-report: "true"
-          post-pr-comment: "true"
-```
-
-- `generate-html-report: "true"` runs `agenteval report` after the gate and exposes its path as
-  the `html-report-path` output.
-- `post-pr-comment: "true"` posts or updates a single pull-request comment (per-agent HTML
-  marker, same update-in-place behavior as `eval.yml`'s own bot) with the Markdown comparison —
-  only on `pull_request` events. The consuming workflow must grant
-  `permissions: pull-requests: write`.
-
-GitHub resolves `uses` references as `owner/repository@ref`. Because the composite action is maintained in this repository, its coordinate is `nishanttyagi28/agenteval@v1`. The separate coordinate `nishanttyagi28/agenteval-action@v1` would require a repository named `agenteval-action`.
-
-The dedicated `.github/workflows/action-smoke.yml` workflow consumes the local composite action with deterministic fixtures and verifies both the gate decision and generated report paths.
-
-## Adversarial robustness
-
-Generate reviewable, expectation-preserving candidates:
-
-```bash
-agenteval generate \
-  --cases tests/golden/analyst_cases.yaml \
-  --variants 3 \
-  --output tests/adversarial/candidates.yaml
-```
-
-Each candidate retains its parent case, ground truth, tool expectations, and mutation type. New variants start with `review_status: candidate` and are not added to the blocking golden gate until reviewed.
-
-### `agenteval generate-adversarial` — deterministic red-team probes
-
-Unlike `agenteval generate` above (which calls an LLM to invent variants), `generate-adversarial`
-applies a small, fixed set of deterministic string templates — no network or LLM call, fully
-reproducible:
-
-```bash
-agenteval generate-adversarial --from tests/golden/analyst_cases.yaml
-agenteval generate-adversarial --from tests/golden/analyst_cases.yaml \
-  --strategies prompt_injection_append,contradictory_context
-```
-
-| Strategy | Probes for |
-|---|---|
-| `prompt_injection_append` | Ignores an appended fake "system override" instruction |
-| `prompt_injection_prefix` | Ignores a prepended fake "system notice" instruction |
-| `ambiguous_qualifier` | Stays correct despite an added vague/hedging qualifier |
-| `contradictory_context` | Doesn't defer to a fabricated contradicting "colleague" claim |
-
-Every generated case keeps its source case's `expects` byte-for-byte — these are robustness
-*probes*, not new correctness fixtures — and lands with `source: adversarial_redteam`,
-`review_status: candidate`, never auto-promoted into the blocking golden gate, same as `generate`
-above.
-
-**These are best-effort robustness probes, not exhaustive or formal security/red-team testing.** A
-case surviving all four strategies is not a security guarantee — it only means these specific,
-fixed prompts didn't derail the agent on this question.
-
-## Dataset import and case generation
-
-### `agenteval import` — convert a CSV into golden cases
-
-Turn an external dataset into a golden suite via a small column-mapping config:
-
-```bash
-agenteval import --emit-mapping-template mapping.yaml   # scaffold a starter config
-agenteval import data.csv --mapping mapping.yaml --output tests/golden/imported.yaml
-```
-
-```yaml
-# mapping.yaml
-prompt_column: question
-ground_truth_column: answer
-id_column: id                    # optional; auto-generated (row_1, row_2, ...) if omitted
-correctness_type: exact          # exact | numeric | contains | llm_judge (numeric_table is not
-                                  # supported here — a single flat cell can't hold a table)
-numeric_tolerance: 0.01
-tags: [imported]
-must_call_tools_column: null     # optional: a column of comma-separated required tool names
-must_not_hallucinate: false
-```
-
-Every row must yield a non-empty prompt and ground truth, and ids must be unique — a bad row
-fails the whole import with the exact row number rather than silently producing an incomplete
-or wrong suite. The written YAML is a normal golden suite (review it like any hand-written one)
-loadable by every existing command, not a separate format.
-
-### `agenteval generate-cases` — propose golden cases from production logs
-
-Reuses the same reviewable-candidate convention as `agenteval generate` (adversarial mutation)
-rather than a second one: proposed cases are written with `review_status: candidate` and
-`source: production_log`, and stay out of the blocking gate until a human confirms the observed
-answer was actually correct and promotes them into a real golden suite.
-
-```bash
-# From an existing `agenteval run` report:
-agenteval generate-cases --logs runs/<run>.json --output tests/adversarial/candidates_from_logs.yaml
-
-# From a plain JSONL sample log ({"prompt": ..., "answer": ...} per line):
-agenteval generate-cases --logs sample_logs.jsonl --format jsonl
-```
-
-Cases with an `agent_error`/`evaluator_error`/`skipped` outcome are skipped (there's no
-reliable answer to seed a ground truth from), duplicate prompts are deduplicated, and malformed
-JSONL lines are skipped individually with a warning rather than aborting the whole batch.
-
-## HTML reports and regression trend tracking
-
-Every scored `agenteval run` appends a lightweight entry (the five metrics,
-run id, timestamp, gate outcome) to `runs/<agent>/history.json`, capped at
-the last N runs (`--history-limit`, default 20; `--no-history` to opt out).
-No database — just a small JSON ledger, atomically written.
-
-Turn the latest run (plus that history and, if configured, the baseline)
-into a single self-contained HTML file:
-
-```bash
-agenteval report
-# or explicitly:
-agenteval report \
-  --agent agentic_data_analyst \
-  --run runs/<run>.json \
-  --output runs/report.html
-```
-
-The report shows per-case results, the five metrics with baseline delta
-badges, a gate PASS/FAIL banner with reasons, a case-outcome status bar, and
-a trend table (sparkline + improving/regressing/stable) for each metric
-across the recorded history. It has no external CSS/JS dependencies, so it's
-safe to open directly or publish as a CI artifact — see `agenteval report
---help` for baseline/history overrides.
-
-## Model/provider comparison
-
-`agenteval compare-models` runs the *same* golden suite against several already-registered
-`agents.yaml` entries in one command and lays their metrics side by side. Each "model/provider"
-is just a normal registry entry pointed at a different model, prompt, or provider through its
-own adapter and `adapter_options` — the same way any two registered agents already differ — so
-comparing models reuses the existing adapter loader, runner, and scoring exactly as `agenteval
-run` does; it does not add new provider SDKs or new scoring logic, it's purely an orchestration
-layer over what's already there:
-
-```bash
-agenteval compare-models \
-  --agent agentic_data_analyst_groq \
-  --agent agentic_data_analyst_openai \
-  --cases tests/golden/analyst_cases.yaml
-```
-
-```text
-| Agent                       | Status | Correctness | Hallucination | Tool accuracy | Cost (USD) | Latency p95 (ms) |
-|---|---|---|---|---|---|---|
-| agentic_data_analyst_groq   | ok     | 90.0%       | 5.0%          | 100.0%        | $0.002000  | 850              |
-| agentic_data_analyst_openai | ok     | 95.0%       | 2.0%          | 100.0%        | $0.014000  | 1200             |
-```
-
-Every agent runs against the same `--cases` suite (defaults to the first `--agent`'s configured
-golden suite when omitted) and its scored run is still persisted exactly like `agenteval run`
-would, so `agenteval report`/history keep working unmodified on any of those runs. At least two
-`--agent` values are required; a single misconfigured agent (bad adapter path, missing
-dependency) is reported as an error row instead of aborting the whole comparison. `--json-out`
-and `--markdown-out` write the same data machine-readably. This command makes real calls to
-each configured agent, same as running `agenteval run` once per agent — it is not a gate and
-always exits `0`; gate individual agents separately with `agenteval compare`.
-
-## VS Code extension
-
-`vscode-extension/` is a minimal VS Code extension that adds **AgentEval: Run
-Suite** to the command palette — it shells out to `python -m agenteval run`
-in the current workspace and streams output into an "AgentEval" output
-channel. It's an unpublished local scaffold; see
-[`vscode-extension/README.md`](vscode-extension/README.md) for how to build
-and debug it (`npm install && npm run compile`, then `F5`).
-
-## Documentation site (scaffold, not deployed)
-
-`docs-site/` is a minimal, framework-light static documentation site — Getting Started, CLI
-reference, an adapter-writing guide, and a factual comparison against Promptfoo/DeepEval/
-LangSmith — built the same way `landing-page/` is (plain HTML/CSS/JS, no framework, zero
-runtime dependencies). It's a local scaffold only: there is no deployment workflow for it yet.
-
-```bash
-cd docs-site
-npm run build   # writes docs-site/dist/
-npm test        # build + static structural/accessibility/link validation
-npm run serve   # http://127.0.0.1:4174
-```
-
-Pages: [Getting Started](docs-site/index.html), [CLI Reference](docs-site/cli-reference.html),
-[Adapter Guide](docs-site/adapter-guide.html), [Comparison](docs-site/comparison.html). See
-[`docs-site/README.md`](docs-site/README.md) for build/serve details.
-
-## Evaluator plugins and templates
-
-Third-party correctness evaluators are ordinary Python packages registered in
-the `agenteval.evaluators` entry-point group. AgentEval discovers metadata
-lazily, loads only an explicitly selected plugin, and maps plugin failures to
-the existing `evaluator_error` status.
-
-```bash
-agenteval plugins list
-agenteval plugins inspect keyword_contains
-agenteval plugins validate keyword_contains
-```
-
-Select a plugin with the optional `expects.evaluator` field. Cases without that
-field continue through the existing `correctness_type` behavior unchanged. See
-[`docs/plugins.md`](docs/plugins.md) and the installable example under
-[`examples/plugins/agenteval-keyword-evaluator`](examples/plugins/agenteval-keyword-evaluator).
-
-### Example plugins and write-your-own guide
-
-Working sample packages (JSON Schema validation and keyword/regex presence), how
-to register them in a golden suite, and a copy-paste skeleton for a custom
-evaluator live under
-[`examples/plugins/`](examples/plugins/) — start with
-[`examples/plugins/README.md`](examples/plugins/README.md).
-
-AgentEval also bundles realistic starting suites for RAG, coding, and
-customer-support agents:
-
-```bash
-agenteval templates list
-agenteval templates show rag-assistant
-agenteval templates install rag-assistant --output ./evaluation
-```
-
-Installation refuses to overwrite existing files unless `--force` is passed.
-The catalog is bundled and local, not a hosted marketplace. See
-[`docs/templates.md`](docs/templates.md).
-
-The proposed v1 boundary, semantic-versioning and deprecation policies, and
-current blocker list are documented in
-[`docs/compatibility.md`](docs/compatibility.md) and
-[`docs/v1-readiness.md`](docs/v1-readiness.md). The current package remains
-pre-1.0; no stable release is implied.
-
-## Project structure
-
-```text
-agenteval/
-├── pyproject.toml        # Package metadata and agenteval console entry point
-├── agents.yaml           # Registered agents, adapters, suites, and gate defaults
-├── action.yml            # Reusable composite GitHub Action
-├── Dockerfile            # Minimal container image for the CLI
-├── CONTRIBUTING.md       # Development and pull-request guidance
-├── scripts/              # docker_smoke_test.sh and other repo-level scripts
-├── adapters/             # Agent interface and concrete adapter
-│   ├── base.py           # Framework-neutral AgentAdapter contract
-│   ├── crewai.py         # CrewAI integration
-│   ├── autogen.py        # Microsoft AutoGen integration
-│   └── openai_agents.py  # OpenAI Agents SDK integration
-├── core/
-│   ├── schema.py         # Test-case and run-report models
-│   ├── runner.py         # Suite execution
-│   ├── flakiness.py      # Repeat consistency analysis and classification
-│   ├── trajectory.py     # Step-sequence evaluation and evidence
-│   ├── metrics.py        # Correctness, hallucination, tools, latency, cost
-│   ├── judge.py          # LLM judge for open-ended correctness
-│   ├── compare.py        # Baseline comparison and CI decision
-│   ├── history.py        # Regression trend ledger across the last N runs
-│   ├── report.py         # Static HTML report generator (`agenteval report`)
-│   ├── provenance.py     # Reproducibility metadata
-│   ├── _fsutil.py        # Atomic file writes shared by store/history/report
-│   └── store.py          # JSON run persistence
-├── dashboard/app.py      # Streamlit dashboard
-├── vscode-extension/     # Minimal "AgentEval: Run Suite" VS Code extension
-├── landing-page/         # Static demo and Playwright browser tests
-├── docs-site/            # Documentation site scaffold (not deployed)
-├── examples/             # Composite-action fixtures and consumer workflow
-├── tests/golden/         # Hand-written YAML suite
-├── baselines/            # Versioned baseline reports
-├── runs/                 # Standard single-pass run artifacts
-│   └── <agent>/
-│       ├── flakiness/    # Isolated repeated-run evidence by run_id
-│       └── history.json  # Last-N-runs metric ledger for trend tracking
-└── .github/workflows/    # CI regression and trusted PyPI publishing
-```
-
-## Testing
-
-```bash
+# Contributors (from a clone)
 python -m pip install -e ".[dev]"
 python -m pytest -q
+python -m pytest tests/failure_memory -q
 agenteval --help
-agenteval compare --help
-agenteval report --help
-# Module invocation remains supported:
-python -m agenteval --help
 ```
 
-Deterministic tests cover schema and metrics behaviour, error handling, baseline comparison, missing/skipped-case gates, adversarial generation, provenance, flakiness, trajectory scoring, adapter event boundaries, dashboard evidence, packaging, HTML report rendering (including HTML-escaping and legacy run files), regression trend history, and CLI paths without requiring a live provider call.
+Requires **Python 3.10+**. Framework extras are optional (`crewai`, `autogen`, `openai-agents`).
 
-Landing-page checks run separately:
+---
 
-```bash
-cd landing-page
-npm ci
-npx playwright install chromium
-npm test
-```
+## Documentation and links
 
-The composite action has both static contract tests and a hosted deterministic smoke workflow. Adapter tests use injected SDK-shaped fixtures, while compatibility checks can install the optional real framework packages without requiring live model calls.
+| Resource | URL |
+|----------|-----|
+| Repository | https://github.com/nishanttyagi28/agenteval |
+| PyPI | https://pypi.org/project/nishanttyagi-agenteval/ |
+| v0.3.0 release | https://github.com/nishanttyagi28/agenteval/releases/tag/v0.3.0 |
+| Changelog | [CHANGELOG.md](CHANGELOG.md) |
+| Failure Memory docs | [docs/failure-memory.md](docs/failure-memory.md) |
+| Compatibility | [docs/compatibility.md](docs/compatibility.md) |
+| SQL scanner | [docs/sql-scanner.md](docs/sql-scanner.md) |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Static demo | https://nishanttyagi28.github.io/agenteval/ |
+| Streamlit dashboard | https://agenteval-6honbe24hradazngswxkrq.streamlit.app/ |
 
-## Current limitations
+Additional topic docs: [templates](docs/templates.md), [plugins](docs/plugins.md), [multi-turn](docs/multi-turn-evaluation.md), [tool efficiency](docs/tool-efficiency.md), [red-team generation](docs/redteam-generation.md).
 
-- The included adapter and golden suite are demonstrated primarily with Agentic Data Analyst.
-- Live evaluation requires the sibling agent repository, its runtime dependencies, and `GROQ_API_KEY`.
-- LLM-judge correctness is reserved for open-ended cases and introduces provider dependence.
-- Adversarial candidates require human review before entering blocking evaluation.
-- Cost falls back to a character-based token estimate when provider usage is unavailable.
-- Flakiness is not yet part of CI gating and has no cross-agent comparison view.
-- Numeric-table flakiness currently compares verdicts only rather than extracting and clustering each table cell.
-- The smoke suite's only scalar numeric case currently falls back to verdict consistency because its answer restates the same count; `largest_complete_link_cluster` is covered deterministically but has not yet been exercised by a live CI repeat run.
-- Current trajectory depth is limited to the adapter's shallow `route → agent` sequence (typically two events); instrumenting deeper orchestrator events is a candidate for future enrichment.
-- The LangGraph adapter reconstructs final state by merging successive `stream_mode="updates"` deltas (later delta wins per key); graphs with custom state reducers that don't simply overwrite may need an explicit `output_key` or `input_builder` to get an exact answer.
-- Provider-reported cost availability varies by framework and model; explicit per-million token rates can be configured for AutoGen and OpenAI Agents SDK runs.
-- The reusable action requires a stable repository tag such as `v1` before external workflows can pin a major release.
+---
 
-## How AgentEval compares
+## Limitations and non-goals
 
-Most LLM evaluation tools are excellent at scoring **prompts and final answers**. Multi-step agents also need a different layer: versioned golden suites, tool and step evidence, and a **CI-native regression gate** that fails the build when agent behavior drifts after a model, prompt, or tool change. AgentEval is built around that CI workflow—baseline comparison, configurable exit codes, and reviewable run artifacts—rather than only interactive prompt testing or hosted tracing.
+- **Local-first and single-user** Failure Memory — not a hosted multi-tenant control plane
+- **Not an OpenTelemetry collector** — optional OTel-shaped JSON helpers only
+- **No mandatory vector database** or embedding API for clustering
+- **No mandatory LLM judge** for classification or clustering
+- **Redaction cannot identify every arbitrary unlabeled secret**
+- Clustering/benchmark timings **depend on local hardware**
+- Live agent evaluation still needs your agent runtime and any provider keys you choose
+- Cost may fall back to estimates when providers omit usage
+- Adversarial / generated cases stay `review_status: candidate` until humans promote them
 
-The table below is a high-level, feature-oriented snapshot of what this repository implements today versus three well-known tools in the broader LLM evaluation space. Capabilities change quickly; treat competitor columns as directional, not a full product audit. ✅ = first-class / documented focus; ⚠️ = partial, adjacent, or available through a related workflow; — = not a primary documented focus of that tool.
-
-| Dimension | AgentEval | [Promptfoo](https://www.promptfoo.dev/) | [DeepEval](https://deepeval.com/) | [LangSmith](https://www.langchain.com/langsmith) |
-|---|:---:|:---:|:---:|:---:|
-| **CI/CD-native gating** (pass/fail exit codes, PR checks) | ✅ `compare` / composite GitHub Action, registry gates | ✅ CLI-oriented eval and CI use cases | ✅ pytest-style runs and CI | ⚠️ SDK/API and platform evals; CI is integration work |
-| **Baseline regression gate** (version-to-version drop thresholds) | ✅ correctness, hallucination, tools, opt-in cost/latency/tokens | ⚠️ assertion thresholds more than suite baselines | ⚠️ metric thresholds via tests | ⚠️ datasets and experiments; product-centric workflows |
-| **Flakiness detection** (repeat same case, consistency labels) | ✅ `--repeat` + sidecar report; opt-in `max_flakiness_rate` | — | — | ⚠️ repeats/experiments possible; not the same gate model |
-| **Trajectory-level scoring** (ordered steps / tools, not only final text) | ✅ `expected_trajectory` LCS F1 on `nodes_fired` | ⚠️ agent/red-team paths; less suite-native step F1 | ⚠️ agent/conversational metrics; output-centric by default | ✅ rich run traces and step observability |
-| **Trajectory diff** (A vs B step sequences across versions) | ✅ `agenteval diff` (text + `--json`) | — | — | ⚠️ run comparison in the product UI/API |
-| **Framework-agnostic agent adapters** | ✅ `AgentAdapter` + CrewAI, AutoGen, OpenAI Agents SDK, LangGraph | ⚠️ multi-provider/model; not the same adapter registry | ⚠️ library you wire into your stack | ⚠️ strongest with LangChain/LangGraph ecosystems |
-| **Zero-dependency local quickstart** (no API key / external agent) | ✅ `examples/mock_agent` and `examples/action_demo` | ⚠️ local OSS; live models often needed for real evals | ⚠️ local OSS; live models often needed for real evals | — hosted platform (free tier); agent traffic required |
-| **Open-source / self-hostable** | ✅ MIT, local CLI, dashboard, optional local API | ✅ open source, self-hostable | ✅ open source, self-hostable | ⚠️ commercial platform; enterprise self-host options |
-| **Cost and latency tracking in the same gate** | ✅ per-case + suite; opt-in budget/latency gates | ⚠️ depends on provider/config | ⚠️ depends on how you instrument tests | ✅ strong production cost/latency observability |
-| **Evaluator plugins / extension** | ✅ entry-point correctness plugins + templates | ✅ rich assertion and provider ecosystem | ✅ large metric library | ⚠️ custom evaluators via platform/SDK |
-
-### When to use AgentEval vs when not to
-
-**Use AgentEval** when you want a pytest/GitHub Actions-style harness for an agent under test: YAML golden cases, baseline regression gates, tool/trajectory evidence, optional flakiness and trajectory gates, and local artifacts you can review in CI or the Streamlit dashboard—including a zero-network mock-agent path for smoke checks.
-
-**Prefer another tool (or use them together)** when you need Promptfoo’s depth of prompt/red-team matrices, DeepEval’s broad unit-test metric catalog for RAG/answer quality, or LangSmith’s production tracing and hosted observability. AgentEval does not replace a full tracing platform or every specialized metric library; it focuses on **blocking regressions in agent behavior before merge**.
+---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for environment setup, focused and full test commands, adapter requirements, documentation guidance, and the pull-request checklist.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, tests, and PR expectations.
 
-New to the codebase? Issues labeled [`good first issue`](https://github.com/nishanttyagi28/agenteval/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are scoped for a first contribution.
+Issues labeled [`good first issue`](https://github.com/nishanttyagi28/agenteval/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are a good starting point.
+
+---
 
 ## License
 
 AgentEval is available under the [MIT License](LICENSE).
-
----
-
-Built by [Nishant Tyagi](https://github.com/nishanttyagi28).
