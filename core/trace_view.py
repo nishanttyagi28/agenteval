@@ -148,14 +148,21 @@ def render_html(case: dict[str, Any]) -> str:
             error_html = "<p class='status-" + html.escape(status) + "'>" + "<br>".join(parts) + "</p>"
 
     case_id = html.escape(str(case.get("case_id", "?")))
+    # Build fallback HTML outside f-string expressions so Python 3.10/3.11
+    # accept the escaped quotes (backslash escapes are illegal inside {}).
+    empty_steps_row = '<tr><td colspan="7">(no trace steps recorded)</td></tr>'
+    tbody_inner = "".join(rows) or empty_steps_row
+    status_class = html.escape(status)
+    status_label = html.escape(status)
+    prompt_html = html.escape(str(case.get("prompt", "")))
     return (
-        "<!doctype html>\n<html><head><meta charset=\"utf-8\">"
+        '<!doctype html>\n<html><head><meta charset="utf-8">'
         f"<title>Trace: {case_id}</title><style>{_CSS}</style></head><body>"
         f"<h1>Trace replay &mdash; {case_id}</h1>"
-        f"<p>status: <strong class=\"status-{html.escape(status)}\">{html.escape(status)}</strong></p>"
-        f"<p>prompt: {html.escape(str(case.get('prompt', '')))}</p>"
+        f'<p>status: <strong class="status-{status_class}">{status_label}</strong></p>'
+        f"<p>prompt: {prompt_html}</p>"
         "<table><thead><tr><th>#</th><th>kind</th><th>name</th><th>input</th>"
         "<th>output</th><th>duration_ms</th><th>cost</th></tr></thead>"
-        f"<tbody>{''.join(rows) or '<tr><td colspan=\"7\">(no trace steps recorded)</td></tr>'}</tbody>"
+        f"<tbody>{tbody_inner}</tbody>"
         f"</table>{missing_html}{error_html}</body></html>\n"
     )

@@ -16,6 +16,27 @@ from agenteval.core.trajectory import TrajectoryEvaluation
 _EVALUATOR_NAME_RE = re.compile(r"^[a-z][a-z0-9_.-]*$")
 
 
+def strict_bool(value: Any, field_path: str, *, default: bool | None = None) -> bool:
+    """Parse a YAML boolean strictly.
+
+    Accepts real ``bool`` values only. When ``value`` is ``None`` (or the
+    key was absent and the caller passes ``None``), returns ``default`` if
+    provided; otherwise raises. Rejects strings (including ``\"false\"``),
+    numbers, lists, and mappings so ``bool(\"false\")`` cannot silently
+    become truthy.
+    """
+    if value is None:
+        if default is not None:
+            return default
+        raise ValueError(f"{field_path} must be a boolean")
+    if isinstance(value, bool):
+        return value
+    raise ValueError(
+        f"{field_path} must be a YAML boolean (true/false), "
+        f"got {type(value).__name__}: {value!r}"
+    )
+
+
 @dataclass(frozen=True)
 class RepositoryConfig:
     """How to locate and identify an agent's repository."""
@@ -196,7 +217,11 @@ class Expects:
         return cls(
             correctness_type=ct,
             must_call_tools=list(data.get("must_call_tools") or []),
-            must_not_hallucinate=bool(data.get("must_not_hallucinate", False)),
+            must_not_hallucinate=strict_bool(
+                data.get("must_not_hallucinate"),
+                "expects.must_not_hallucinate",
+                default=False,
+            ),
             ground_truth=data.get("ground_truth"),
             numeric_tolerance=float(data.get("numeric_tolerance", 0.01)),
             expected_trajectory=_parse_string_list(data, "expected_trajectory"),

@@ -18,7 +18,7 @@ from typing import Any
 
 from agenteval.core._fsutil import atomic_write_text
 from agenteval.core.generator import test_case_to_dict
-from agenteval.core.schema import CorrectnessType, Expects, TestCase
+from agenteval.core.schema import CorrectnessType, Expects, TestCase, strict_bool
 
 
 class DatasetImportError(ValueError):
@@ -93,7 +93,11 @@ class ImportMapping:
             numeric_tolerance=numeric_tolerance,
             tags=tuple(tags_raw),
             must_call_tools_column=must_call_tools_column.strip() if must_call_tools_column else None,
-            must_not_hallucinate=bool(data.get("must_not_hallucinate", False)),
+            must_not_hallucinate=strict_bool(
+                data.get("must_not_hallucinate"),
+                "must_not_hallucinate",
+                default=False,
+            ),
         )
 
 
