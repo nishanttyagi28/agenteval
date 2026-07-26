@@ -39,6 +39,7 @@ The static demo explains the workflow without executing an agent or making API c
 - [Regression alerting](#regression-alerting)
 - [Calibrated LLM-as-judge](#calibrated-llm-as-judge)
 - [Regression suites from production failures](#regression-suites-from-production-failures)
+- [Agent Failure Memory (V2)](#agent-failure-memory-v2)
 - [Cross-run statistical significance](#cross-run-statistical-significance)
 - [Local dashboard API](#local-dashboard-api)
 - [RBAC (schema and logic)](#rbac-schema-and-logic)
@@ -530,6 +531,30 @@ agreement), and lists every case where the judge and the human disagreed.
 **Limitation:** kappa on a small calibration set is itself noisy — treat it as a directional
 signal, not a certified score, until the set has enough cases (and enough disagreement variety)
 to be representative of the judge's real failure modes.
+
+## Agent Failure Memory (V2)
+
+Local-first loop that turns **human-approved** production failures into golden regression cases:
+
+```text
+trace → redact → classify → cluster → human review → export YAML → CI
+```
+
+```bash
+agenteval memory init
+agenteval memory ingest traces.jsonl
+agenteval memory cluster
+agenteval memory review <candidate> approve --correctness-type contains --ground-truth "..."
+agenteval memory export <candidate>
+agenteval run --production-cases .agenteval/production-regressions.yaml
+```
+
+- Single-user SQLite (`.agenteval/failure-memory.db`), not a hosted service
+- Content capture off by default; redaction before persistence (not full DLP)
+- Deterministic taxonomy/clustering (no embeddings required)
+- No automatic approvals
+- Demo: `python examples/failure_memory_demo/run_demo.py`
+- Full docs: [`docs/failure-memory.md`](docs/failure-memory.md)
 
 ## Regression suites from production failures
 
