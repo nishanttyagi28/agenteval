@@ -61,7 +61,7 @@ With AgentEval:
 1. Store important behaviors as versioned golden cases.
 2. Run them automatically on every relevant change.
 3. Separate real agent failures from provider or evaluator failures.
-4. inspect case-level evidence instead of trusting one aggregate score.
+4. Inspect case-level evidence instead of trusting one aggregate score.
 5. Block known regressions before deployment.
 6. Convert approved production incidents into permanent regression tests.
 
