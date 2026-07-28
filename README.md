@@ -21,6 +21,64 @@ AgentEval is a **git-native, CLI-first, local-first** evaluation harness for mul
 
 AgentEval is open source (MIT). It does not replace hosted observability platforms; it focuses on **repeatable evaluation and regression gates** you can run in pull requests.
 
+## What does AgentEval actually do?
+
+An AI agent can return a confident answer, call the wrong tool, invent a fact, become slower, or cost more after a small prompt or model change. Normal unit tests usually prove that the code runs; they do not prove that the agent still behaves correctly.
+
+**AgentEval is the quality-control system for that problem.** You describe the behavior you expect in YAML, run the agent against those cases, and receive evidence for correctness, hallucinations, tool usage, latency, cost, trajectory and consistency. AgentEval compares the new result with a saved baseline and can stop a pull request when quality drops.
+
+### A simple example
+
+Imagine a customer-support agent receives:
+
+> “Cancel order 4821 and refund the customer.”
+
+A successful program run only proves that the agent returned something. AgentEval checks the behavior behind that answer:
+
+| Question | What AgentEval verifies |
+|----------|-------------------------|
+| Did it solve the request? | The final answer matches the expected outcome |
+| Did it invent anything? | Unsupported claims are measured as hallucinations |
+| Did it use the correct tools? | It called `lookup_order` and `issue_refund`, not an unrelated or dangerous tool |
+| Did it follow the right steps? | Its actual trajectory is compared with the expected sequence |
+| Is the result reliable? | Repeated runs reveal flaky or unstable behavior |
+| Did the change make it worse? | Current metrics are compared with the versioned baseline |
+| Has this failed in production before? | Failure Memory detects recurrence and replays the approved regression case |
+
+If the agent says the refund succeeded without calling the refund tool, the response may look convincing to a human reviewer. AgentEval records it as a failure and can block the change in CI.
+
+### Why teams need it
+
+Without an evaluation gate, agent testing often looks like this:
+
+1. Change a prompt, model, tool or workflow.
+2. Try a few examples manually.
+3. See plausible answers.
+4. Ship and discover silent failures later.
+
+With AgentEval:
+
+1. Store important behaviors as versioned golden cases.
+2. Run them automatically on every relevant change.
+3. Separate real agent failures from provider or evaluator failures.
+4. inspect case-level evidence instead of trusting one aggregate score.
+5. Block known regressions before deployment.
+6. Convert approved production incidents into permanent regression tests.
+
+### How it helps different users
+
+| User | Benefit |
+|------|---------|
+| **Agent developer** | Finds prompt, model, tool-call and workflow regressions before release |
+| **Engineering team** | Gets reproducible CI evidence and reviewable reports on pull requests |
+| **QA / safety reviewer** | Sees exact failure reasons, traces, adversarial cases and recurrence evidence |
+| **Product owner** | Tracks whether reliability, latency and cost improved or degraded |
+| **Open-source maintainer** | Tests multiple frameworks through one adapter-based evaluation contract |
+
+**In one sentence:** AgentEval brings the discipline of unit tests and CI to probabilistic AI-agent behavior, then extends it with production Failure Memory so the same approved failure does not silently return.
+
+---
+
 ## See Failure Memory in action
 
 A production-style failure is redacted, replayed, minimized, approved as a golden test, and protected by CI.
@@ -33,6 +91,7 @@ A production-style failure is redacted, replayed, minimized, approved as a golde
 
 ## Table of contents
 
+- [What does AgentEval actually do?](#what-does-agenteval-actually-do)
 - [See Failure Memory in action](#see-failure-memory-in-action)
 - [Five-minute quick start](#five-minute-quick-start)
 - [Failure Memory flagship workflow](#failure-memory-flagship-workflow)
