@@ -37,6 +37,7 @@ A production-style failure is redacted, replayed, minimized, approved as a golde
 - [Five-minute quick start](#five-minute-quick-start)
 - [Failure Memory flagship workflow](#failure-memory-flagship-workflow)
 - [What AgentEval evaluates](#what-agenteval-evaluates)
+- [Project evolution: foundation to v0.3.0](#project-evolution-foundation-to-v030)
 - [v0.3.0 highlights](#v030-highlights)
 - [Zero-network demo](#zero-network-demo)
 - [Architecture](#architecture)
@@ -198,6 +199,43 @@ Full operator guide: [`docs/failure-memory.md`](docs/failure-memory.md).
 6. Inspect evidence in the dashboard or HTML report.
 
 </details>
+
+---
+
+## Project evolution: foundation to v0.3.0
+
+AgentEval was built in public as a sequence of reliability problems discovered and solved. This is the verified progression from the first harness to the current release.
+
+| Stage | What shipped | Why it mattered |
+|-------|--------------|-----------------|
+| **Foundation — July 15, 2026** | Agent adapter, YAML golden suite, runner, metric pipeline, optional judge, saved run artifacts, Streamlit dashboard, sample results and initial documentation | Established a reproducible way to run an LLM agent against known expectations instead of checking outputs manually |
+| **Strict regression gate — July 16–18** | Versioned baseline comparison, CI-safe exit codes, per-case transitions, configurable correctness/hallucination/tool gates, deterministic tests and GitHub Actions jobs | Turned evaluation results into an enforceable pull-request gate |
+| **Failure taxonomy and metric integrity** | Explicit agent, evaluator, missing-case and skipped-case outcomes; strict numeric tolerances; unexpected tool-call handling; infrastructure failures kept separate from model-quality failures | Prevented provider errors and evaluator failures from silently corrupting quality scores |
+| **Adversarial evaluation** | Reviewable Groq-generated variants, five bounded mutation types, immutable ground truth, candidate-only workflow, break-rate metrics and dashboard evidence | Added controlled stress testing without allowing generated cases to enter blocking CI automatically |
+| **Provider evidence and hardening** | Provider-reported token usage, bounded retry handling, provenance tracking, timeout/concurrency controls and Git SHA-linked reports | Made cost, failures and run origin traceable |
+| **Flakiness and multi-agent support — July 21** | Declarative adapter registry, repeat runs, per-case consistency, stable/flaky/unstable labels, persisted repeat evidence and dashboard drill-down | Exposed nondeterministic failures hidden by a single successful run |
+| **Trajectory scoring** | Expected trajectories, LCS-based precision/recall/F1, ordering and missing/extra-step evidence | Evaluated how an agent reached an answer, not only its final text |
+| **Packaging — v0.1.0** | Python 3.10+ package, direct `agenteval` CLI, packaged defaults, MIT license and OIDC Trusted Publishing workflow | Made the harness installable and reusable outside the source repository |
+| **Platform expansion — v0.2.0** | CrewAI, AutoGen, OpenAI Agents SDK and LangGraph adapters; reusable composite Action; `agenteval init`; PR reporting; model comparison; budget/latency gates; HTML history; templates/plugins; RAG metrics; SQL safety scanner; Docker/docs and local API/reporting surfaces | Expanded the core harness into a framework-independent agent reliability toolkit |
+| **Agent Failure Memory — v0.3.0, July 26** | Secure capture, redaction, deterministic clustering, replay, minimization, human approval, golden export, recurrence/coverage analytics, schema migrations and zero-network demos | Closed the loop from a production incident back to a permanent CI regression case |
+
+### Reliability model that emerged
+
+AgentEval now protects three layers of agent quality:
+
+1. **Expected behavior** — YAML golden cases and versioned baselines catch known regressions.
+2. **Unstable or unsafe behavior** — repeats, trajectories, adversarial cases, RAG checks and SQL safety expose failures normal unit tests miss.
+3. **Production-learned behavior** — Failure Memory converts approved real-world incidents into minimized regression tests.
+
+### Release progression
+
+| Release | Main focus | Verified release evidence |
+|---------|------------|---------------------------|
+| **v0.1.0** | Installable CLI, packaging and trusted-publishing foundation | PyPI distribution introduced as `nishanttyagi-agenteval` |
+| **v0.2.0** | Framework adapters and broader evaluation/CI platform | Multi-framework, RAG, SQL safety, reporting and integration surfaces shipped |
+| **v0.3.0** | Production Failure Memory loop | **1115 passed, 1 skipped** at release; Failure Memory suite **59 passed** |
+
+For user-facing changes by release, see [CHANGELOG.md](CHANGELOG.md). For implementation-level history, inspect the repository's [pull requests](https://github.com/nishanttyagi28/agenteval/pulls?q=is%3Apr+is%3Aclosed).
 
 ---
 
