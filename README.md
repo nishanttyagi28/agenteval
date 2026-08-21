@@ -385,7 +385,7 @@ Everything above is implemented in-repo: adapters under `adapters/`, evaluation 
 | **LangGraph** | Adapter present; install LangGraph in the agent environment |
 | **Custom** | Implement `AgentAdapter.run(prompt) -> AgentResponse` |
 | **Composite Action** | `nishanttyagi28/agenteval@v0.3.0` (or a stable major tag when you pin one) |
-| **Templates** | `agenteval templates` — RAG, coding, customer-support starters |
+| **Templates** | `agenteval templates` — RAG, coding, customer-support, indic-agent starters |
 | **Plugins** | Entry-point correctness evaluators |
 
 Example registry fragment:
@@ -398,6 +398,25 @@ agents:
     cases: examples/mock_agent/cases.yaml
     enabled: true
 ```
+
+### Indic-language evaluation pack
+
+34 cases covering Hinglish/code-mixed input, script consistency (no silent
+Devanagari↔Roman drift), cross-turn transliteration stability, Devanagari
+tool-call arguments, and Hindi refusal/safety behaviour. 28 are
+deterministic and fully offline; 6 refusal-safety cases are opt-in and need
+an LLM judge.
+
+```bash
+pip install -e examples/plugins/agenteval-indic-evaluators
+agenteval run --agent indic_mock_agent --registry examples/indic_mock_agent/agents.yaml --tag core --no-llm-judge
+```
+
+See [`examples/indic_mock_agent/README.md`](examples/indic_mock_agent/README.md)
+for the zero-setup demo (including which cases are deliberately wrong, to
+prove the checkers catch something) and
+[`templates/catalog/indic-agent/README.md`](templates/catalog/indic-agent/README.md)
+for adapting the pack to your own agent via `agenteval templates install indic-agent`.
 
 ---
 

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "name": "indic-agent",
+  "title": "Indic-Language Agent",
+  "description": "Starter coverage for Hinglish input handling, script consistency, cross-turn transliteration stability, Devanagari tool arguments, and Hindi refusal/safety behaviour.",
+  "config": "agents.yaml",
+  "cases": "cases.yaml",
+  "case_count": 34,
+  "files": [
+    "README.md",
+    "agents.yaml",
+    "cases.yaml"
+  ]
+}

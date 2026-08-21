@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 for pre-v1 releases with the caveats described in `docs/compatibility.md`.
 
+## [0.4.0] - 2026-08-21
+
+### Added
+
+**Indic-language evaluation pack** — an add-on for agents that speak Hindi
+or code-mixed Hinglish:
+
+- **`agenteval-indic-evaluators`** example plugin (`examples/plugins/`) —
+  three deterministic, stdlib-only evaluators registered via the existing
+  `agenteval.evaluators` entry-point mechanism: `script_consistency` (no
+  silent Devanagari↔Roman drift, with a built-in tech-term allow list),
+  `transliteration_stability` (one entity, one spelling per multi-turn
+  conversation, using the existing `turns:` support), and
+  `tool_arg_encoding` (Devanagari tool arguments reach the tool intact)
+- **`indic-agent` template catalog entry** (`templates/catalog/`) — a
+  34-case starter suite (28 deterministic/offline, 6 opt-in `llm_judge`
+  refusal-safety cases) covering code-mixed input, script consistency,
+  transliteration stability, tool-argument encoding, and Hindi refusal
+  behaviour
+- **`examples/indic_mock_agent/`** — a zero-network, zero-API-key demo
+  agent proving the pack end-to-end, including 7 deliberately-scripted
+  failures so each checker demonstrably catches something
+
+No changes to core evaluator, schema, or template-discovery code — the pack
+is entirely additive, following the same conventions as the existing
+example evaluator plugins and bundled templates.
+
 ## [0.3.0] - 2026-07-26
 
 ### Added
