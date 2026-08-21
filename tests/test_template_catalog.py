@@ -16,14 +16,20 @@ from agenteval.core.template_catalog import (
 )
 
 
-EXPECTED = ["coding-agent", "customer-support", "rag-assistant"]
+EXPECTED = ["coding-agent", "customer-support", "indic-agent", "rag-assistant"]
+EXPECTED_CASE_COUNTS = {
+    "coding-agent": 7,
+    "customer-support": 7,
+    "indic-agent": 34,
+    "rag-assistant": 7,
+}
 
 
 def test_bundled_catalog_is_deterministic_and_realistic():
     templates = list_templates()
     assert [item.name for item in templates] == EXPECTED
     assert all(item.source == "bundled" for item in templates)
-    assert all(item.case_count == 7 for item in templates)
+    assert all(item.case_count == EXPECTED_CASE_COUNTS[item.name] for item in templates)
     assert all(item.description for item in templates)
 
 
@@ -57,7 +63,7 @@ def test_installed_template_loads_from_destination(name, tmp_path):
     registry = load_agent_registry(destination / "agents.yaml")
     cases = load_test_cases(destination / "cases.yaml")
     assert len(registry) == 1
-    assert len(cases) == 7
+    assert len(cases) == EXPECTED_CASE_COUNTS[name]
     assert next(iter(registry.values())).enabled is False
 
 

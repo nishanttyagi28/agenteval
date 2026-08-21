@@ -29,6 +29,7 @@ def test_templates_list_output(capsys):
     assert "rag-assistant" in output
     assert "coding-agent" in output
     assert "customer-support" in output
+    assert "indic-agent" in output
     assert "bundled" in output
 
 
