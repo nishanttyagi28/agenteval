@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agenteval-indic-evaluators"
+version = "0.1.0"
+description = "Example AgentEval plugin: deterministic Indic-language script, transliteration, and tool-argument encoding checks"
+requires-python = ">=3.10"
+dependencies = [
+  "nishanttyagi-agenteval>=0.1.0",
+]
+
+[project.entry-points."agenteval.evaluators"]
+script_consistency = "agenteval_indic_evaluators.script_consistency:evaluate"
+transliteration_stability = "agenteval_indic_evaluators.transliteration_stability:evaluate"
+tool_arg_encoding = "agenteval_indic_evaluators.tool_arg_encoding:evaluate"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
