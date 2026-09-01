@@ -1,212 +1,180 @@
 # AgentEval
 
+**CI for AI agents — turn flaky agent behavior and production failures into tests that fail the PR.**
+
 [![AgentEval regression gate](https://github.com/nishanttyagi28/agenteval/actions/workflows/eval.yml/badge.svg?branch=main)](https://github.com/nishanttyagi28/agenteval/actions/workflows/eval.yml)
 [![PyPI version](https://img.shields.io/pypi/v/nishanttyagi-agenteval.svg)](https://pypi.org/project/nishanttyagi-agenteval/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
 
-**CI for AI agents that turns production failures into minimized regression tests.**
+**[Static demo](https://nishanttyagi28.github.io/agenteval/)** · **[Streamlit dashboard](https://agenteval-6honbe24hradazngswxkrq.streamlit.app/)** · PyPI: [`nishanttyagi-agenteval`](https://pypi.org/project/nishanttyagi-agenteval/) · CLI: `agenteval`
 
-AgentEval is a **git-native, CLI-first, local-first** evaluation harness for multi-step LLM agents. It runs YAML golden suites, scores reliability metrics, compares results to a versioned baseline, and fails CI when agent behavior regresses.
+---
 
-**v0.3.0** adds **Agent Failure Memory**: secure capture → redaction → clustering → replay → minimization → human approval → golden YAML → CI — so the same production failure cannot silently return.
+## The problem
 
-| | |
-|---|---|
-| **Install** | `pip install nishanttyagi-agenteval==0.3.0` |
-| **Import / CLI** | `agenteval` |
-| **Distribution** | [`nishanttyagi-agenteval`](https://pypi.org/project/nishanttyagi-agenteval/0.3.0/) |
-| **Release** | [v0.3.0 on GitHub](https://github.com/nishanttyagi28/agenteval/releases/tag/v0.3.0) |
-| **Live demo** | [Static site](https://nishanttyagi28.github.io/agenteval/) · [Streamlit dashboard](https://agenteval-6honbe24hradazngswxkrq.streamlit.app/) |
+You change a prompt, model, or tool. The agent still “answers.” Unit tests still pass. A week later someone finds a wrong refund, a hallucinated fact, or a tool the agent never should have called.
 
-AgentEval is open source (MIT). It does not replace hosted observability platforms; it focuses on **repeatable evaluation and regression gates** you can run in pull requests.
+Normal tests prove the code ran. They do not prove the agent still behaves.
 
-## What does AgentEval actually do?
+## In simple terms
 
-An AI agent can return a confident answer, call the wrong tool, invent a fact, become slower, or cost more after a small prompt or model change. Normal unit tests usually prove that the code runs; they do not prove that the agent still behaves correctly.
-
-**AgentEval is the quality-control system for that problem.** You describe the behavior you expect in YAML, run the agent against those cases, and receive evidence for correctness, hallucinations, tool usage, latency, cost, trajectory and consistency. AgentEval compares the new result with a saved baseline and can stop a pull request when quality drops.
-
-### A simple example
-
-Imagine a customer-support agent receives:
+Imagine a support agent gets:
 
 > “Cancel order 4821 and refund the customer.”
 
-A successful program run only proves that the agent returned something. AgentEval checks the behavior behind that answer:
+A green unit test only means *something* came back. AgentEval checks the behavior:
 
-| Question | What AgentEval verifies |
-|----------|-------------------------|
-| Did it solve the request? | The final answer matches the expected outcome |
-| Did it invent anything? | Unsupported claims are measured as hallucinations |
-| Did it use the correct tools? | It called `lookup_order` and `issue_refund`, not an unrelated or dangerous tool |
-| Did it follow the right steps? | Its actual trajectory is compared with the expected sequence |
-| Is the result reliable? | Repeated runs reveal flaky or unstable behavior |
-| Did the change make it worse? | Current metrics are compared with the versioned baseline |
-| Has this failed in production before? | Failure Memory detects recurrence and replays the approved regression case |
+| Question | What gets checked |
+| --- | --- |
+| Did it solve the request? | Final answer vs expected outcome |
+| Did it invent anything? | Unsupported claims vs ground truth |
+| Did it use the right tools? | e.g. `lookup_order` + `issue_refund`, not a random tool |
+| Did it take the right steps? | Trajectory vs expected sequence |
+| Is it stable? | Optional repeats → stable / flaky / unstable |
+| Did this change make it worse? | Current run vs a versioned baseline (CI exit code) |
+| Has this failed in production before? | Failure Memory → approved golden case → CI again |
 
-If the agent says the refund succeeded without calling the refund tool, the response may look convincing to a human reviewer. AgentEval records it as a failure and can block the change in CI.
+If the agent says “refunded” without calling the refund tool, that can look fine to a human skim. AgentEval records it as a failure and can block the PR.
 
-### Why teams need it
+## What I built
 
-Without an evaluation gate, agent testing often looks like this:
+Four outcomes, not a platform pitch:
 
-1. Change a prompt, model, tool or workflow.
-2. Try a few examples manually.
-3. See plausible answers.
-4. Ship and discover silent failures later.
+1. **A regression gate for agents** — YAML golden suites, scored runs, compare to a git-trackable baseline, fail CI when quality drops.
+2. **Evidence, not one score** — correctness, hallucination, tool-call accuracy, latency/cost, trajectory, flakiness, plus optional RAG checks and a SQL safety scanner.
+3. **Failure Memory** — capture → redact → cluster → replay → minimize → **human approve** → golden YAML → CI, so the same production failure is harder to ship twice.
+4. **One CLI across frameworks** — adapters for CrewAI, AutoGen, OpenAI Agents SDK, LangGraph, and custom agents; composite GitHub Action; templates (including an Indic-language pack).
 
-With AgentEval:
+## A few numbers
 
-1. Store important behaviors as versioned golden cases.
-2. Run them automatically on every relevant change.
-3. Separate real agent failures from provider or evaluator failures.
-4. Inspect case-level evidence instead of trusting one aggregate score.
-5. Block known regressions before deployment.
-6. Convert approved production incidents into permanent regression tests.
+Evidence from this repo on `main` — no invented percentages.
 
-### How it helps different users
+| Fact | Value |
+| --- | --- |
+| Automated tests (this checkout) | **1132 passed, 2 skipped** |
+| Failure Memory suite | **59 passed** |
+| Test modules (`tests/**/test_*.py`) | **102** |
+| Package version on `main` | **0.4.0** |
+| Latest **published** PyPI release | **0.3.0** ([PyPI](https://pypi.org/project/nishanttyagi-agenteval/)) |
+| Top-level CLI commands | **18** (`run`, `compare`, `report`, `generate`, `generate-adversarial`, `import`, `generate-cases`, `init`, `compare-models`, `trace`, `diff`, `calibrate`, `audit-log`, `serve`, `plugins`, `templates`, `sql`, `memory`) |
+| `agenteval memory` subcommands | **19** |
+| Bundled templates | **4** — coding-agent (7), customer-support (7), rag-assistant (7), indic-agent (**34** cases: 28 offline / 6 opt-in LLM-judge) |
+| Framework adapters | CrewAI, AutoGen, OpenAI Agents SDK, LangGraph (+ custom) |
+| Optional extras | `dev`, `crewai`, `autogen`, `openai-agents` |
+| Python | **3.10+** |
+| License | **MIT** |
+| Classifier | **Alpha** (`Development Status :: 3 - Alpha`) |
+| CI workflows in-repo | `eval.yml`, `failure-memory.yml`, `action-smoke.yml`, `docker.yml`, `publish.yml`, `landing-page.yml` |
+| Offline demos | `examples/mock_agent`, `examples/failure_memory_demo(_v21)`, `examples/indic_mock_agent` (no API key) |
 
-| User | Benefit |
-|------|---------|
-| **Agent developer** | Finds prompt, model, tool-call and workflow regressions before release |
-| **Engineering team** | Gets reproducible CI evidence and reviewable reports on pull requests |
-| **QA / safety reviewer** | Sees exact failure reasons, traces, adversarial cases and recurrence evidence |
-| **Product owner** | Tracks whether reliability, latency and cost improved or degraded |
-| **Open-source maintainer** | Tests multiple frameworks through one adapter-based evaluation contract |
+## Why this matters
 
-**In one sentence:** AgentEval brings the discipline of unit tests and CI to probabilistic AI-agent behavior, then extends it with production Failure Memory so the same approved failure does not silently return.
+If you ship agent changes, you want (1) a **hard gate** when known behavior regresses, and (2) a **memory** of real failures that does not reset every run. AgentEval is built for that workflow: golden YAML and baselines live in git; Failure Memory stays local-first with human approval before anything blocks CI; demos run without network or provider keys.
 
----
+## How it works
 
-## See Failure Memory in action
+**Simple flow**
 
-A production-style failure is redacted, replayed, minimized, approved as a golden test, and protected by CI.
+1. Write expected behavior as YAML golden cases (or scaffold with `agenteval init`).
+2. Run the agent through an adapter: `agenteval run`.
+3. Compare to a baseline: `agenteval compare` (CI fails on regression).
+4. Optionally: ingest a production failure into Failure Memory → redact → replay → minimize → **approve** → export golden → run with `--production-cases`.
+5. Inspect evidence: JSON/HTML report, Streamlit dashboard, or `agenteval trace` / `diff`.
 
-[![AgentEval v0.3.0 Failure Memory demo](assets/agenteval-v0.3.0-demo.gif)](https://github.com/nishanttyagi28/agenteval/releases/download/v0.3.0/agenteval-v0.3.0-demo.mp4)
+**Optional architecture** (for engineers)
 
-[Watch the full 69-second demo](https://github.com/nishanttyagi28/agenteval/releases/download/v0.3.0/agenteval-v0.3.0-demo.mp4)
+```text
+Agent adapter + golden YAML  →  runner / evaluators  →  JSON run + HTML report
+                                                      →  baseline compare / CI gate
 
----
+Production traces  →  redact  →  Failure Memory (SQLite)
+                              →  cluster / replay / minimize
+                              →  human approve  →  golden YAML  →  same CI gate
+```
 
-## Table of contents
-
-- [What does AgentEval actually do?](#what-does-agenteval-actually-do)
-- [See Failure Memory in action](#see-failure-memory-in-action)
-- [Five-minute quick start](#five-minute-quick-start)
-- [Failure Memory flagship workflow](#failure-memory-flagship-workflow)
-- [What AgentEval evaluates](#what-agenteval-evaluates)
-- [Project evolution: foundation to v0.3.0](#project-evolution-foundation-to-v030)
-- [v0.3.0 highlights](#v030-highlights)
-- [Zero-network demo](#zero-network-demo)
-- [Architecture](#architecture)
-- [Framework and integration support](#framework-and-integration-support)
-- [CI and GitHub Action](#ci-and-github-action)
-- [Security and privacy defaults](#security-and-privacy-defaults)
-- [Installation and development](#installation-and-development)
-- [Documentation and links](#documentation-and-links)
-- [Limitations and non-goals](#limitations-and-non-goals)
-- [Contributing](#contributing)
-- [License](#license)
+Implemented in-repo: `adapters/`, `core/`, `evaluators/`, `failure_memory/`, CLI entry `agenteval` → `agenteval.cli:main`, optional Streamlit dashboard, composite Action (`action.yml`).
 
 ---
 
-## Five-minute quick start
+## Install
 
-### Install from PyPI
+Python **3.10+**.
+
+**From PyPI** (latest published release is **0.3.0**):
 
 ```bash
 pip install nishanttyagi-agenteval==0.3.0
 agenteval --version
 agenteval --help
-agenteval memory --help
 ```
 
-Expected version line: `agenteval 0.3.0`.
-
-### Flagship demo (zero network, no API key)
-
-Clone the repository so example scripts are available, then from the repo root:
+**From this repo** (current `main` is **0.4.0**, including the Indic pack):
 
 ```bash
-pip install -e ".[dev]"
-python examples/failure_memory_demo_v21/run_demo.py
+git clone https://github.com/nishanttyagi28/agenteval.git
+cd agenteval
+python -m pip install -e ".[dev]"
+agenteval --version   # expect 0.4.0 on main
+python -m pytest -q
 ```
 
-This offline demo captures synthetic production failures, redacts secrets, clusters them, replays, minimizes, exports a golden case, fails a broken agent, passes a fixed agent, and checks coverage. Sample output:
+Framework extras (optional): `pip install "nishanttyagi-agenteval[crewai]"` (same for `autogen`, `openai-agents`).
 
-```text
-clusters=1
-recurring=1
-replay_outcome=reproduced ratio=1.00
-minimization_id=min_… size 701->516 (-26.39%)
-[1/1] prod_v21_refund_min FAIL  tools=cancel_order
-[1/1] prod_v21_refund_min PASS  tools=lookup_order,issue_refund
-coverage_pct=100.0 resurfaced=1
-ci_gate_passed=True errors=[]
-redaction_scan=clean
-demo V2.1 OK
-```
+## Quick start
 
-### Evaluate a mock agent (no provider)
-
-From a clone of this repository (after `pip install -e .`):
+### Offline mock agent (no provider)
 
 ```bash
 agenteval run --agent mock_agent --registry examples/mock_agent/agents.yaml
 agenteval compare --agent mock_agent --registry examples/mock_agent/agents.yaml
 ```
 
-Scaffold a new project:
+### Failure Memory demo (zero network, no API key)
+
+```bash
+python examples/failure_memory_demo_v21/run_demo.py
+```
+
+Capture → redact → cluster → replay → minimize → export golden → fail broken agent / pass fixed agent → coverage check. See [`examples/failure_memory_demo_v21/`](examples/failure_memory_demo_v21/) and [`docs/failure-memory.md`](docs/failure-memory.md).
+
+### Scaffold a project
 
 ```bash
 agenteval init
 ```
 
----
+### Indic-language pack (v0.4.0 on `main`)
 
-## Failure Memory flagship workflow
+```bash
+pip install -e examples/plugins/agenteval-indic-evaluators
+agenteval run --agent indic_mock_agent \
+  --registry examples/indic_mock_agent/agents.yaml \
+  --tag core --no-llm-judge
+```
 
-**Agent Failure Memory** turns a real production failure into a human-approved, versioned regression case.
+34 cases (28 deterministic offline; 6 refusal/safety need an LLM judge). The mock demo **expects** deliberate failures so each checker is shown catching something — see [`examples/indic_mock_agent/README.md`](examples/indic_mock_agent/README.md).
+
+## CLI
 
 ```text
-Production failure
-  → secure redaction
-  → ingestion
-  → deterministic clustering
-  → replay
-  → automatic minimization
-  → human approval
-  → golden YAML
-  → CI regression gate
-  → recurrence detection
+agenteval run | compare | report | generate | generate-adversarial | import | generate-cases
+agenteval init | compare-models | trace | diff | calibrate | audit-log | serve
+agenteval plugins | templates | sql | memory
 ```
 
-```mermaid
-flowchart LR
-  Fail["Production failure"] --> Redact["Redact secrets"]
-  Redact --> Ingest["Ingest / store"]
-  Ingest --> Cluster["Classify + cluster"]
-  Cluster --> Replay["Replay"]
-  Replay --> Min["Minimize"]
-  Min --> Human["Human approve"]
-  Human --> Golden["Golden YAML"]
-  Golden --> CI["CI regression gate"]
-  CI --> Recur["Recurrence / coverage"]
-```
+| Command | Role |
+| --- | --- |
+| `run` / `compare` | Golden suite + baseline regression gate |
+| `report` | Self-contained HTML report |
+| `init` | Scaffold registry, sample cases, CI workflow |
+| `trace` / `diff` | Step evidence and trajectory diff |
+| `generate` / `generate-adversarial` | Reviewable adversarial / red-team candidates (not auto-blocking) |
+| `memory …` | Failure Memory loop (see below) |
+| `sql scan` | SQL agent structural safety scan |
+| `templates` / `plugins` | Bundled starters and evaluator entry points |
 
-| Principle | Behavior |
-|-----------|----------|
-| Capture off by default | Content (prompts/outputs) is not stored unless you opt in |
-| Redaction first | Secrets and common PII patterns are redacted before SQLite/JSONL write |
-| Deterministic clustering | Taxonomy + fingerprints; no mandatory embeddings or LLM judge |
-| Replay | Separates reproducible failures from infrastructure noise |
-| Minimization | Delta-debug style reduction while preserving reproduction |
-| Human approval | Required before any golden export; nothing auto-enters blocking CI |
-| CI loop | Approved cases run with `agenteval run --production-cases …` |
-| Resurfacing | Coverage / recurrence signals when a known failure returns |
-
-Typical CLI surface:
+### Failure Memory CLI
 
 ```bash
 agenteval memory init
@@ -222,173 +190,33 @@ agenteval memory coverage
 agenteval run --agent my_agent --production-cases .agenteval/production-regressions.yaml
 ```
 
-Default database: `.agenteval/failure-memory.db` (override via `--db` or `AGENTEVAL_FAILURE_MEMORY_DB`).
+Default DB: `.agenteval/failure-memory.db` (`--db` or `AGENTEVAL_FAILURE_MEMORY_DB`).
 
-Full operator guide: [`docs/failure-memory.md`](docs/failure-memory.md).
-
----
+```text
+Production failure → redact → ingest → cluster → replay → minimize
+  → human approve → golden YAML → CI gate → recurrence / coverage
+```
 
 ## What AgentEval evaluates
 
 | Capability | What you get |
-|------------|----------------|
-| **YAML golden suites** | Versioned prompts, expectations, tools, tags |
-| **Correctness** | Exact, contains, numeric, numeric-table, optional LLM judge |
-| **Hallucination rate** | Unsupported claims vs ground truth |
-| **Tool-call accuracy** | Required tools: precision / recall / F1 |
-| **Latency & cost** | p50/p95 and suite cost; opt-in budget gates |
-| **Trajectory** | Expected step sequences (LCS F1) and `agenteval diff` |
-| **Flakiness** | Optional repeats and consistency labels |
-| **Baseline regression** | Compare current run to a versioned baseline; CI exit codes |
-| **RAG mode** | Context relevance, faithfulness, citation checks |
-| **SQL Agent Safety Scanner** | Structural, policy, and related SQL safety tiers |
-| **Adapters** | CrewAI, AutoGen, OpenAI Agents SDK, LangGraph, custom |
-| **GitHub Action** | Composite action + regression workflow |
-| **Dashboards & reports** | Streamlit app, HTML reports, local read-only API |
-| **Failure Memory** | Production failure → approved golden regression (v0.3.0) |
+| --- | --- |
+| YAML golden suites | Versioned prompts, expectations, tools, tags |
+| Correctness | Exact, contains, numeric, numeric-table, optional LLM judge |
+| Hallucination | Unsupported claims vs ground truth |
+| Tool-call accuracy | Required tools: precision / recall / F1 |
+| Latency & cost | p50/p95 and suite cost; opt-in budget gates |
+| Trajectory | Expected steps (LCS F1); `agenteval diff` |
+| Flakiness | Optional repeats; stable / flaky / unstable |
+| Baseline regression | Compare to versioned baseline; CI exit codes |
+| RAG mode | Context relevance, faithfulness, citation checks |
+| SQL safety scanner | Structural / policy-oriented checks (`agenteval sql`) |
+| Failure Memory | Production failure → approved golden regression |
+| Adapters | CrewAI, AutoGen, OpenAI Agents SDK, LangGraph, custom |
+| GitHub Action | Composite action + in-repo regression workflow |
+| Reports | Streamlit, HTML, local read-only API (`serve`) |
 
-<details>
-<summary>Core evaluation flow (pre–Failure Memory)</summary>
-
-1. Define golden cases in YAML.
-2. Run the agent through a framework adapter.
-3. Score metrics and write a provenance-linked JSON run.
-4. Compare with a versioned baseline.
-5. Fail CI when gates or integrity checks fail.
-6. Inspect evidence in the dashboard or HTML report.
-
-</details>
-
----
-
-## Project evolution: foundation to v0.3.0
-
-AgentEval was built in public as a sequence of reliability problems discovered and solved. This is the verified progression from the first harness to the current release.
-
-| Stage | What shipped | Why it mattered |
-|-------|--------------|-----------------|
-| **Foundation — July 15, 2026** | Agent adapter, YAML golden suite, runner, metric pipeline, optional judge, saved run artifacts, Streamlit dashboard, sample results and initial documentation | Established a reproducible way to run an LLM agent against known expectations instead of checking outputs manually |
-| **Strict regression gate — July 16–18** | Versioned baseline comparison, CI-safe exit codes, per-case transitions, configurable correctness/hallucination/tool gates, deterministic tests and GitHub Actions jobs | Turned evaluation results into an enforceable pull-request gate |
-| **Failure taxonomy and metric integrity** | Explicit agent, evaluator, missing-case and skipped-case outcomes; strict numeric tolerances; unexpected tool-call handling; infrastructure failures kept separate from model-quality failures | Prevented provider errors and evaluator failures from silently corrupting quality scores |
-| **Adversarial evaluation** | Reviewable Groq-generated variants, five bounded mutation types, immutable ground truth, candidate-only workflow, break-rate metrics and dashboard evidence | Added controlled stress testing without allowing generated cases to enter blocking CI automatically |
-| **Provider evidence and hardening** | Provider-reported token usage, bounded retry handling, provenance tracking, timeout/concurrency controls and Git SHA-linked reports | Made cost, failures and run origin traceable |
-| **Flakiness and multi-agent support — July 21** | Declarative adapter registry, repeat runs, per-case consistency, stable/flaky/unstable labels, persisted repeat evidence and dashboard drill-down | Exposed nondeterministic failures hidden by a single successful run |
-| **Trajectory scoring** | Expected trajectories, LCS-based precision/recall/F1, ordering and missing/extra-step evidence | Evaluated how an agent reached an answer, not only its final text |
-| **Packaging — v0.1.0** | Python 3.10+ package, direct `agenteval` CLI, packaged defaults, MIT license and OIDC Trusted Publishing workflow | Made the harness installable and reusable outside the source repository |
-| **Platform expansion — v0.2.0** | CrewAI, AutoGen, OpenAI Agents SDK and LangGraph adapters; reusable composite Action; `agenteval init`; PR reporting; model comparison; budget/latency gates; HTML history; templates/plugins; RAG metrics; SQL safety scanner; Docker/docs and local API/reporting surfaces | Expanded the core harness into a framework-independent agent reliability toolkit |
-| **Agent Failure Memory — v0.3.0, July 26** | Secure capture, redaction, deterministic clustering, replay, minimization, human approval, golden export, recurrence/coverage analytics, schema migrations and zero-network demos | Closed the loop from a production incident back to a permanent CI regression case |
-
-### Reliability model that emerged
-
-AgentEval now protects three layers of agent quality:
-
-1. **Expected behavior** — YAML golden cases and versioned baselines catch known regressions.
-2. **Unstable or unsafe behavior** — repeats, trajectories, adversarial cases, RAG checks and SQL safety expose failures normal unit tests miss.
-3. **Production-learned behavior** — Failure Memory converts approved real-world incidents into minimized regression tests.
-
-### Release progression
-
-| Release | Main focus | Verified release evidence |
-|---------|------------|---------------------------|
-| **v0.1.0** | Installable CLI, packaging and trusted-publishing foundation | PyPI distribution introduced as `nishanttyagi-agenteval` |
-| **v0.2.0** | Framework adapters and broader evaluation/CI platform | Multi-framework, RAG, SQL safety, reporting and integration surfaces shipped |
-| **v0.3.0** | Production Failure Memory loop | **1115 passed, 1 skipped** at release; Failure Memory suite **59 passed** |
-
-For user-facing changes by release, see [CHANGELOG.md](CHANGELOG.md). For implementation-level history, inspect the repository's [pull requests](https://github.com/nishanttyagi28/agenteval/pulls?q=is%3Apr+is%3Aclosed).
-
----
-
-## v0.3.0 highlights
-
-Shipped in package **AgentEval v0.3.0** ([release notes](https://github.com/nishanttyagi28/agenteval/releases/tag/v0.3.0), [CHANGELOG](CHANGELOG.md)):
-
-- **Failure Memory Engine** — local SQLite store and `agenteval memory` CLI
-- **Secure trace ingestion** — JSONL + recorder with redaction before persistence
-- **Deterministic fingerprints and clustering** — explainable, no embeddings required
-- **Sync and async instrumentation** — lightweight recorder paths
-- **Replay adapter contract** — including offline `FakeReplayAdapter`
-- **Deterministic delta-debugging minimizer** — shrink payloads while preserving reproduction
-- **Human-approved minimized golden export** — no fallback to unapproved originals
-- **Recurrence and resurfacing analytics** — recurring/novel fingerprints and coverage
-- **CI Failure Memory coverage policies** — opt-in workflow and `memory coverage` gate
-- **OTel-compatible JSON interchange** — optional interchange helpers
-- **SQLite schema migrations** — versioned upgrades (V2.1 tables from schema v3+)
-- **Zero-network flagship demo** — `examples/failure_memory_demo_v21/run_demo.py`
-
-**Release verification results** (main at release; not a permanent guarantee):
-
-| Suite | Result |
-|-------|--------|
-| Full deterministic suite | **1115 passed, 1 skipped** |
-| Failure Memory suite | **59 passed** |
-| Public package | [`nishanttyagi-agenteval==0.3.0`](https://pypi.org/project/nishanttyagi-agenteval/0.3.0/) on PyPI |
-
----
-
-## Zero-network demo
-
-| Demo | Command | Covers |
-|------|---------|--------|
-| **V2.1 flagship** | `python examples/failure_memory_demo_v21/run_demo.py` | Replay, minimize, recurrence, CI coverage, redaction scan |
-| **V2 core loop** | `python examples/failure_memory_demo/run_demo.py` | Capture → cluster → approve → export → fail/pass |
-
-Both use a **fresh temporary directory** by default, need **no API keys**, and perform **no network I/O**. Keep artifacts with `--workdir … --keep` (see each demo’s README).
-
-Do not commit `.agenteval/failure-memory.db`, raw traces, or generated golden files that may contain residual sensitive data.
-
----
-
-## Architecture
-
-```mermaid
-flowchart TB
-  subgraph Inputs
-    Agent["Agent / framework adapter"]
-    Cases["Golden YAML suites"]
-    Prod["Production traces / recorder"]
-  end
-
-  subgraph Core
-    Runner["Runner + evaluators"]
-    FM["Failure Memory"]
-    SQLite["Local SQLite + artifacts"]
-  end
-
-  subgraph Outputs
-    Report["JSON / HTML reports"]
-    Gate["Baseline + production CI gates"]
-    Dash["Dashboard / local API"]
-  end
-
-  Agent --> Runner
-  Cases --> Runner
-  Prod --> FM
-  FM --> SQLite
-  FM -->|"human-approved export"| Cases
-  Runner --> Report
-  Report --> Gate
-  Report --> Dash
-  Cases --> Gate
-```
-
-Everything above is implemented in-repo: adapters under `adapters/`, evaluation under `core/`, Failure Memory under `failure_memory/`, CLI entry `agenteval` → `agenteval.cli:main`, optional Streamlit dashboard, and composite GitHub Action (`action.yml`).
-
----
-
-## Framework and integration support
-
-| Integration | Notes |
-|-------------|--------|
-| **CrewAI** | Optional extra `crewai` |
-| **Microsoft AutoGen** | Optional extra `autogen` |
-| **OpenAI Agents SDK** | Optional extra `openai-agents` |
-| **LangGraph** | Adapter present; install LangGraph in the agent environment |
-| **Custom** | Implement `AgentAdapter.run(prompt) -> AgentResponse` |
-| **Composite Action** | `nishanttyagi28/agenteval@v0.3.0` (or a stable major tag when you pin one) |
-| **Templates** | `agenteval templates` — RAG, coding, customer-support, indic-agent starters |
-| **Plugins** | Entry-point correctness evaluators |
-
-Example registry fragment:
+## Framework registry example
 
 ```yaml
 version: 1
@@ -399,121 +227,66 @@ agents:
     enabled: true
 ```
 
-### Indic-language evaluation pack
-
-34 cases covering Hinglish/code-mixed input, script consistency (no silent
-Devanagari↔Roman drift), cross-turn transliteration stability, Devanagari
-tool-call arguments, and Hindi refusal/safety behaviour. 28 are
-deterministic and fully offline; 6 refusal-safety cases are opt-in and need
-an LLM judge.
-
-```bash
-pip install -e examples/plugins/agenteval-indic-evaluators
-agenteval run --agent indic_mock_agent --registry examples/indic_mock_agent/agents.yaml --tag core --no-llm-judge
-```
-
-See [`examples/indic_mock_agent/README.md`](examples/indic_mock_agent/README.md)
-for the zero-setup demo (including which cases are deliberately wrong, to
-prove the checkers catch something) and
-[`templates/catalog/indic-agent/README.md`](templates/catalog/indic-agent/README.md)
-for adapting the pack to your own agent via `agenteval templates install indic-agent`.
-
----
-
-## CI and GitHub Action
-
-Built-in workflow [`.github/workflows/eval.yml`](.github/workflows/eval.yml): deterministic tests first, optional live evaluation, baseline compare, HTML report artifacts.
-
-Composite action ([`action.yml`](action.yml)) for consumer repos:
+Composite Action for consumer repos:
 
 ```yaml
 - uses: nishanttyagi28/agenteval@v0.3.0
   with:
     agent: my_agent
     config-file: agents.yaml
-    agent-path: .
     cases-file: tests/golden/cases.yaml
     baseline-file: baselines/my_agent.json
 ```
 
-Optional Failure Memory coverage workflow: [`.github/workflows/failure-memory.yml`](.github/workflows/failure-memory.yml) (path-filtered / `workflow_dispatch`).
-
-Consumer example: [`examples/github-actions/agenteval.yml`](examples/github-actions/agenteval.yml).
-
----
+Pin a release tag you trust. `main` moves; PyPI **0.4.0** is not published yet as of this README rewrite.
 
 ## Security and privacy defaults
 
 | Default | Meaning |
-|---------|---------|
-| **Content capture off** | Prompts/outputs are not stored unless explicitly enabled |
-| **Redaction before disk** | Applied before SQLite and JSONL persistence/export |
-| **Best-effort DLP** | Common secret/PII patterns only — not a universal guarantee |
-| **Human approval** | Required for golden promotion; no automatic approvals |
-| **Local-first SQLite** | Default DB under `.agenteval/`; no hosted multi-tenant control plane |
-| **No telemetry by default** | Tracing is local; Failure Memory does not phone home |
-| **Keep secrets out of git** | Do not commit DBs, raw traces, or sensitive generated suites |
-
----
-
-## Installation and development
-
-```bash
-# Users
-pip install nishanttyagi-agenteval==0.3.0
-
-# Contributors (from a clone)
-python -m pip install -e ".[dev]"
-python -m pytest -q
-python -m pytest tests/failure_memory -q
-agenteval --help
-```
-
-Requires **Python 3.10+**. Framework extras are optional (`crewai`, `autogen`, `openai-agents`).
-
----
-
-## Documentation and links
-
-| Resource | URL |
-|----------|-----|
-| Repository | https://github.com/nishanttyagi28/agenteval |
-| PyPI | https://pypi.org/project/nishanttyagi-agenteval/ |
-| v0.3.0 release | https://github.com/nishanttyagi28/agenteval/releases/tag/v0.3.0 |
-| Changelog | [CHANGELOG.md](CHANGELOG.md) |
-| Failure Memory docs | [docs/failure-memory.md](docs/failure-memory.md) |
-| Compatibility | [docs/compatibility.md](docs/compatibility.md) |
-| SQL scanner | [docs/sql-scanner.md](docs/sql-scanner.md) |
-| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Static demo | https://nishanttyagi28.github.io/agenteval/ |
-| Streamlit dashboard | https://agenteval-6honbe24hradazngswxkrq.streamlit.app/ |
-
-Additional topic docs: [templates](docs/templates.md), [plugins](docs/plugins.md), [multi-turn](docs/multi-turn-evaluation.md), [tool efficiency](docs/tool-efficiency.md), [red-team generation](docs/redteam-generation.md).
-
----
+| --- | --- |
+| Content capture off | Prompts/outputs not stored unless you opt in |
+| Redaction before disk | Applied before SQLite / JSONL persistence |
+| Best-effort DLP | Common secret/PII patterns only — not a universal guarantee |
+| Human approval | Required before golden promotion; nothing auto-enters blocking CI |
+| Local-first SQLite | Default under `.agenteval/`; no hosted multi-tenant control plane |
+| No telemetry by default | Failure Memory does not phone home |
+| Keep secrets out of git | Do not commit DBs, raw traces, or sensitive generated suites |
 
 ## Limitations and non-goals
 
-- **Local-first and single-user** Failure Memory — not a hosted multi-tenant control plane
-- **Not an OpenTelemetry collector** — optional OTel-shaped JSON helpers only
-- **No mandatory vector database** or embedding API for clustering
-- **No mandatory LLM judge** for classification or clustering
-- **Redaction cannot identify every arbitrary unlabeled secret**
-- Clustering/benchmark timings **depend on local hardware**
-- Live agent evaluation still needs your agent runtime and any provider keys you choose
+- Local-first / single-user Failure Memory — not a hosted multi-tenant product
+- Not an OpenTelemetry collector (optional OTel-shaped JSON helpers only)
+- No mandatory vector DB or embeddings for clustering
+- No mandatory LLM judge for classification / clustering
+- Redaction will miss arbitrary unlabeled secrets
+- Live agent eval still needs your runtime and any provider keys you choose
 - Cost may fall back to estimates when providers omit usage
-- Adversarial / generated cases stay `review_status: candidate` until humans promote them
+- Adversarial / generated cases stay candidates until a human promotes them
+- Not claiming v1 stability — see [`docs/v1-readiness.md`](docs/v1-readiness.md)
 
----
+## Documentation
 
-## Contributing
+| Resource | Link |
+| --- | --- |
+| Failure Memory | [docs/failure-memory.md](docs/failure-memory.md) |
+| Compatibility | [docs/compatibility.md](docs/compatibility.md) |
+| SQL scanner | [docs/sql-scanner.md](docs/sql-scanner.md) |
+| Templates / plugins | [docs/templates.md](docs/templates.md), [docs/plugins.md](docs/plugins.md) |
+| Multi-turn / tool efficiency / red-team | [docs/multi-turn-evaluation.md](docs/multi-turn-evaluation.md), [docs/tool-efficiency.md](docs/tool-efficiency.md), [docs/redteam-generation.md](docs/redteam-generation.md) |
+| Changelog | [CHANGELOG.md](CHANGELOG.md) |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| v0.3.0 release | [GitHub release](https://github.com/nishanttyagi28/agenteval/releases/tag/v0.3.0) |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, tests, and PR expectations.
+## Status
 
-Issues labeled [`good first issue`](https://github.com/nishanttyagi28/agenteval/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are a good starting point.
+**WIP · Alpha · `main` at 0.4.0 · PyPI latest published 0.3.0.** Useful today for local eval loops, golden suites, Failure Memory demos, and CI experiments. APIs and schemas can still move — pin a commit or release tag if you depend on behavior. Not a hosted observability replacement.
 
----
+## Why I built this
+
+I kept hitting the same gap: agent quality lived in manual spot-checks and chat paste, while the rest of the stack had real CI. Plausible answers hid wrong tools, flaky trajectories, and regressions that only showed up after ship. Then the same production failure would return because nothing turned it into a permanent test.
+
+I built AgentEval to make agent regression gates and failure memory as boring as unit tests — CLI-first, local-first, human approval before anything blocks merge — starting from a builder’s harness rather than a product pitch.
 
 ## License
 
-AgentEval is available under the [MIT License](LICENSE).
+MIT. See [LICENSE](LICENSE).
