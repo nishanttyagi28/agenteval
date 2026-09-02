@@ -32,6 +32,10 @@ runs/*
 !runs/.gitkeep
 !runs/baseline.json
 
+# Example demo run artifacts
+examples/*/runs/
+!examples/*/runs/.gitkeep
+
 # IDE / OS
 .idea/
 .vscode/

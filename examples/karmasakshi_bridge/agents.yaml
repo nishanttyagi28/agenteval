@@ -1,0 +1,27 @@
+version: 1
+
+agents:
+  karmasakshi_bridge:
+    display_name: KarmaSakshi refund bridge (offline demo)
+    enabled: true
+    adapter: examples.karmasakshi_bridge.adapter:KarmaSakshiRefundAdapter
+    repository:
+      env_var: AGENTEVAL_KARMASAKSHI_BRIDGE_PATH
+      default_path: .
+      required_paths:
+        - adapter.py
+    golden_suite: cases.yaml
+    baseline: baseline.json
+    runs_dir: runs
+    adapter_options:
+      approved_beneficiary: Priya
+      approved_amount_minor_units: 150000
+      approved_currency: INR
+    gates:
+      max_correctness_drop: 0
+      max_hallucination_rate: 0
+      min_tool_accuracy: 1
+      fail_on_evaluator_error: true
+      fail_on_agent_error: true
+    smoke_case_ids:
+      - correct_refund_priya

@@ -1,0 +1,50 @@
+name: KarmaSakshi bridge
+
+on:
+  pull_request:
+    paths:
+      - adapters/karmasakshi*.py
+      - adapters/__init__.py
+      - examples/karmasakshi_bridge/**
+      - tests/test_karmasakshi_bridge.py
+      - docs/karmasakshi-bridge.md
+      - pyproject.toml
+      - .github/workflows/karmasakshi-bridge.yml
+  workflow_dispatch:
+
+concurrency:
+  group: karmasakshi-bridge-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  bridge:
+    name: KarmaSakshi bridge tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            pyproject.toml
+
+      - name: Install AgentEval + KarmaSakshi bridge extra
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e ".[dev,karmasakshi]"
+
+      - name: Run bridge unit tests
+        run: python -m pytest -q tests/test_karmasakshi_bridge.py tests/test_packaging.py
+
+      - name: Run offline bridge demo
+        run: python examples/karmasakshi_bridge/run_demo.py

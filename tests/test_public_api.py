@@ -13,6 +13,7 @@ from agenteval.adapters import (
     CrewAIAdapter,
     LangGraphAdapter,
     OpenAIAgentsAdapter,
+    KarmaSakshiRefundAdapter,
 )
 from agenteval.cli import build_parser
 from agenteval.compat import AgentEvalDeprecationWarning, warn_deprecated
@@ -31,6 +32,7 @@ def test_candidate_public_imports_remain_available():
     assert issubclass(CrewAIAdapter, AgentAdapter)
     assert issubclass(LangGraphAdapter, AgentAdapter)
     assert issubclass(OpenAIAgentsAdapter, AgentAdapter)
+    assert issubclass(KarmaSakshiRefundAdapter, AgentAdapter)
     assert EvaluationContext is not None
     assert EvaluationResult is not None
     assert Evaluator is not None
