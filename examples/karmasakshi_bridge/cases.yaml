@@ -1,0 +1,23 @@
+# Golden suite for the KarmaSakshi bridge happy path.
+# Wrong-amount / wrong-payee failures are exercised by run_demo.py and unit tests
+# (AgentEval records them as failures + optional Failure Memory).
+
+- id: correct_refund_priya
+  prompt: "ATTEMPT amount_minor_units=150000 beneficiary=Priya"
+  expects:
+    correctness_type: contains
+    ground_truth: "PASS: sealed+committed+witnessed pay ₹1500 to Priya"
+    must_call_tools:
+      - karmasakshi.prepare
+      - karmasakshi.seal
+      - karmasakshi.authorize
+      - karmasakshi.commit
+      - karmasakshi.verify
+    must_not_hallucinate: true
+    expected_trajectory:
+      - "karmasakshi:prepare"
+      - "karmasakshi:seal"
+      - "karmasakshi:authorize"
+      - "karmasakshi:commit"
+      - "karmasakshi:verify"
+  tags: [karmasakshi, bridge, refund, smoke]

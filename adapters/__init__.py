@@ -9,6 +9,7 @@ from agenteval.adapters.crewai import CrewAIAdapter
 from agenteval.adapters.autogen import AutoGenAdapter
 from agenteval.adapters.openai_agents import OpenAIAgentsAdapter
 from agenteval.adapters.langgraph import LangGraphAdapter
+from agenteval.adapters.karmasakshi import KarmaSakshiRefundAdapter
 
 __all__ = [
     "AgentAdapter",
@@ -20,4 +21,5 @@ __all__ = [
     "AutoGenAdapter",
     "OpenAIAgentsAdapter",
     "LangGraphAdapter",
+    "KarmaSakshiRefundAdapter",
 ]
