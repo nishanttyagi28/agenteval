@@ -60,13 +60,13 @@ Evidence from this repo on `main` — no invented percentages.
 | Top-level CLI commands | **18** (`run`, `compare`, `report`, `generate`, `generate-adversarial`, `import`, `generate-cases`, `init`, `compare-models`, `trace`, `diff`, `calibrate`, `audit-log`, `serve`, `plugins`, `templates`, `sql`, `memory`) |
 | `agenteval memory` subcommands | **19** |
 | Bundled templates | **4** — coding-agent (7), customer-support (7), rag-assistant (7), indic-agent (**34** cases: 28 offline / 6 opt-in LLM-judge) |
-| Framework adapters | CrewAI, AutoGen, OpenAI Agents SDK, LangGraph (+ custom) |
-| Optional extras | `dev`, `crewai`, `autogen`, `openai-agents` |
+| Framework adapters | CrewAI, AutoGen, OpenAI Agents SDK, LangGraph, KarmaSakshi bridge (+ custom) |
+| Optional extras | `dev`, `crewai`, `autogen`, `openai-agents`, `karmasakshi` |
 | Python | **3.10+** |
 | License | **MIT** |
 | Classifier | **Alpha** (`Development Status :: 3 - Alpha`) |
-| CI workflows in-repo | `eval.yml`, `failure-memory.yml`, `action-smoke.yml`, `docker.yml`, `publish.yml`, `landing-page.yml` |
-| Offline demos | `examples/mock_agent`, `examples/failure_memory_demo(_v21)`, `examples/indic_mock_agent` (no API key) |
+| CI workflows in-repo | `eval.yml`, `failure-memory.yml`, `karmasakshi-bridge.yml`, `action-smoke.yml`, `docker.yml`, `publish.yml`, `landing-page.yml` |
+| Offline demos | `examples/mock_agent`, `examples/failure_memory_demo(_v21)`, `examples/indic_mock_agent`, `examples/karmasakshi_bridge` (no API key) |
 
 ## Why this matters
 
@@ -119,7 +119,7 @@ agenteval --version   # expect 0.4.0 on main
 python -m pytest -q
 ```
 
-Framework extras (optional): `pip install "nishanttyagi-agenteval[crewai]"` (same for `autogen`, `openai-agents`).
+Framework extras (optional): `pip install "nishanttyagi-agenteval[crewai]"` (same for `autogen`, `openai-agents`, `karmasakshi`).
 
 ## Quick start
 
@@ -137,6 +137,15 @@ python examples/failure_memory_demo_v21/run_demo.py
 ```
 
 Capture → redact → cluster → replay → minimize → export golden → fail broken agent / pass fixed agent → coverage check. See [`examples/failure_memory_demo_v21/`](examples/failure_memory_demo_v21/) and [`docs/failure-memory.md`](docs/failure-memory.md).
+
+### KarmaSakshi bridge demo (offline seal → witness → score)
+
+```bash
+pip install -e ".[dev,karmasakshi]"
+python examples/karmasakshi_bridge/run_demo.py
+```
+
+Approved ₹1500→Priya: correct attempt passes; ₹1501 or wrong payee is blocked by KarmaSakshi and recorded as an AgentEval failure. See [`examples/karmasakshi_bridge/`](examples/karmasakshi_bridge/) and [`docs/karmasakshi-bridge.md`](docs/karmasakshi-bridge.md).
 
 ### Scaffold a project
 
@@ -212,7 +221,7 @@ Production failure → redact → ingest → cluster → replay → minimize
 | RAG mode | Context relevance, faithfulness, citation checks |
 | SQL safety scanner | Structural / policy-oriented checks (`agenteval sql`) |
 | Failure Memory | Production failure → approved golden regression |
-| Adapters | CrewAI, AutoGen, OpenAI Agents SDK, LangGraph, custom |
+| Adapters | CrewAI, AutoGen, OpenAI Agents SDK, LangGraph, KarmaSakshi bridge, custom |
 | GitHub Action | Composite action + in-repo regression workflow |
 | Reports | Streamlit, HTML, local read-only API (`serve`) |
 
@@ -269,6 +278,7 @@ Pin a release tag you trust. `main` moves; PyPI **0.4.0** is not published yet a
 | Resource | Link |
 | --- | --- |
 | Failure Memory | [docs/failure-memory.md](docs/failure-memory.md) |
+| KarmaSakshi bridge | [docs/karmasakshi-bridge.md](docs/karmasakshi-bridge.md) |
 | Compatibility | [docs/compatibility.md](docs/compatibility.md) |
 | SQL scanner | [docs/sql-scanner.md](docs/sql-scanner.md) |
 | Templates / plugins | [docs/templates.md](docs/templates.md), [docs/plugins.md](docs/plugins.md) |
