@@ -71,3 +71,9 @@ def test_openai_agents_is_an_optional_framework_dependency():
     extras = load_pyproject()["project"]["optional-dependencies"]
 
     assert extras["openai-agents"] == ["openai-agents>=0.18,<1"]
+
+
+def test_karmasakshi_is_an_optional_bridge_dependency():
+    extras = load_pyproject()["project"]["optional-dependencies"]
+
+    assert extras["karmasakshi"] == ["karmasakshi-protocol>=0.2,<0.3"]

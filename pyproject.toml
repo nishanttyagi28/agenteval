@@ -43,6 +43,9 @@ autogen = [
 openai-agents = [
   "openai-agents>=0.18,<1",
 ]
+karmasakshi = [
+  "karmasakshi-protocol>=0.2,<0.3",
+]
 
 [project.scripts]
 agenteval = "agenteval.cli:main"
