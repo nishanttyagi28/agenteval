@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 for pre-v1 releases with the caveats described in `docs/compatibility.md`.
 
+## [0.5.0] - 2026-10-02
+
+### Added
+
+**Release Desk** — the business loop for production failures, as one local screen
+instead of a chain of memory subcommands:
+
+- `agenteval gate --local` serves a review desk (default `http://127.0.0.1:8741`)
+- Webhook ingest of an incident, a trace envelope, or an OTel-style document
+- Secrets are redacted before the incident is stored
+- A repeat of the same failure stays one review item and counts as a recurrence
+- **Ship to CI** writes a human-approved golden case to
+  `.agenteval/production-regressions.yaml` for
+  `agenteval run --production-cases`
+- Reject requires a reason; a rejected incident can be reopened
+- The desk has no login and refuses a non-loopback bind unless `--allow-remote`
+
+**Provider-neutral judge** for `llm_judge` cases:
+
+- `offline` (deterministic, no network, no sibling repository)
+- `openai`, `groq`, and `anthropic` over HTTP, selected by
+  `AGENTEVAL_JUDGE_PROVIDER` or by whichever API key is already set
+- `AGENTEVAL_JUDGE_BASE_URL` sends the OpenAI-compatible providers at any
+  proxy or Azure-style endpoint
+- `legacy` keeps the pre-0.5 sibling data-analyst client, and remains the
+  fallback only when that repository is present and no provider or API key
+  was configured
+
 ## [0.4.0] - 2026-08-21
 
 ### Added

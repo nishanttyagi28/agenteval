@@ -1,6 +1,7 @@
 """Agent Failure Memory — production failures → human-approved regression tests.
 
 Local-first, deterministic, privacy-preserving. Not a hosted observability platform.
+`agenteval gate` is the local review desk that ships an approved failure into CI.
 """
 
 from __future__ import annotations

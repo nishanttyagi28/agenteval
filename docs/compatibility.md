@@ -1,7 +1,7 @@
 # Compatibility, versioning, and public API
 
 This document defines the candidate compatibility boundary AgentEval is
-preparing for a future v1 release. AgentEval is currently `0.3.0` and classified
+preparing for a future v1 release. AgentEval is currently `0.5.0` and classified
 as Alpha; the guarantees below become binding only when a v1 release is
 explicitly published.
 
@@ -55,6 +55,10 @@ Existing option names, positional argument meaning, documented defaults, and
 successful/non-successful exit semantics must not change incompatibly within a
 stable major line. New commands and optional flags are additive minor changes.
 The console-script name remains `agenteval`.
+
+`gate` (Release Desk, added in 0.5.0) is additive and is not part of the
+candidate stable command set yet. Same for `diff`, `generate-adversarial`,
+`sql`, and `memory` where they are not listed above.
 
 The composite GitHub Action's documented input and output keys are also a
 consumer-facing interface. Tier 8 does not alter them.

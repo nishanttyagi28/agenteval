@@ -52,12 +52,12 @@ Evidence from this repo on `main` — no invented percentages.
 
 | Fact | Value |
 | --- | --- |
-| Automated tests (this checkout) | **1132 passed, 2 skipped** |
+| Automated tests (this checkout, optional extras absent) | **1152 passed, 3 skipped** (Docker, FastAPI, KarmaSakshi) |
 | Failure Memory suite | **59 passed** |
-| Test modules (`tests/**/test_*.py`) | **102** |
-| Package version on `main` | **0.4.0** |
+| Test modules (`tests/**/test_*.py`) | **105** |
+| Package version on `main` | **0.5.0** |
 | Latest **published** PyPI release | **0.3.0** ([PyPI](https://pypi.org/project/nishanttyagi-agenteval/)) |
-| Top-level CLI commands | **18** (`run`, `compare`, `report`, `generate`, `generate-adversarial`, `import`, `generate-cases`, `init`, `compare-models`, `trace`, `diff`, `calibrate`, `audit-log`, `serve`, `plugins`, `templates`, `sql`, `memory`) |
+| Top-level CLI commands | **19** (`run`, `compare`, `report`, `generate`, `generate-adversarial`, `import`, `generate-cases`, `init`, `compare-models`, `trace`, `diff`, `calibrate`, `audit-log`, `serve`, `gate`, `plugins`, `templates`, `sql`, `memory`) |
 | `agenteval memory` subcommands | **19** |
 | Bundled templates | **4** — coding-agent (7), customer-support (7), rag-assistant (7), indic-agent (**34** cases: 28 offline / 6 opt-in LLM-judge) |
 | Framework adapters | CrewAI, AutoGen, OpenAI Agents SDK, LangGraph, KarmaSakshi bridge (+ custom) |
@@ -109,13 +109,13 @@ agenteval --version
 agenteval --help
 ```
 
-**From this repo** (current `main` is **0.4.0**, including the Indic pack):
+**From this repo** (current `main` is **0.5.0**):
 
 ```bash
 git clone https://github.com/nishanttyagi28/agenteval.git
 cd agenteval
 python -m pip install -e ".[dev]"
-agenteval --version   # expect 0.4.0 on main
+agenteval --version   # expect 0.5.0 on main
 python -m pytest -q
 ```
 
@@ -153,6 +153,37 @@ Approved ₹1500→Priya: correct attempt passes; ₹1501 or wrong payee is bloc
 agenteval init
 ```
 
+### Release Desk (v0.5.0)
+
+Turn a production miss into a CI test without leaving the browser. No API key.
+
+```bash
+agenteval gate --local
+```
+
+Open the URL it prints (default `http://127.0.0.1:8741`). Load the refund sample, or POST an incident:
+
+```bash
+curl -s -X POST http://127.0.0.1:8741/api/gate/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"incident":{"agent":"refund-desk","prompt":"Refund order 4821","output":"Cancelled. No refund.","tools_called":["cancel_order"],"expected_tools":["lookup_order","issue_refund"]}}'
+```
+
+Ship writes `.agenteval/production-regressions.yaml`. The next run that still
+does this fails:
+
+```bash
+agenteval run --agent my_agent --production-cases .agenteval/production-regressions.yaml
+```
+
+The desk is local-only (pass `--local`). It redacts secret-shaped strings before
+storage and will not bind a public address unless you pass `--allow-remote`.
+See [`docs/release-desk.md`](docs/release-desk.md).
+
+Open-ended `llm_judge` cases no longer require the data-analyst sibling repo.
+With no key, the deterministic `offline` judge scores them. Set
+`AGENTEVAL_JUDGE_PROVIDER` to `openai`, `groq`, `anthropic`, or `legacy`.
+
 ### Indic-language pack (v0.4.0 on `main`)
 
 ```bash
@@ -169,7 +200,7 @@ agenteval run --agent indic_mock_agent \
 ```text
 agenteval run | compare | report | generate | generate-adversarial | import | generate-cases
 agenteval init | compare-models | trace | diff | calibrate | audit-log | serve
-agenteval plugins | templates | sql | memory
+agenteval plugins | templates | sql | memory | gate
 ```
 
 | Command | Role |
@@ -180,6 +211,7 @@ agenteval plugins | templates | sql | memory
 | `trace` / `diff` | Step evidence and trajectory diff |
 | `generate` / `generate-adversarial` | Reviewable adversarial / red-team candidates (not auto-blocking) |
 | `memory …` | Failure Memory loop (see below) |
+| `gate` | Local Release Desk: ingest a production failure, approve it, write the CI case |
 | `sql scan` | SQL agent structural safety scan |
 | `templates` / `plugins` | Bundled starters and evaluator entry points |
 
@@ -247,7 +279,7 @@ Composite Action for consumer repos:
     baseline-file: baselines/my_agent.json
 ```
 
-Pin a release tag you trust. `main` moves; PyPI **0.4.0** is not published yet as of this README rewrite.
+Pin a release tag you trust. `main` moves; PyPI **0.5.0** is not published yet. The latest published release remains **0.3.0**.
 
 ## Security and privacy defaults
 
@@ -277,6 +309,7 @@ Pin a release tag you trust. `main` moves; PyPI **0.4.0** is not published yet a
 
 | Resource | Link |
 | --- | --- |
+| Release Desk | [docs/release-desk.md](docs/release-desk.md) |
 | Failure Memory | [docs/failure-memory.md](docs/failure-memory.md) |
 | KarmaSakshi bridge | [docs/karmasakshi-bridge.md](docs/karmasakshi-bridge.md) |
 | Compatibility | [docs/compatibility.md](docs/compatibility.md) |
@@ -289,7 +322,7 @@ Pin a release tag you trust. `main` moves; PyPI **0.4.0** is not published yet a
 
 ## Status
 
-**WIP · Alpha · `main` at 0.4.0 · PyPI latest published 0.3.0.** Useful today for local eval loops, golden suites, Failure Memory demos, and CI experiments. APIs and schemas can still move — pin a commit or release tag if you depend on behavior. Not a hosted observability replacement.
+**WIP · Alpha · `main` at 0.5.0 · PyPI latest published 0.3.0.** Useful today for local eval loops, golden suites, the Release Desk, and CI experiments. APIs and schemas can still move — pin a commit or release tag if you depend on behavior. Not a hosted observability replacement.
 
 ## Why I built this
 

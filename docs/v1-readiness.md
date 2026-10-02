@@ -17,6 +17,11 @@ remaining work behind a premature tag.
 6. Version or explicitly exclude the local HTTP API from the stable v1 surface.
 7. Remove the LLM judge's coupling to the data-analyst sibling repository and
    define a provider-neutral judge contract.
+   0.5.0 adds that contract (`offline`, `openai`, `groq`, `anthropic`) via
+   `AGENTEVAL_JUDGE_PROVIDER`. The sibling client remains only as `legacy`,
+   and only when that provider is selected or when no API key is configured
+   and the sibling repository is present. v1 still needs `legacy` off the
+   default chain.
 8. Test every declared Python version in CI or narrow the declared support
    matrix honestly.
 9. Move from the Alpha classifier only after at least one release-candidate

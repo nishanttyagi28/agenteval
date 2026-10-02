@@ -872,6 +872,47 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_gate(args: argparse.Namespace) -> int:
+    from agenteval.failure_memory.gate_server import DEFAULT_PORT, run_gate_server
+    from agenteval.failure_memory.store import resolve_db_path
+
+    if not args.local:
+        print(
+            "error: --local is required -- the Release Desk has no authentication or TLS "
+            "and must only be run for local review",
+            file=sys.stderr,
+        )
+        return 2
+    host = args.host
+    loopback = host in ("127.0.0.1", "localhost", "::1")
+    if not loopback and not args.allow_remote:
+        print(
+            "error: refusing to bind a non-loopback address without --allow-remote",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        db_path = resolve_db_path(args.db)
+        suite_path = Path(args.suite)
+        port = args.port if args.port is not None else DEFAULT_PORT
+        server = run_gate_server(db_path, suite_path, host=host, port=port)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    bound_port = server.server_address[1]
+    print(f"release desk http://{host}:{bound_port}")
+    print(f"db={db_path}")
+    print(f"suite={suite_path}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+        server.server_close()
+    return 0
+
+
 def _cmd_generate(args: argparse.Namespace) -> int:
     from agenteval.core.generator import generate_suite, write_candidate_yaml
     from agenteval.core.runner import DEFAULT_GOLDEN_PATH
@@ -1645,6 +1686,34 @@ def build_parser() -> argparse.ArgumentParser:
     serve_p.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
     serve_p.add_argument("--port", type=int, default=None, help="Bind port (default: 8765)")
     serve_p.set_defaults(func=_cmd_serve)
+
+    gate_p = sub.add_parser(
+        "gate",
+        help="Open the local Release Desk: review production failures and ship them to CI",
+    )
+    gate_p.add_argument(
+        "--local",
+        action="store_true",
+        help="Required flag acknowledging this desk has no authentication or TLS",
+    )
+    gate_p.add_argument(
+        "--db",
+        default=None,
+        help="Failure Memory SQLite path (default: .agenteval/failure-memory.db)",
+    )
+    gate_p.add_argument(
+        "--suite",
+        default=".agenteval/production-regressions.yaml",
+        help="Golden YAML written when a reviewer ships an incident",
+    )
+    gate_p.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    gate_p.add_argument("--port", type=int, default=None, help="Bind port (default: 8741)")
+    gate_p.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="Permit a non-loopback bind. The desk can approve CI tests and has no login.",
+    )
+    gate_p.set_defaults(func=_cmd_gate)
 
     plugins_p = sub.add_parser(
         "plugins", help="Discover and validate built-in and third-party evaluators"

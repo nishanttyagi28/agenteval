@@ -67,6 +67,8 @@ terminals/
 .agenteval/failure-memory.db-*
 .agenteval/*.bak-*
 .agenteval/production-regressions.yaml
+.agenteval/production-regressions.yaml.manifest.json
 .agenteval/production-regressions.manifest.json
 .pytest_basetemp/
 .pytest_tmp/
+tests/_tmp_*/
