@@ -116,3 +116,7 @@ More docs: [templates](docs/templates.md), [plugins](docs/plugins.md), [multi-tu
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## How this was built
+
+Parts of this code were written with AI coding assistants (Cursor and Claude). I set the design and the tests the code has to pass, and agent-written commits carry a `Co-authored-by` trailer.
